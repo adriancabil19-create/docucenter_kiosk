@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: web-doc-backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      FRONTEND_URL: http://localhost:3000
+      GCASH_MERCHANT_ID: ${GCASH_MERCHANT_ID:-demo_merchant}
+      GCASH_API_KEY: ${GCASH_API_KEY:-demo_key}
+      GCASH_SECRET_KEY: ${GCASH_SECRET_KEY:-demo_secret}
+      GCASH_WEBHOOK_SECRET: ${GCASH_WEBHOOK_SECRET:-demo_webhook_secret}
+      LOG_LEVEL: debug
+    volumes:
+      - ./src:/app/src
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - web-doc-network
+
+  # Optional: Add frontend service
+  # frontend:
+  #   build: ../
+  #   container_name: web-doc-frontend
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - web-doc-network
+
+networks:
+  web-doc-network:
+    driver: bridge
