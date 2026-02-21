@@ -100,7 +100,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 Text(
                   'Document Processing Services',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Color(0xFF003D99),
+                    color: const Color(0xFF003D99),
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -109,7 +109,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 Text(
                   'Select a service below to access printing, scanning, or photocopying features',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Color(0xFF4B5563),
+                    color: const Color(0xFF4B5563),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -154,9 +154,9 @@ class _ServicesPageState extends State<ServicesPage> {
       onTap: () => _handleServiceChange(serviceId),
       child: Container(
         decoration: BoxDecoration(
-          color: isActive ? Color(0xFF2563EB) : Colors.white,
+          color: isActive ? const Color(0xFF2563EB) : Colors.white,
           border: Border.all(
-            color: isActive ? Color(0xFF2563EB) : Color(0xFFE5E7EB),
+            color: isActive ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB),
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -168,7 +168,7 @@ class _ServicesPageState extends State<ServicesPage> {
               Icon(
                 icon,
                 size: 40,
-                color: isActive ? Colors.white : Color(0xFF2563EB),
+                color: isActive ? Colors.white : const Color(0xFF2563EB),
               ),
               const SizedBox(height: 12),
               Text(
@@ -184,7 +184,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 subtitle,
                 style: TextStyle(
                   fontSize: 12,
-                  color: isActive ? Colors.white70 : Color(0xFF4B5563),
+                  color: isActive ? Colors.white70 : const Color(0xFF4B5563),
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -335,7 +335,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                 Text(
                   'Printing in Progress...',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Color(0xFF2563EB),
+                    color: const Color(0xFF2563EB),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -352,7 +352,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
       children: [
         Row(
           children: [
-            Icon(Icons.print, size: 32, color: Color(0xFF2563EB)),
+            const Icon(Icons.print, size: 32, color: Color(0xFF2563EB)),
             const SizedBox(width: 16),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,14 +360,14 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                 Text(
                   'Printing Service',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Color(0xFF003D99),
+                    color: const Color(0xFF003D99),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
                   'Configure your print settings and upload your documents',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Color(0xFF4B5563),
+                    color: const Color(0xFF4B5563),
                   ),
                 ),
               ],
@@ -397,13 +397,13 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                           const SizedBox(height: 16),
                           Container(
                             decoration: BoxDecoration(
-                              border: Border.all(color: Color(0xFFD1D5DB), width: 2),
+                              border: Border.all(color: const Color(0xFFD1D5DB), width: 2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                Icon(Icons.cloud_upload, size: 48, color: Color(0xFF9CA3AF)),
+                                const Icon(Icons.cloud_upload, size: 48, color: Color(0xFF9CA3AF)),
                                 const SizedBox(height: 16),
                                 ElevatedButton(
                                   onPressed: () {
@@ -421,7 +421,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                                   label: const Text('Browse Storage'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.white,
-                                    foregroundColor: Color(0xFF2563EB),
+                                    foregroundColor: const Color(0xFF2563EB),
                                     side: const BorderSide(color: Color(0xFF2563EB)),
                                   ),
                                 ),
@@ -439,7 +439,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                   ),
                   const SizedBox(height: 16),
                   Card(
-                    color: Color(0xFFF0F9FF),
+                    color: const Color(0xFFF0F9FF),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -455,7 +455,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                               Text(
                                 '₱${_calculateCost().toStringAsFixed(2)}',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: Color(0xFF2563EB),
+                                  color: const Color(0xFF2563EB),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -555,7 +555,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                       icon: const Icon(Icons.print),
                       label: const Text('Start Printing'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF2563EB),
+                        backgroundColor: const Color(0xFF2563EB),
                       ),
                     ),
                   ),
@@ -581,7 +581,7 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
           decoration: InputDecoration(
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
             filled: true,
-            fillColor: Color(0xFFF3F4F6),
+            fillColor: const Color(0xFFF3F4F6),
           ),
         ),
       ],
@@ -657,7 +657,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
             ),
             child: Row(
               children: [
-                Icon(Icons.settings, size: 32, color: Color(0xFF2563EB)),
+                const Icon(Icons.settings, size: 32, color: Color(0xFF2563EB)),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -666,7 +666,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                       Text(
                         'Scan Settings',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Color(0xFF003D99),
+                          color: const Color(0xFF003D99),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -766,7 +766,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
               label: const Text('Start Scanning'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Color(0xFF2563EB),
+                backgroundColor: const Color(0xFF2563EB),
               ),
             ),
           ),
@@ -841,7 +841,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                       right: 4,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Color(0xFF2563EB),
+                          color: const Color(0xFF2563EB),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         padding: const EdgeInsets.all(4),
@@ -906,7 +906,7 @@ Document Name: ${_documentName.isEmpty ? 'Scanned_${DateTime.now().millisecondsS
 Format: PDF
 Pages Scanned: ${_scannedPages.length}
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-DPI Resolution: ${_dpi}
+DPI Resolution: $_dpi
 Double Scanning: ${_doubleScanning ? 'Yes' : 'No'}
 
 ═══════════════════════════════════════
@@ -947,7 +947,7 @@ Thank you for using our service!
             ),
             child: Row(
               children: [
-                Icon(Icons.check_circle, size: 40, color: Colors.green),
+                const Icon(Icons.check_circle, size: 40, color: Colors.green),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -995,7 +995,7 @@ Thank you for using our service!
                       right: 4,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Color(0xFF2563EB),
+                          color: const Color(0xFF2563EB),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         padding: const EdgeInsets.all(4),
@@ -1164,7 +1164,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
 
 Service: Photocopying
 Copies Requested: $_copies
-Paper Size: ${_paperSize}
+Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 
 ═══════════════════════════════════════
@@ -1195,7 +1195,7 @@ Thank you for using our service!
 ─────────────────
 Copies: $_copies
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Paper Size: ${_paperSize}
+Paper Size: $_paperSize
 Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
     
     // Print receipt after payment succeeds
@@ -1217,7 +1217,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
             ),
             child: Row(
               children: [
-                Icon(Icons.copyright, size: 32, color: Color(0xFF2563EB)),
+                const Icon(Icons.copyright, size: 32, color: Color(0xFF2563EB)),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -1226,7 +1226,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
                       Text(
                         'Photocopying Service',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Color(0xFF003D99),
+                          color: const Color(0xFF003D99),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1364,7 +1364,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
                   Text(
                     '₱${_calculateCopyingCost().toStringAsFixed(2)}',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Color(0xFF2563EB),
+                      color: const Color(0xFF2563EB),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -1381,7 +1381,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
               label: const Text('Start Photocopying (Proceed to Payment)'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Color(0xFF2563EB),
+                backgroundColor: const Color(0xFF2563EB),
               ),
             ),
           ),
@@ -1395,7 +1395,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
               icon: const Icon(Icons.copy),
               label: const Text('Start Copying'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF2563EB),
+                backgroundColor: const Color(0xFF2563EB),
               ),
             ),
           ),
@@ -1818,7 +1818,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
       children: [
         Row(
           children: [
-            Icon(Icons.credit_card, size: 32, color: Color(0xFF2563EB)),
+            const Icon(Icons.credit_card, size: 32, color: Color(0xFF2563EB)),
             const SizedBox(width: 16),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1826,7 +1826,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                 Text(
                   'GCash Payment',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Color(0xFF003D99),
+                    color: const Color(0xFF003D99),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1941,9 +1941,9 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _timeLeft < 60 ? Colors.red[50] : Color(0xFFF0F9FF),
+                        color: _timeLeft < 60 ? Colors.red[50] : const Color(0xFFF0F9FF),
                         border: Border.all(
-                          color: _timeLeft < 60 ? Colors.red : Color(0xFF60A5FA),
+                          color: _timeLeft < 60 ? Colors.red : const Color(0xFF60A5FA),
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -1957,7 +1957,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                           Text(
                             _formatTime(_timeLeft),
                             style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                              color: _timeLeft < 60 ? Colors.red : Color(0xFF2563EB),
+                              color: _timeLeft < 60 ? Colors.red : const Color(0xFF2563EB),
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -1970,8 +1970,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Color(0xFFF0F9FF),
-                        border: Border.all(color: Color(0xFF60A5FA)),
+                        color: const Color(0xFFF0F9FF),
+                        border: Border.all(color: const Color(0xFF60A5FA)),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -1984,7 +1984,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                           Text(
                             '₱${_transaction!.amount.toStringAsFixed(2)}',
                             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: Color(0xFF2563EB),
+                              color: const Color(0xFF2563EB),
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -1997,7 +1997,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Color(0xFFD5D7E0), width: 2),
+                        border: Border.all(color: const Color(0xFFD5D7E0), width: 2),
                         borderRadius: BorderRadius.circular(8),
                         color: Colors.white,
                       ),
@@ -2259,7 +2259,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
         Container(
           width: 28,
           height: 28,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: Color(0xFF2563EB),
             shape: BoxShape.circle,
           ),
@@ -2311,6 +2311,21 @@ class StorageInterface extends StatefulWidget {
 
 class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
+  bool _isLoading = false;
+
+  Future<void> _refreshDocuments() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // Call the parent's onUpload callback to reload documents
+    await Future.delayed(const Duration(milliseconds: 500)); // Small delay for UI feedback
+    widget.onUpload?.call();
+    
+    setState(() {
+      _isLoading = false;
+    });
+  }
 
   void _showUploadOptions(BuildContext context) {
     showDialog(
@@ -2536,7 +2551,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
       children: [
         Row(
           children: [
-            Icon(Icons.folder_open, size: 32, color: Color(0xFF2563EB)),
+            const Icon(Icons.folder_open, size: 32, color: Color(0xFF2563EB)),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -2545,7 +2560,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   Text(
                     'System Storage',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Color(0xFF003D99),
+                      color: const Color(0xFF003D99),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -2554,24 +2569,82 @@ class _StorageInterfaceState extends State<StorageInterface> {
                         ? 'Select documents to print'
                         : 'View and manage your saved documents',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Color(0xFF4B5563),
+                      color: const Color(0xFF4B5563),
                     ),
                   ),
                 ],
               ),
             ),
             if (!widget.printingMode)
-              ElevatedButton.icon(
-                onPressed: () => _showUploadOptions(context),
-                icon: const Icon(Icons.cloud_upload),
-                label: const Text('Upload'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : () => _refreshDocuments(),
+                    icon: _isLoading 
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh),
+                    label: const Text('Refresh'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isLoading ? Colors.grey : const Color(0xFF2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => _showUploadOptions(context),
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text('Upload'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            if (widget.printingMode)
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: ElevatedButton.icon(
+                  onPressed: _selectedDocs.isNotEmpty
+                      ? () {
+                          final selected = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
+                          widget.onSelectForPrint(selected);
+                        }
+                      : null,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Confirm Selection'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                  ),
                 ),
               ),
           ],
         ),
         const SizedBox(height: 24),
+        if (_isLoading)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              border: Border.all(color: const Color(0xFF2563EB), width: 1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: const Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Refreshing storage documents...',
+                    style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_isLoading) const SizedBox(height: 16),
         if (widget.documents.isEmpty)
           Center(
             child: Card(
@@ -2579,12 +2652,12 @@ class _StorageInterfaceState extends State<StorageInterface> {
                 padding: const EdgeInsets.all(48),
                 child: Column(
                   children: [
-                    Icon(Icons.folder_open, size: 64, color: Color(0xFF9CA3AF)),
+                    const Icon(Icons.folder_open, size: 64, color: Color(0xFF9CA3AF)),
                     const SizedBox(height: 16),
                     Text(
                       'No Documents in Storage',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Color(0xFF4B5563),
+                        color: const Color(0xFF4B5563),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -2617,7 +2690,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                             });
                           },
                         ),
-                      Icon(Icons.description, color: Color(0xFF2563EB)),
+                      const Icon(Icons.description, color: Color(0xFF2563EB)),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
@@ -2711,7 +2784,7 @@ class _GCashPaymentPageState extends State<GCashPaymentPage> {
               Text(
                 'GCash Payment',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Color(0xFF003D99),
+                  color: const Color(0xFF003D99),
                   fontWeight: FontWeight.bold,
                 ),
               ),

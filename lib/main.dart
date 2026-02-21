@@ -110,7 +110,7 @@ class _HeaderState extends State<Header> {
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: Color(0xFF2563EB),
+                              color: const Color(0xFF2563EB),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Center(
@@ -133,7 +133,7 @@ class _HeaderState extends State<Header> {
                                     .textTheme
                                     .titleMedium
                                     ?.copyWith(
-                                  color: Color(0xFF003D99),
+                                  color: const Color(0xFF003D99),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -141,7 +141,7 @@ class _HeaderState extends State<Header> {
                                 'University of Cebu',
                                 style:
                                     Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Color(0xFF4B5563),
+                                  color: const Color(0xFF4B5563),
                                 ),
                               ),
                             ],
@@ -161,7 +161,7 @@ class _HeaderState extends State<Header> {
                             onPressed: () => _handleNavigate(item['id']!),
                             style: TextButton.styleFrom(
                               backgroundColor: isActive
-                                  ? Color(0xFF2563EB)
+                                  ? const Color(0xFF2563EB)
                                   : Colors.transparent,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6),
@@ -176,7 +176,7 @@ class _HeaderState extends State<Header> {
                               style: TextStyle(
                                 color: isActive
                                     ? Colors.white
-                                    : Color(0xFF374151),
+                                    : const Color(0xFF374151),
                               ),
                             ),
                           ),
@@ -188,7 +188,7 @@ class _HeaderState extends State<Header> {
                     IconButton(
                       icon: Icon(
                         _mobileMenuOpen ? Icons.close : Icons.menu,
-                        color: Color(0xFF003D99),
+                        color: const Color(0xFF003D99),
                       ),
                       onPressed: () {
                         setState(() {
@@ -210,7 +210,7 @@ class _HeaderState extends State<Header> {
                         width: double.infinity,
                         decoration: BoxDecoration(
                           color: isActive
-                              ? Color(0xFF2563EB)
+                              ? const Color(0xFF2563EB)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -223,7 +223,7 @@ class _HeaderState extends State<Header> {
                               style: TextStyle(
                                 color: isActive
                                     ? Colors.white
-                                    : Color(0xFF374151),
+                                    : const Color(0xFF374151),
                               ),
                             ),
                           ),
@@ -249,7 +249,7 @@ class Footer extends StatelessWidget {
     final isMobile = MediaQuery.of(context).size.width < 768;
 
     return Container(
-      color: Color(0xFF111827), // gray-900
+      color: const Color(0xFF111827), // gray-900
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
       child: Column(
@@ -314,14 +314,14 @@ class Footer extends StatelessWidget {
           const SizedBox(height: 24),
           Container(
             height: 1,
-            color: Color(0xFF1F2937), // gray-800
+            color: const Color(0xFF1F2937), // gray-800
           ),
           // Copyright
           const SizedBox(height: 24),
           Text(
             '© 2025 DOCUCENTER Kiosk Project. All rights reserved.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Color(0xFF9CA3AF), // gray-400
+              color: const Color(0xFF9CA3AF), // gray-400
             ),
             textAlign: TextAlign.center,
           ),
@@ -349,7 +349,7 @@ class Footer extends StatelessWidget {
         Text(
           content,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Color(0xFFA3A9B8), // gray-400
+            color: const Color(0xFFA3A9B8), // gray-400
             height: 1.6,
           ),
         ),
@@ -461,7 +461,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       'Self-Service Document Processing Station',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: Color(0xFFDBE9F8), // blue-100
+                        color: const Color(0xFFDBE9F8), // blue-100
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -470,7 +470,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       'Revolutionizing document services with real-time monitoring and automated payment systems',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Color(0xFFF0F9FF), // blue-50
+                        color: const Color(0xFFF0F9FF), // blue-50
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -479,7 +479,7 @@ class _HomePageState extends State<HomePage> {
                       onPressed: () => _navigate('services'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
-                        foregroundColor: Color(0xFF003D99), // blue-900
+                        foregroundColor: const Color(0xFF003D99), // blue-900
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
                       ),
                       child: const Text(
@@ -542,7 +542,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'Rationale',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Color(0xFF003D99), // blue-900
+                  color: const Color(0xFF003D99), // blue-900
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -550,21 +550,21 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'The DOCUCENTER Kiosk addresses the critical need for efficient, accessible, and autonomous document processing services within the university environment. Traditional document services often suffer from long queues, limited operating hours, and manual payment processing.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Color(0xFF374151), // gray-700
+                  color: const Color(0xFF374151), // gray-700
                 ),
               ),
               const SizedBox(height: 16),
               Text(
                 'By implementing a self-service kiosk with real-time monitoring and automated payment systems, we empower students, faculty, and staff to access essential document services 24/7 while reducing operational overhead and improving service quality.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Color(0xFF374151),
+                  color: const Color(0xFF374151),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
                 'This innovative solution integrates Self-Service Technology (SST), Internet of Things (IoT) monitoring, and modern payment systems to create a seamless user experience that meets the demands of today\'s digital campus environment.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Color(0xFF374151),
+                  color: const Color(0xFF374151),
                 ),
               ),
             ],
@@ -609,7 +609,7 @@ class _HomePageState extends State<HomePage> {
     ];
 
     return Container(
-      color: Color(0xFFF9FAFB), // gray-50
+      color: const Color(0xFFF9FAFB), // gray-50
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 64),
       child: Center(
         child: ConstrainedBox(
@@ -619,7 +619,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'Core Features',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Color(0xFF003D99),
+                  color: const Color(0xFF003D99),
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -627,7 +627,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'Comprehensive document processing capabilities designed for the modern campus environment',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Color(0xFF4B5563), // gray-600
+                  color: const Color(0xFF4B5563), // gray-600
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -703,7 +703,7 @@ class _HomePageState extends State<HomePage> {
             Text(
               description,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Color(0xFF4B5563),
+                color: const Color(0xFF4B5563),
               ),
             ),
           ],
@@ -742,7 +742,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'Who Benefits?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Color(0xFF003D99),
+                  color: const Color(0xFF003D99),
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -788,7 +788,7 @@ class _HomePageState extends State<HomePage> {
         Container(
           width: 80,
           height: 80,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: Color(0xFFDEE6F8), // blue-100
             shape: BoxShape.circle,
           ),
@@ -810,7 +810,7 @@ class _HomePageState extends State<HomePage> {
         Text(
           description,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Color(0xFF4B5563),
+            color: const Color(0xFF4B5563),
           ),
           textAlign: TextAlign.center,
         ),
@@ -848,7 +848,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'The DOCUCENTER Kiosk represents a significant advancement in campus technology infrastructure, combining convenience, efficiency, and innovation.',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Color(0xFFF0F9FF), // blue-50
+                  color: const Color(0xFFF0F9FF), // blue-50
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -856,7 +856,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 'A thesis project by the College of Computer Engineering, University of Cebu - Lapu-Lapu and Mandaue Campus',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Color(0xFFDBE9F8), // blue-100
+                  color: const Color(0xFFDBE9F8), // blue-100
                 ),
                 textAlign: TextAlign.center,
               ),

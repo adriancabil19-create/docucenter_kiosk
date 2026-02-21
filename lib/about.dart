@@ -259,14 +259,14 @@ The project combines theoretical foundations from multiple disciplines including
                         color: Color(0xFFDEE6F8),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.person, color: Color(0xFF2563EB), size: 32),
+                      child: const Icon(Icons.person, color: Color(0xFF2563EB), size: 32),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
                         content,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Color(0xFF374151),
+                          color: const Color(0xFF374151),
                           height: 1.6,
                         ),
                       ),
@@ -277,7 +277,7 @@ The project combines theoretical foundations from multiple disciplines including
                 Text(
                   content,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Color(0xFF374151),
+                    color: const Color(0xFF374151),
                     height: 1.6,
                   ),
                 ),
@@ -297,11 +297,11 @@ The project combines theoretical foundations from multiple disciplines including
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Color(0xFFDEE6F8),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.person, size: 24, color: Color(0xFF2563EB)),
+              child: const Icon(Icons.person, size: 24, color: Color(0xFF2563EB)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -352,12 +352,12 @@ The project combines theoretical foundations from multiple disciplines including
             children: [
               Row(
                 children: [
-                  Icon(Icons.calendar_month, size: 28, color: Color(0xFF2563EB)),
+                  const Icon(Icons.calendar_month, size: 28, color: Color(0xFF2563EB)),
                   const SizedBox(width: 12),
                   Text(
                     'Project Timeline',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Color(0xFF003D99),
+                      color: const Color(0xFF003D99),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -388,7 +388,7 @@ The project combines theoretical foundations from multiple disciplines including
                           child: Container(
                             width: 24,
                             height: 2,
-                            color: Color(0xFF2563EB),
+                            color: const Color(0xFF2563EB),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -438,7 +438,7 @@ The project combines theoretical foundations from multiple disciplines including
               Text(
                 'Acknowledgments',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Color(0xFF003D99),
+                  color: const Color(0xFF003D99),
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
@@ -447,7 +447,7 @@ The project combines theoretical foundations from multiple disciplines including
               Text(
                 'The research team would like to express our deepest gratitude to the following individuals and organizations who made this project possible:',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Color(0xFF374151),
+                  color: const Color(0xFF374151),
                 ),
               ),
               const SizedBox(height: 16),
@@ -465,7 +465,7 @@ The project combines theoretical foundations from multiple disciplines including
               Text(
                 'This project is dedicated to advancing technological innovation in education and improving the campus experience for all members of the university community.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Color(0xFF374151),
+                  color: const Color(0xFF374151),
                   fontStyle: FontStyle.italic,
                 ),
                 textAlign: TextAlign.center,
@@ -488,7 +488,7 @@ The project combines theoretical foundations from multiple disciplines including
             child: Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Color(0xFF2563EB),
                 shape: BoxShape.circle,
               ),

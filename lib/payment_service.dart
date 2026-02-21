@@ -385,7 +385,7 @@ class PrintService {
   static Future<bool> printText(String content) async {
     try {
       final response = await http.post(
-        Uri.parse('$PRINT_API_URL'),
+        Uri.parse(PRINT_API_URL),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'content': content}),
       ).timeout(TIMEOUT_DURATION);
