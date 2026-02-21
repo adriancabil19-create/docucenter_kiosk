@@ -104,6 +104,17 @@ echo       * Change backend URL in lib\config.dart
 echo       * Disable development tools
 echo.
 
+REM Ensure nuget.exe exists for Windows builds (downloads if missing)
+if not exist "build\windows\x64\_deps\nuget-subbuild\nuget-populate-prefix\src\nuget.exe" (
+    echo nuget.exe not found in build deps, attempting to download...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%~dp0tools\fetch-nuget.ps1'"
+    if %errorlevel% neq 0 (
+        echo Failed to download nuget.exe. Please run tools\fetch-nuget.ps1 manually with PowerShell as Administrator.
+    ) else (
+        echo nuget.exe downloaded.
+    )
+)
+
 echo + Setup complete! Ready to integrate Flutter with backend.
 echo.
 

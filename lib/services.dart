@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'payment_service.dart';
 import 'storage_service.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'dart:io';
 import 'transfer_service.dart';
 import 'config.dart';
@@ -305,67 +305,14 @@ Total Pages: ${_files.length + widget.selectedDocs.fold<int>(0, (sum, doc) => su
 Cost per Page: ₱${(_calculateCost() / (_files.length + widget.selectedDocs.fold<int>(0, (sum, doc) => sum + doc.pages)) / _copies).toStringAsFixed(2)}
 Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
 
-    // Store the payment amount and print details
+    // Store the payment amount, print details and selected storage filenames
     _GCashPaymentPageState.pendingAmount = _calculateCost();
     _GCashPaymentPageState.printContent = printDetails;
+    _GCashPaymentPageState.printFiles = widget.selectedDocs.map((d) => d.name).toList();
     widget.onNavigate('payment');
   }
 
   /// Test print without payment (demo mode)
-  void _handleTestPrint() {
-    // Store demo print details
-    final demoDetails = '''
-DEMO PRINT TEST
-─────────────────
-Mode: Test/Demo Mode
-Color: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Quality: ${_quality == 'draft' ? 'Draft' : _quality == 'standard' ? 'Standard' : 'High'}
-Copies: $_copies
-
-This is a test page to verify printer connectivity.
-No payment required for this test.
-
-Test Status: Print job will be sent directly
-              to the configured system printer.
-
-Connection: Checking...''';
-
-    // Set as test payment with no amount required
-    _GCashPaymentPageState.pendingAmount = 0.0;
-    _GCashPaymentPageState.printContent = demoDetails;
-    
-    // Show snackbar and try direct print
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sending test print to printer...'),
-        backgroundColor: Colors.blue,
-        duration: Duration(seconds: 2),
-      ),
-    );
-    
-    // Try to print directly without payment
-    PrintService.printText(demoDetails).then((success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success ? 'Test print sent successfully!' : 'Printer unavailable (demo mode)'),
-            backgroundColor: success ? Colors.green : Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }).catchError((e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isPrinting) {
@@ -612,19 +559,7 @@ Connection: Checking...''';
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      onPressed: _handleTestPrint,
-                      icon: const Icon(Icons.print),
-                      label: const Text('Test Printer (Demo)'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber[600],
-                      ),
-                    ),
-                  ),
+
                 ],
               ),
             ),
@@ -999,57 +934,6 @@ Thank you for using our service!
       print('Error printing scan receipt: $e');
     }
   }
-
-  /// Test printer for scanning service
-  Future<void> _testPrintScanning() async {
-    try {
-      final testReceipt = '''
-╔═══════════════════════════════════════╗
-║    SCANNING SERVICE TEST PAGE         ║
-║       ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
-
-Test Type: Scan Preview
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Resolution: ${_dpi} DPI
-Double Scanning: ${_doubleScanning ? 'Enabled' : 'Disabled'}
-
-Preview Pages: ${_scannedPages.length}
-
-═══════════════════════════════════════
-
-Printer Test: ACTIVE
-Connection: OK
-Print Quality: Standard
-
-This is a test page to verify your
-scanning and printing setup.
-
-═══════════════════════════════════════
-Test Date: ${DateTime.now()}
-''';
-
-      final success = await PrintService.printText(testReceipt);
-      if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? 'Scan test print sent!' : 'Print service unavailable'),
-          backgroundColor: success ? Colors.green : Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Print test error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   Widget _buildScanningComplete() {
     return SingleChildScrollView(
       child: Column(
@@ -1200,18 +1084,6 @@ Test Date: ${DateTime.now()}
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _testPrintScanning,
-                      icon: const Icon(Icons.assessment),
-                      label: const Text('Test Printer (Demo)'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber[600],
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1317,59 +1189,6 @@ Thank you for using our service!
       print('Error printing copying receipt: $e');
     }
   }
-
-  /// Test printer for photocopying service
-  Future<void> _testPrintCopying() async {
-    try {
-      final testReceipt = '''
-╔═══════════════════════════════════════╗
-║   PHOTOCOPYING SERVICE TEST PAGE      ║
-║       ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
-
-Test Type: Copy Preview
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Paper Size: ${_paperSize}
-Copies: $_copies
-
-═══════════════════════════════════════
-
-Cost Calculation:
-Rate: ₱${(_colorMode == 'color' ? 3.0 : 2.0).toStringAsFixed(2)} per copy
-Total: ₱${_calculateCopyingCost().toStringAsFixed(2)}
-
-Printer Test: ACTIVE
-Connection: OK
-Copy Quality: Standard
-
-This is a test page to verify your
-photocopying and printing setup.
-
-═══════════════════════════════════════
-Test Date: ${DateTime.now()}
-''';
-
-      final success = await PrintService.printText(testReceipt);
-      if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? 'Copy test print sent!' : 'Print service unavailable'),
-          backgroundColor: success ? Colors.green : Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Print test error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   void _startPhotocopying() {
     _GCashPaymentPageState.pendingAmount = _calculateCopyingCost();
     _GCashPaymentPageState.printContent = '''PHOTOCOPYING JOB
@@ -1570,11 +1389,13 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _testPrintCopying,
-              icon: const Icon(Icons.assessment),
-              label: const Text('Test Printer (Demo)'),
+              onPressed: () {
+                _startPhotocopying();
+              },
+              icon: const Icon(Icons.copy),
+              label: const Text('Start Copying'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber[600],
+                backgroundColor: Color(0xFF2563EB),
               ),
             ),
           ),
@@ -1734,7 +1555,7 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
   }
 
   /// Handle successful payment
-  void _handlePaymentSuccess() {
+  Future<void> _handlePaymentSuccess() async {
     _countdownTimer?.cancel();
     _pollingTimer?.cancel();
     if (mounted) {
@@ -1745,6 +1566,15 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     
     // Print receipt after successful payment
     _printReceipt();
+    // After receipt, attempt to print actual files selected (if any)
+    try {
+      final filenames = _GCashPaymentPageState.printFiles;
+      if (filenames.isNotEmpty) {
+        await PrintService.printFromStorage(filenames);
+      }
+    } catch (e) {
+      // ignore print errors
+    }
     
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -1860,7 +1690,34 @@ Date: ${DateTime.now().toString().split('.')[0]}
   Future<void> _simulateSuccess() async {
     if (_transaction == null) return;
     try {
-      await _paymentService.simulatePaymentSuccess(_transaction!.transactionId);
+      // Send selected filenames to backend simulate endpoint so server prints them
+      final filenames = _GCashPaymentPageState.printFiles;
+      final resp = await _paymentService.simulatePaymentSuccess(
+        _transaction!.transactionId,
+        filenames: filenames.isNotEmpty ? filenames : null,
+      );
+
+      if (!mounted) return;
+
+      if (resp != null && resp['simulatedPaths'] != null) {
+        final List<dynamic> paths = resp['simulatedPaths'];
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Simulated print: ${paths.length} file(s) copied to PrintSimulation'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // No simulated paths returned — still indicate success
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment simulated as successful (server).'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       // Ignored
     }
@@ -1871,6 +1728,40 @@ Date: ${DateTime.now().toString().split('.')[0]}
     if (_transaction == null) return;
     try {
       await _paymentService.simulatePaymentFailure(_transaction!.transactionId);
+
+      // After simulating failure, print a cancellation receipt
+      try {
+        final cancelReceipt = '''
+╔═══════════════════════════════════════╗
+║        PAYMENT CANCELLED              ║
+║   ${DateTime.now().toString().split('.')[0]}    ║
+╚═══════════════════════════════════════╝
+
+Transaction ID: ${_transaction!.transactionId}
+Reference #: ${_transaction!.referenceNumber}
+
+Status: ✗ PAYMENT FAILED / CANCELLED
+
+Reason: Simulated failure
+
+═══════════════════════════════════════
+No files will be printed.
+
+Date: ${DateTime.now().toString().split('.')[0]}
+''';
+
+        final printed = await PrintService.printReceipt(cancelReceipt);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(printed ? 'Cancellation receipt printed.' : 'Print service unavailable (demo mode)'),
+            backgroundColor: printed ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } catch (e) {
+        print('Error printing cancellation receipt after simulated failure: $e');
+      }
     } catch (e) {
       // Ignored
     }
@@ -1879,41 +1770,27 @@ Date: ${DateTime.now().toString().split('.')[0]}
   /// (DEV ONLY) Test printer without payment
   Future<void> _testPrintDirect() async {
     try {
-      final demoReceipt = '''
-╔═══════════════════════════════════════╗
-║     PRINTING SERVICE RECEIPT          ║
-║       Demo Test - ${DateTime.now()}    ║
-╚═══════════════════════════════════════╝
+      final filenames = _GCashPaymentPageState.printFiles;
 
-Transaction ID: DEMO-${_transaction?.transactionId ?? 'TEST'}
-Reference: ${_transaction?.referenceNumber ?? 'REF-TEST'}
-
-Amount Paid: ₱${widget.amount.toStringAsFixed(2)}
-Print Quality: Test Mode
-Pages: 1
-
-═══════════════════════════════════════
-
-Status: ✓ TEST SUCCESS
-
-Printer Connection: OK
-Print Job Submitted Successfully
-
-═══════════════════════════════════════
-Thank you for using our service!
-Date: ${DateTime.now()}
-''';
-
-      // Test the print service
-      final success = await PrintService.printReceipt(demoReceipt);
-      
+      if (filenames.isNotEmpty) {
+        final success = await PrintService.printFromStorage(filenames);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? 'Print job sent successfully!' : 'Print service unavailable (demo mode)'),
+            backgroundColor: success ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      // No files selected — notify user instead of demo printing
       if (!mounted) return;
-      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? 'Print job sent successfully!' : 'Print service unavailable (demo mode)'),
-          backgroundColor: success ? Colors.green : Colors.orange,
-          duration: const Duration(seconds: 3),
+        const SnackBar(
+          content: Text('No documents selected to print.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
         ),
       );
     } catch (e) {
@@ -2528,15 +2405,19 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Selecting files...')),
                   );
-                  final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-                  if (result == null) return;
+                  final paths = await openFiles();
+                  if (paths.isEmpty) return;
                   int uploaded = 0;
-                  for (final f in result.files) {
-                    final path = f.path;
-                    final bytes = f.bytes ?? (path != null ? await File(path).readAsBytes() : null);
-                    if (bytes == null) continue;
-                    final doc = await StorageService.uploadFile(path ?? f.name, bytes, f.name, 'application/octet-stream');
-                    if (doc != null) uploaded++;
+                  for (final xFile in paths) {
+                    try {
+                      final bytes = await xFile.readAsBytes();
+                      final fileName = xFile.name;
+                      final mimeType = StorageService.getMimeType(fileName);
+                      final doc = await StorageService.uploadFile(xFile.path, bytes, fileName, mimeType);
+                      if (doc != null) uploaded++;
+                    } catch (e) {
+                      debugPrint('Failed to upload file: $e');
+                    }
                   }
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Uploaded $uploaded file(s)')),
@@ -2802,6 +2683,7 @@ class GCashPaymentPage extends StatefulWidget {
 class _GCashPaymentPageState extends State<GCashPaymentPage> {
   static double pendingAmount = 50.0;
   static String printContent = ''; // Store content to print after payment
+  static List<String> printFiles = []; // Filenames in storage to print after payment
 
   @override
   Widget build(BuildContext context) {

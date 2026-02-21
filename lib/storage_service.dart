@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http;
+import 'package:http/http.dart' show MediaType;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
@@ -51,6 +52,27 @@ class StorageDocument {
 class StorageService {
   static const String _baseUrl = 'http://localhost:5000/api/storage';
 
+  /// Get MIME type based on file extension
+  static String getMimeType(String fileName) {
+    final extension = fileName.split('.').last.toLowerCase();
+    
+    const mimeTypes = {
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'txt': 'text/plain',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'bmp': 'image/bmp',
+      'gif': 'image/gif',
+    };
+    
+    return mimeTypes[extension] ?? 'application/octet-stream';
+  }
+
   /// Upload a file to storage
   /// Returns the uploaded document if successful
   static Future<StorageDocument?> uploadFile(
@@ -67,6 +89,7 @@ class StorageService {
           'file',
           fileBytes,
           filename: fileName,
+          contentType: MediaType.parse(mimeType),
         ),
       );
 

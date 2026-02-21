@@ -51,41 +51,54 @@ const getFileFormat = (filename: string): string => {
 };
 
 /**
- * Estimate number of pages from file size (rough estimation)
+ * Estimate number of pages from file
+ * For PDFs, attempts to read page count; defaults to 1 for other formats
  */
-const estimatePages = (filename: string, sizeInBytes: number): number => {
+const estimatePages = (filename: string, filePath: string): number => {
   const format = getFileFormat(filename).toLowerCase();
   
-  // For PDFs: roughly 100KB per page
+  // For PDFs: attempt to read page count from structure
   if (format === 'pdf') {
-    return Math.max(1, Math.ceil(sizeInBytes / (100 * 1024)));
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const content = buffer.toString('latin1');
+      
+      // Find the /Count value in the PDF catalog
+      const match = content.match(/Type\s*\/Catalog[\s\S]*?\/Count\s+(\d+)/);
+      if (match && match[1]) {
+        const count = parseInt(match[1], 10);
+        return Math.max(1, count);
+      }
+      
+      // Fallback: look for /Pages count
+      const pagesMatch = content.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
+      if (pagesMatch && pagesMatch[1]) {
+        const count = parseInt(pagesMatch[1], 10);
+        return Math.max(1, count);
+      }
+      
+      return 1;
+    } catch {
+      return 1;
+    }
   }
   
-  // For images: 1 page
-  if (['jpg', 'jpeg', 'png', 'bmp', 'gif'].includes(format)) {
-    return 1;
-  }
-  
-  // For documents: estimate based on size
-  if (['doc', 'docx', 'txt'].includes(format)) {
-    return Math.max(1, Math.ceil(sizeInBytes / (50 * 1024)));
-  }
-  
+  // All other formats: 1 page
   return 1;
 };
 
 /**
- * Create document metadata from file
+ * Create document metadata from file (synchronous, fast)
  */
-const createDocumentMetadata = (filename: string, filePath: string, mimeType: string): StorageDocument => {
+const createDocumentMetadata = (filename: string, filePath: string, mimeType: string, originalName?: string): StorageDocument => {
   const stats = fs.statSync(filePath);
-  
+
   return {
     id: randomUUID(),
     name: filename,
-    originalName: filename,
+    originalName: originalName || filename,
     format: getFileFormat(filename),
-    pages: estimatePages(filename, stats.size),
+    pages: estimatePages(filename, filePath),
     size: getFileSize(stats.size),
     date: new Date(stats.mtime).toISOString().split('T')[0],
     filePath: filePath,
@@ -113,14 +126,22 @@ export const saveFile = (
         fileId, 
         originalFileName, 
         size: fileBuffer.length,
-        mimeType 
+        mimeType,
+        filename
       });
       
+      // Save file synchronously (immediate write)
       fs.writeFileSync(filePath, fileBuffer);
       
-      const document = createDocumentMetadata(originalFileName, filePath, mimeType);
+      // Create metadata immediately with accurate page count
+      const document = createDocumentMetadata(filename, filePath, mimeType, originalFileName);
       
-      logger.info('File saved successfully', { fileId, path: filePath });
+      logger.info('File saved successfully', { 
+        fileId, 
+        path: filePath, 
+        filename,
+        pages: document.pages
+      });
       
       resolve({
         success: true,
@@ -148,20 +169,23 @@ export const getAllDocuments = (): Promise<StorageResult> => {
       
       const documents: StorageDocument[] = [];
       
-      files.forEach((filename) => {
+      for (const filename of files) {
         try {
           const filePath = path.join(uploadsDir, filename);
           const stats = fs.statSync(filePath);
           
           // Skip if it's a directory
-          if (!stats.isFile()) return;
+          if (!stats.isFile()) continue;
+          
+          // Get accurate page count synchronously
+          const pageCount = estimatePages(filename, filePath);
           
           documents.push({
             id: randomUUID(),
             name: filename,
             originalName: filename,
             format: getFileFormat(filename),
-            pages: estimatePages(filename, stats.size),
+            pages: pageCount,
             size: getFileSize(stats.size),
             date: new Date(stats.mtime).toISOString().split('T')[0],
             filePath: filePath,
@@ -170,7 +194,7 @@ export const getAllDocuments = (): Promise<StorageResult> => {
         } catch (error) {
           logger.warn('Error reading file', { filename, error: String(error) });
         }
-      });
+      }
       
       // Sort by date descending
       documents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

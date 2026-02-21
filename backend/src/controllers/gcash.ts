@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { gcashService } from '../services/gcash';
+import { printFilesFromStorage } from '../services/print.service';
 import { GCashPaymentRequest, ApiResponse, GCashPaymentResponse } from '../types';
 import { sanitizeError, isValidAmount } from '../utils/helpers';
 import { verifyWebhookSignature } from '../utils/helpers';
@@ -291,11 +292,29 @@ export class GCashController {
 
       logger.info('Payment simulation - success', { transactionId });
 
-      res.status(200).json({
+      // If filenames were provided in the body, attempt to print them from storage
+      const { filenames } = req.body as { filenames?: string[] };
+      let printResult: any = null;
+      if (Array.isArray(filenames) && filenames.length > 0) {
+        try {
+          printResult = await printFilesFromStorage(filenames);
+          logger.info('Triggered print from storage for simulated success', { transactionId, filenames, printResult });
+        } catch (printErr) {
+          logger.error('Error printing files during simulated success', { transactionId, error: String(printErr) });
+        }
+      }
+
+      const responseBody: any = {
         success: true,
         data: { transactionId },
         message: 'Payment simulated as successful',
-      } as ApiResponse<any>);
+      };
+
+      if (printResult && printResult.simulatedPaths) {
+        responseBody.simulatedPaths = printResult.simulatedPaths;
+      }
+
+      res.status(200).json(responseBody as ApiResponse<any>);
     } catch (error) {
       logger.error('Error in simulatePaymentSuccess', { error: String(error) });
       res.status(500).json({

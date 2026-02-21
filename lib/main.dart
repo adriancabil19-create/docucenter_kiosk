@@ -277,7 +277,7 @@ class Footer extends StatelessWidget {
                       _buildFooterColumn(
                         context,
                         'Project Information',
-                        'Bachelor of Science in\nInformation Technology\nAcademic Year 2024-2025',
+                        'Bachelor of Science in\nComputer Engineering\nAcademic Year 2024-2025',
                       ),
                     ],
                   )
@@ -304,7 +304,7 @@ class Footer extends StatelessWidget {
                         child: _buildFooterColumn(
                           context,
                           'Project Information',
-                          'Bachelor of Science in\nInformation Technology\nAcademic Year 2024-2025',
+                          'Bachelor of Science in\nComputer Engineering\nAcademic Year 2024-2025',
                         ),
                       ),
                     ],

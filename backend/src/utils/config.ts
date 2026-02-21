@@ -39,6 +39,12 @@ export const config = {
   // Validation
   isProduction: process.env.NODE_ENV === 'production',
   isDevelopment: process.env.NODE_ENV === 'development',
+  // Print options
+  print: {
+    // Enable copying printed files to PrintSimulation folder when true.
+    // Set env var PRINT_SIMULATION_ENABLED=false to disable.
+    simulationEnabled: (process.env.PRINT_SIMULATION_ENABLED || 'true') === 'true',
+  },
   
   // Aiven / External DB (optional)
   aiven: {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { printText, printReceipt, printDocument, getAvailablePrinters } from '../services/print.service';
+import { printText, printReceipt, printDocument, getAvailablePrinters, printFilesFromStorage } from '../services/print.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -127,6 +127,38 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
       success: false,
       error: err.message,
     });
+  }
+});
+
+/**
+ * POST /api/print/from-storage
+ * Print files previously uploaded to storage by filename(s)
+ */
+router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { filenames } = req.body;
+
+    if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
+      res.status(400).json({ success: false, error: 'Missing required field: filenames' });
+      return;
+    }
+
+    logger.info('Print from storage request received', { count: filenames.length });
+
+    const result = await printFilesFromStorage(filenames);
+
+    if (result.success) {
+      // Include simulatedPaths when available for development debugging
+      const resp: any = { success: true, jobID: result.jobID, message: 'Print job submitted (from storage)' };
+      if ((result as any).simulatedPaths) resp.simulatedPaths = (result as any).simulatedPaths;
+      res.json(resp);
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    const err = error as Error;
+    logger.error('From-storage print endpoint error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

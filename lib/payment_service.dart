@@ -297,15 +297,33 @@ class GCashPaymentService {
   }
 
   /// Simulate payment success (development only)
-  Future<void> simulatePaymentSuccess(String transactionId) async {
+  /// Optionally pass filenames to instruct the backend to print files from storage
+  Future<Map<String, dynamic>?> simulatePaymentSuccess(String transactionId, {List<String>? filenames}) async {
     try {
-      await http
+      final body = (filenames != null && filenames.isNotEmpty)
+          ? jsonEncode({'filenames': filenames})
+          : null;
+
+      final response = await http
           .post(
             Uri.parse('$BACKEND_URL/simulate/success/$transactionId'),
+            headers: body != null ? {'Content-Type': 'application/json'} : null,
+            body: body,
           )
           .timeout(TIMEOUT_DURATION);
+
+      if (response.statusCode == 200) {
+        try {
+          return jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      return null;
     } catch (e) {
       // Dev endpoint, ignore errors
+      return null;
     }
   }
 
@@ -422,6 +440,36 @@ class PrintService {
       return false;
     } catch (e) {
       print('Error printing document: $e');
+      return false;
+    }
+  }
+
+  /// Print files that exist in backend storage by filename(s)
+  static Future<bool> printFromStorage(List<String> filenames) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$PRINT_API_URL/from-storage'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'filenames': filenames}),
+      ).timeout(TIMEOUT_DURATION);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        // If simulation returned paths, print them to debug and show as info
+        if (data['simulatedPaths'] != null) {
+          try {
+            final List<dynamic> paths = data['simulatedPaths'];
+            print('Simulated print files:');
+            for (final p in paths) {
+              print(p.toString());
+            }
+          } catch (_) {}
+        }
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      print('Error printing from storage: $e');
       return false;
     }
   }
