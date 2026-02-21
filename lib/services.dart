@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'payment_service.dart';
+import 'storage_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+import 'transfer_service.dart';
 import 'config.dart';
 
 class ServicesPage extends StatefulWidget {
@@ -14,26 +18,30 @@ class ServicesPage extends StatefulWidget {
 
 class _ServicesPageState extends State<ServicesPage> {
   String _activeService = 'printing';
-  final List<ScannedDocument> _savedDocuments = [
-    ScannedDocument(
-      id: '1',
-      name: 'Thesis_Chapter1.pdf',
-      format: 'PDF',
-      pages: 15,
-      date: '2025-12-09',
-      size: '2.3 MB',
-    ),
-    ScannedDocument(
-      id: '2',
-      name: 'ID_Scan.jpg',
-      format: 'JPG',
-      pages: 1,
-      date: '2025-12-08',
-      size: '1.1 MB',
-    ),
-  ];
-  List<ScannedDocument> _selectedDocsForPrint = [];
+  List<StorageDocument> _savedDocuments = [];
+  List<StorageDocument> _selectedDocsForPrint = [];
   bool _printingFromStorage = false;
+  final TransferManager _transferManager = TransferManager();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDocuments();
+    _transferManager.initializeAll();
+  }
+
+  @override
+  void dispose() {
+    _transferManager.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDocuments() async {
+    final docs = await StorageService.getDocuments();
+    setState(() {
+      _savedDocuments = docs;
+    });
+  }
 
   void _handleServiceChange(String service) {
     setState(() {
@@ -41,13 +49,30 @@ class _ServicesPageState extends State<ServicesPage> {
     });
   }
 
-  void _handleDeleteDocument(String id) {
-    setState(() {
-      _savedDocuments.removeWhere((doc) => doc.id == id);
-    });
+  void _handleDeleteDocument(String id) async {
+    final docToDelete = _savedDocuments.firstWhere((doc) => doc.id == id, orElse: () => StorageDocument(
+      id: '', name: '', originalName: '', format: '', pages: 0, size: '', date: '', mimeType: ''
+    ));
+    
+    if (docToDelete.id.isNotEmpty) {
+      final success = await StorageService.deleteDocument(docToDelete.name);
+      if (success) {
+        setState(() {
+          _savedDocuments.removeWhere((doc) => doc.id == id);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Document deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    }
   }
 
-  void _handleSelectDocForPrint(List<ScannedDocument> docs) {
+  void _handleSelectDocForPrint(List<StorageDocument> docs) {
     setState(() {
       _selectedDocsForPrint = docs;
       _activeService = 'printing';
@@ -187,21 +212,13 @@ class _ServicesPageState extends State<ServicesPage> {
       case 'scanning':
         return ScanningInterface(
           savedDocuments: _savedDocuments,
-          onAddDocument: (doc) {
-            setState(() {
-              _savedDocuments.add(doc);
-            });
-          },
+          onDocumentSaved: _loadDocuments,
           onNavigate: widget.onNavigate,
         );
       case 'photocopying':
         return PhotocopyingInterface(
           onNavigate: widget.onNavigate,
-          onAddDocument: (doc) {
-            setState(() {
-              _savedDocuments.add(doc);
-            });
-          },
+          onDocumentSaved: _loadDocuments,
         );
       case 'storage':
         return StorageInterface(
@@ -221,6 +238,8 @@ class _ServicesPageState extends State<ServicesPage> {
               _printingFromStorage = false;
             });
           },
+          onUpload: _loadDocuments,
+          transferManager: _transferManager,
         );
       default:
         return Container();
@@ -228,27 +247,9 @@ class _ServicesPageState extends State<ServicesPage> {
   }
 }
 
-class ScannedDocument {
-  final String id;
-  final String name;
-  final String format;
-  final int pages;
-  final String date;
-  final String size;
-
-  ScannedDocument({
-    required this.id,
-    required this.name,
-    required this.format,
-    required this.pages,
-    required this.date,
-    required this.size,
-  });
-}
-
 class PrintingInterface extends StatefulWidget {
   final Function() onBrowseStorage;
-  final List<ScannedDocument> selectedDocs;
+  final List<StorageDocument> selectedDocs;
   final Function() onClearSelectedDocs;
   final Function(String) onNavigate;
 
@@ -675,14 +676,14 @@ Connection: Checking...''';
 }
 
 class ScanningInterface extends StatefulWidget {
-  final List<ScannedDocument> savedDocuments;
-  final Function(ScannedDocument) onAddDocument;
+  final List<StorageDocument> savedDocuments;
+  final Function() onDocumentSaved; // Callback to reload documents
   final Function(String) onNavigate;
 
   const ScanningInterface({
     super.key,
     required this.savedDocuments,
-    required this.onAddDocument,
+    required this.onDocumentSaved,
     required this.onNavigate,
   });
 
@@ -1158,25 +1159,33 @@ Test Date: ${DateTime.now()}
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        widget.onAddDocument(
-                          ScannedDocument(
-                            id: DateTime.now().toString(),
-                            name: _documentName.isEmpty ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}.pdf' : '$_documentName.pdf',
-                            format: 'PDF',
-                            pages: _scannedPages.length,
-                            date: DateTime.now().toString().split(' ')[0],
-                            size: '${(_scannedPages.length * 250)} KB',
-                          ),
+                      onPressed: () async {
+                        // Create a mock PDF file in memory
+                        final fileName = _documentName.isEmpty 
+                          ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}.pdf' 
+                          : '$_documentName.pdf';
+                        
+                        // Save to backend storage
+                        // In a real app, you would generate the actual PDF from scanned pages
+                        List<int> pdfBytes = List.generate(250000, (i) => i % 256);
+                        
+                        final doc = await StorageService.uploadFile(
+                          fileName,
+                          pdfBytes,
+                          fileName,
+                          'application/pdf',
                         );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Saved ${_scannedPages.length} pages to storage'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                        // Print scan receipt after saving
-                        _printScanReceipt();
+                        
+                        if (doc != null && mounted) {
+                          widget.onDocumentSaved();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Saved ${_scannedPages.length} pages to storage'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                          _printScanReceipt();
+                        }
                         
                         setState(() {
                           _isScanning = false;
@@ -1249,12 +1258,12 @@ Test Date: ${DateTime.now()}
 
 class PhotocopyingInterface extends StatefulWidget {
   final Function(String) onNavigate;
-  final Function(ScannedDocument) onAddDocument;
+  final Function() onDocumentSaved; // Callback to reload documents
 
   const PhotocopyingInterface({
     super.key,
     required this.onNavigate,
-    required this.onAddDocument,
+    required this.onDocumentSaved,
   });
 
   @override
@@ -2398,12 +2407,14 @@ Date: ${DateTime.now()}
 }
 
 class StorageInterface extends StatefulWidget {
-  final List<ScannedDocument> documents;
+  final List<StorageDocument> documents;
   final Function(String) onDelete;
-  final Function(ScannedDocument) onPrint;
-  final Function(List<ScannedDocument>) onSelectForPrint;
+  final Function(StorageDocument) onPrint;
+  final Function(List<StorageDocument>) onSelectForPrint;
   final bool printingMode;
   final Function() onCancelPrintMode;
+  final Function()? onUpload;
+  final TransferManager? transferManager;
 
   const StorageInterface({
     super.key,
@@ -2413,6 +2424,8 @@ class StorageInterface extends StatefulWidget {
     required this.onSelectForPrint,
     required this.printingMode,
     required this.onCancelPrintMode,
+    this.onUpload,
+    this.transferManager,
   });
 
   @override
@@ -2431,30 +2444,132 @@ class _StorageInterfaceState extends State<StorageInterface> {
           content: const Text('Choose transfer method:'),
           actions: [
             TextButton.icon(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Bluetooth transfer started...'),
-                    backgroundColor: Colors.blue,
+                if (widget.transferManager == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  return;
+                }
+
+                final docsToTransfer = _selectedDocs.isNotEmpty
+                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+                    : widget.documents;
+
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Discovering Bluetooth devices...')));
+                final devices = await widget.transferManager!.bluetooth.discoverDevices();
+                if (devices.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
+                  return;
+                }
+
+                final selected = await showDialog<BluetoothDevice?>(
+                  context: context,
+                  builder: (ctx) => SimpleDialog(
+                    title: const Text('Select Bluetooth device'),
+                    children: devices.map((dev) => SimpleDialogOption(
+                      onPressed: () => Navigator.pop(ctx, dev),
+                      child: Text(dev.toString()),
+                    )).toList(),
                   ),
                 );
+
+                if (selected == null) return;
+
+                final connected = await widget.transferManager!.bluetooth.connectToDevice(selected.address, selected.name);
+                if (!connected) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to connect to device')));
+                  return;
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Starting Bluetooth transfer...')));
+                final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToTransfer);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
               },
               icon: const Icon(Icons.bluetooth),
               label: const Text('Bluetooth'),
             ),
             TextButton.icon(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('WiFi Hotspot transfer started...'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
+                if (widget.transferManager == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  return;
+                }
+
+                final docsToTransfer = _selectedDocs.isNotEmpty
+                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+                    : widget.documents;
+
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preparing WiFi transfer...')));
+                try {
+                  await widget.transferManager!.wifiHotspot.initialize();
+                  final link = await widget.transferManager!.wifiHotspot.generateTransferLink(docsToTransfer);
+                  await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+                    title: const Text('WiFi Transfer Link'),
+                    content: SelectableText(link),
+                    actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+                  ));
+
+                  // Optionally run server-side transfer simulation
+                  final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, docsToTransfer);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
+                }
               },
               icon: const Icon(Icons.wifi),
               label: const Text('WiFi Hotspot'),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.pop(context);
+                // Import from USB/local filesystem
+                try {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Selecting files...')),
+                  );
+                  final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+                  if (result == null) return;
+                  int uploaded = 0;
+                  for (final f in result.files) {
+                    final path = f.path;
+                    final bytes = f.bytes ?? (path != null ? await File(path).readAsBytes() : null);
+                    if (bytes == null) continue;
+                    final doc = await StorageService.uploadFile(path ?? f.name, bytes, f.name, 'application/octet-stream');
+                    if (doc != null) uploaded++;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Uploaded $uploaded file(s)')),
+                  );
+                  // notify parent to reload documents
+                  widget.onUpload?.call();
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('USB upload failed: $e')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.usb),
+              label: const Text('From USB'),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.pop(context);
+                if (widget.transferManager == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  return;
+                }
+
+                final docsToTransfer = _selectedDocs.isNotEmpty
+                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+                    : widget.documents;
+
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
+                final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+              },
+              icon: const Icon(Icons.download),
+              label: const Text('Export to USB'),
             ),
             TextButton.icon(
               onPressed: () {

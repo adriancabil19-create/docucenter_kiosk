@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'storage_service.dart';
 
 /// Transfer method types
-enum TransferMethod { bluetooth, wifiHotspot, qrCode }
+enum TransferMethod { usb, bluetooth, wifiHotspot, qrCode }
 
 /// Transfer status
 enum TransferStatus { idle, initializing, transferring, completed, failed, cancelled }
@@ -39,7 +41,7 @@ abstract class TransferService {
   Future<void> initialize();
 
   /// Start transferring documents
-  Future<TransferResult> startTransfer(List<ScannedDocument> documents);
+  Future<TransferResult> startTransfer(List<StorageDocument> documents);
 
   /// Get current transfer progress (0.0 to 1.0)
   double getProgress();
@@ -53,24 +55,21 @@ abstract class TransferService {
   }
 }
 
-/// Bluetooth Transfer Service
-class BluetoothTransferService extends TransferService {
-  // ignore: unused_field
-  static const String _serviceName = 'WebDoc Bluetooth Transfer';
-  // ignore: unused_field
-  String? _deviceAddress;
+/// USB Transfer Service
+/// Exports documents to a local folder (e.g., external storage or documents dir).
+class USBTransferService extends TransferService {
   double _progress = 0.0;
+  Directory? _exportDir;
 
   @override
   Future<void> initialize() async {
     try {
       status = TransferStatus.initializing;
-      // TODO: Initialize Bluetooth adapter
-      // This would typically involve:
-      // - Checking if Bluetooth is available
-      // - Requesting permissions
-      // - Starting discovery (if needed)
-      await Future.delayed(const Duration(milliseconds: 500));
+      final baseDir = await getApplicationDocumentsDirectory();
+      _exportDir = Directory('${baseDir.path}${Platform.pathSeparator}WebDoc_Export');
+      if (!await _exportDir!.exists()) {
+        await _exportDir!.create(recursive: true);
+      }
       status = TransferStatus.idle;
     } catch (e) {
       status = TransferStatus.failed;
@@ -79,31 +78,100 @@ class BluetoothTransferService extends TransferService {
   }
 
   @override
-  Future<TransferResult> startTransfer(List<ScannedDocument> documents) async {
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
-      final transferredIds = <String>[];
-
-      // TODO: Implement Bluetooth file transfer
-      // This would typically involve:
-      // - Scanning for available devices
-      // - Connecting to a device
-      // - Sending files over Bluetooth RFCOMM or L2CAP
-      // - Monitoring transfer progress
+      final transferred = <String>[];
 
       for (int i = 0; i < documents.length; i++) {
-        // Simulate transfer
+        final doc = documents[i];
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null) {
+          // skip failed file
+          continue;
+        }
+
+        final fileName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
+        final outFile = File('${_exportDir!.path}${Platform.pathSeparator}$fileName');
+        await outFile.writeAsBytes(bytes, flush: true);
+        transferred.add(doc.id);
+        _progress = (i + 1) / documents.length;
+      }
+
+      status = TransferStatus.completed;
+      return TransferResult(
+        success: transferred.isNotEmpty,
+        message: transferred.isNotEmpty
+            ? 'Exported ${transferred.length} document(s) to ${_exportDir!.path}'
+            : 'No documents were exported',
+        transferredDocumentIds: transferred,
+        timestamp: DateTime.now(),
+      );
+    } catch (e) {
+      status = TransferStatus.failed;
+      return TransferResult(
+        success: false,
+        message: 'USB export failed: $e',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  double getProgress() => _progress;
+
+  @override
+  Future<void> cancel() async {
+    try {
+      status = TransferStatus.cancelled;
+      _progress = 0.0;
+    } catch (e) {
+      status = TransferStatus.failed;
+      rethrow;
+    }
+  }
+}
+
+/// Bluetooth Transfer Service
+class BluetoothTransferService extends TransferService {
+  static const String _serviceName = 'WebDoc Bluetooth Transfer';
+  String? _deviceAddress;
+  double _progress = 0.0;
+
+  @override
+  Future<void> initialize() async {
+    try {
+      status = TransferStatus.initializing;
+      // TODO: initialize bluetooth adapter and permissions
+      await Future.delayed(const Duration(milliseconds: 300));
+      status = TransferStatus.idle;
+    } catch (e) {
+      status = TransferStatus.failed;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    try {
+      status = TransferStatus.transferring;
+      _progress = 0.0;
+      final transferred = <String>[];
+
+      for (int i = 0; i < documents.length; i++) {
+        // TODO: implement real bluetooth transfer
         await Future.delayed(const Duration(milliseconds: 200));
-        transferredIds.add(documents[i].id);
+        transferred.add(documents[i].id);
         _progress = (i + 1) / documents.length;
       }
 
       status = TransferStatus.completed;
       return TransferResult(
         success: true,
-        message: 'Successfully transferred ${documents.length} document(s) via Bluetooth',
-        transferredDocumentIds: transferredIds,
+        message: 'Simulated Bluetooth transfer completed',
+        transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -122,40 +190,36 @@ class BluetoothTransferService extends TransferService {
 
   @override
   Future<void> cancel() async {
-    try {
-      // TODO: Disconnect from device and cancel transfer
-      status = TransferStatus.cancelled;
-      _progress = 0.0;
-    } catch (e) {
-      status = TransferStatus.failed;
-      rethrow;
-    }
+    status = TransferStatus.cancelled;
+    _progress = 0.0;
   }
 
-  /// Discover nearby Bluetooth devices
+  /// Discover nearby Bluetooth devices (simulated)
   Future<List<BluetoothDevice>> discoverDevices() async {
-    // TODO: Implement device discovery
-    // Return list of available Bluetooth devices
-    return [];
+    // TODO: replace with real discovery logic
+    await Future.delayed(const Duration(milliseconds: 200));
+    return [
+      BluetoothDevice(address: '00:11:22:33:44:55', name: 'WebDoc-Printer-1'),
+      BluetoothDevice(address: 'AA:BB:CC:DD:EE:FF', name: 'WebDoc-Phone-1'),
+    ];
   }
 
-  /// Connect to a specific device
-  Future<void> connectToDevice(String deviceAddress) async {
+  /// Connect to a specific device. Returns true on success.
+  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
     try {
       status = TransferStatus.initializing;
       _deviceAddress = deviceAddress;
-      // TODO: Implement connection logic
-      await Future.delayed(const Duration(milliseconds: 500));
+      // TODO: implement actual connection
+      await Future.delayed(const Duration(milliseconds: 400));
       status = TransferStatus.idle;
+      return true;
     } catch (e) {
       status = TransferStatus.failed;
-      rethrow;
+      return false;
     }
   }
 
-  /// Disconnect from device
   Future<void> disconnect() async {
-    // TODO: Implement disconnection logic
     _deviceAddress = null;
     status = TransferStatus.idle;
   }
@@ -164,9 +228,7 @@ class BluetoothTransferService extends TransferService {
 /// WiFi Hotspot Transfer Service
 class WiFiHotspotTransferService extends TransferService {
   static const int defaultPort = 8888;
-  // ignore: unused_field
   String? _hotspotName;
-  // ignore: unused_field
   String? _hotspotPassword;
   late int _port;
   double _progress = 0.0;
@@ -176,12 +238,8 @@ class WiFiHotspotTransferService extends TransferService {
     try {
       status = TransferStatus.initializing;
       _port = defaultPort;
-      // TODO: Initialize WiFi adapter
-      // This would typically involve:
-      // - Checking WiFi is available
-      // - Requesting network permissions
-      // - Potentially starting a local server
-      await Future.delayed(const Duration(milliseconds: 500));
+      // TODO: initialize wifi/hotspot and permissions
+      await Future.delayed(const Duration(milliseconds: 300));
       status = TransferStatus.idle;
     } catch (e) {
       status = TransferStatus.failed;
@@ -190,31 +248,24 @@ class WiFiHotspotTransferService extends TransferService {
   }
 
   @override
-  Future<TransferResult> startTransfer(List<ScannedDocument> documents) async {
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
-      final transferredIds = <String>[];
-
-      // TODO: Implement WiFi transfer (e.g., via HTTP server or WebSocket)
-      // This would typically involve:
-      // - Starting a local HTTP/WebSocket server
-      // - Creating transfer links for each file
-      // - Monitoring connection and transfer progress
-      // - Handling multiple concurrent transfers
+      final transferred = <String>[];
 
       for (int i = 0; i < documents.length; i++) {
-        // Simulate transfer
+        // TODO: implement real wifi/http transfer
         await Future.delayed(const Duration(milliseconds: 200));
-        transferredIds.add(documents[i].id);
+        transferred.add(documents[i].id);
         _progress = (i + 1) / documents.length;
       }
 
       status = TransferStatus.completed;
       return TransferResult(
         success: true,
-        message: 'Successfully transferred ${documents.length} document(s) via WiFi',
-        transferredDocumentIds: transferredIds,
+        message: 'Simulated WiFi transfer completed',
+        transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -233,34 +284,24 @@ class WiFiHotspotTransferService extends TransferService {
 
   @override
   Future<void> cancel() async {
-    try {
-      // TODO: Stop server and cancel transfer
-      status = TransferStatus.cancelled;
-      _progress = 0.0;
-    } catch (e) {
-      status = TransferStatus.failed;
-      rethrow;
-    }
+    status = TransferStatus.cancelled;
+    _progress = 0.0;
   }
 
-  /// Get local network information
   Future<Map<String, String>> getNetworkInfo() async {
-    // TODO: Get local IP address, device hostname, etc.
+    // TODO: return actual network info
     return {
-      'ip': '192.168.x.x',
-      'hostname': 'web-doc-device',
+      'ip': '192.168.0.100',
+      'hostname': 'webdoc-device',
       'port': _port.toString(),
     };
   }
 
-  /// Create a shareable WiFi transfer link
-  Future<String> generateTransferLink(List<ScannedDocument> documents) async {
-    // TODO: Generate and return transfer link
-    // Format: http://device-ip:port/transfer?token=xxx
-    return 'http://192.168.x.x:$_port/transfer?token=xxx';
+  Future<String> generateTransferLink(List<StorageDocument> documents) async {
+    final info = await getNetworkInfo();
+    return 'http://${info['ip']}:${info['port']}/transfer?token=demo';
   }
 
-  /// Set custom port for transfer server
   void setPort(int port) {
     _port = port;
   }
@@ -277,11 +318,7 @@ class QrCodeTransferService extends TransferService {
   Future<void> initialize() async {
     try {
       status = TransferStatus.initializing;
-      // TODO: Initialize QR code service
-      // This might involve:
-      // - Starting a backend service for receiving transfers
-      // - Setting up authentication tokens
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 200));
       status = TransferStatus.idle;
     } catch (e) {
       status = TransferStatus.failed;
@@ -290,32 +327,24 @@ class QrCodeTransferService extends TransferService {
   }
 
   @override
-  Future<TransferResult> startTransfer(List<ScannedDocument> documents) async {
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
-      final transferredIds = <String>[];
-
-      // TODO: Implement QR code transfer flow
-      // This would typically involve:
-      // - Creating a secure transfer session
-      // - Generating QR code data
-      // - Waiting for client connection via QR code
-      // - Transferring files over secure connection
-      // - Keeping track of successful transfers
+      final transferred = <String>[];
 
       for (int i = 0; i < documents.length; i++) {
-        // Simulate transfer
+        // TODO: implement QR-code driven transfer
         await Future.delayed(const Duration(milliseconds: 200));
-        transferredIds.add(documents[i].id);
+        transferred.add(documents[i].id);
         _progress = (i + 1) / documents.length;
       }
 
       status = TransferStatus.completed;
       return TransferResult(
         success: true,
-        message: 'Successfully transferred ${documents.length} document(s) via QR Code',
-        transferredDocumentIds: transferredIds,
+        message: 'Simulated QR transfer completed',
+        transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -334,38 +363,19 @@ class QrCodeTransferService extends TransferService {
 
   @override
   Future<void> cancel() async {
-    try {
-      // TODO: Revoke transfer token and close session
-      status = TransferStatus.cancelled;
-      _transferToken = null;
-      _transferLink = null;
-      _progress = 0.0;
-    } catch (e) {
-      status = TransferStatus.failed;
-      rethrow;
-    }
+    status = TransferStatus.cancelled;
+    _transferToken = null;
+    _transferLink = null;
+    _progress = 0.0;
   }
 
-  /// Generate QR code data for transfer
-  Future<String> generateQrCodeData(List<ScannedDocument> documents) async {
-    try {
-      // TODO: Call backend to create transfer session and get QR code data
-      // This should return encoded data that contains:
-      // - Transfer session ID
-      // - Security token
-      // - Document list
-      // - Expiration time
-      _transferToken = 'TOKEN_${DateTime.now().millisecondsSinceEpoch}';
-      _transferLink = 'https://webdoc.transfer?session=$_transferToken';
-      _tokenExpiration = DateTime.now().add(const Duration(minutes: 10));
-
-      return _transferLink ?? '';
-    } catch (e) {
-      rethrow;
-    }
+  Future<String> generateQrCodeData(List<StorageDocument> documents) async {
+    _transferToken = 'TOKEN_${DateTime.now().millisecondsSinceEpoch}';
+    _transferLink = 'https://webdoc.transfer/session=$_transferToken';
+    _tokenExpiration = DateTime.now().add(const Duration(minutes: 10));
+    return _transferLink!;
   }
 
-  /// Get transfer session details
   Future<Map<String, dynamic>> getSessionDetails() async {
     return {
       'token': _transferToken,
@@ -375,21 +385,16 @@ class QrCodeTransferService extends TransferService {
     };
   }
 
-  /// Revoke transfer session
   Future<void> revokeSession() async {
-    try {
-      // TODO: Call backend to revoke session
-      _transferToken = null;
-      _transferLink = null;
-      _tokenExpiration = null;
-    } catch (e) {
-      rethrow;
-    }
+    _transferToken = null;
+    _transferLink = null;
+    _tokenExpiration = null;
   }
 }
 
 /// Manager for coordinating transfer operations
 class TransferManager {
+  final USBTransferService usb = USBTransferService();
   final BluetoothTransferService bluetooth = BluetoothTransferService();
   final WiFiHotspotTransferService wifiHotspot = WiFiHotspotTransferService();
   final QrCodeTransferService qrCode = QrCodeTransferService();
@@ -398,6 +403,7 @@ class TransferManager {
   Future<void> initializeAll() async {
     try {
       await Future.wait([
+        usb.initialize(),
         bluetooth.initialize(),
         wifiHotspot.initialize(),
         qrCode.initialize(),
@@ -410,7 +416,7 @@ class TransferManager {
   /// Transfer documents using specified method
   Future<TransferResult> transferDocuments(
     TransferMethod method,
-    List<ScannedDocument> documents,
+    List<StorageDocument> documents,
   ) async {
     final service = _getService(method);
     return service.startTransfer(documents);
@@ -419,6 +425,7 @@ class TransferManager {
   /// Get service for transfer method
   TransferService _getService(TransferMethod method) {
     return switch (method) {
+      TransferMethod.usb => usb,
       TransferMethod.bluetooth => bluetooth,
       TransferMethod.wifiHotspot => wifiHotspot,
       TransferMethod.qrCode => qrCode,
@@ -427,6 +434,7 @@ class TransferManager {
 
   /// Clean up all services
   void dispose() {
+    usb.dispose();
     bluetooth.dispose();
     wifiHotspot.dispose();
     qrCode.dispose();
