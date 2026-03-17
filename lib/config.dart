@@ -12,12 +12,17 @@ const String FLUTTER_APP_VERSION = '1.0.0';
 
 /// Backend API base URL
 /// Change this to match your deployment environment
-/// 
-/// Development:  http://localhost:5000/api/gcash
-/// Staging:      https://staging-api.yourdomain.com/api/gcash
-/// Production:   https://api.yourdomain.com/api/gcash
+///
+/// Development:  http://localhost:5000
+/// Staging:      https://staging-api.yourdomain.com
+/// Production:   https://api.yourdomain.com
 class BackendConfig {
-  static const String baseUrl = 'http://localhost:5000/api/gcash';
+  /// Root server URL (no trailing slash)
+  static const String serverUrl = 'http://localhost:5000';
+
+  static const String baseUrl = '$serverUrl/api/gcash';
+  static const String printApiUrl = '$serverUrl/api/print';
+  static const String storageApiUrl = '$serverUrl/api/storage';
   
   // Endpoint paths
   static const String createPaymentPath = '/create-payment';

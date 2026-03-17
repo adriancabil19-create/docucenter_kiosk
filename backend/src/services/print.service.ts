@@ -19,207 +19,191 @@ interface PrintResult {
   simulatedPaths?: string[];
 }
 
-/**
- * Print text content using the system printer
- */
-export const printText = async (text: string, options?: Partial<PrintOptions>): Promise<PrintResult> => {
-  try {
-    const jobID = `JOB-${Date.now()}`;
-    logger.info('Print request received', { jobID, contentLength: text.length });
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-    // Try Method 1: Native printer module (Windows/Linux)
-    try {
-      const printer = require('printer');
-      logger.info('Printer module loaded', { jobID });
-      
-      return new Promise((resolve, reject) => {
-        printer.printDirect({
-          data: text,
-          type: options?.type || 'RAW',
-          success: (resultJobID: string) => {
-            logger.info('Print job submitted via printer module', { jobID, resultJobID });
-            resolve({
-              success: true,
-              jobID: resultJobID || jobID,
-              method: 'printer-module',
-            });
-          },
-          error: (err: Error) => {
-            logger.warn('Printer module failed, trying system method', { jobID, error: err.message });
-            // Fall back to system printing
-            printViaSystem(text, jobID, options).then(resolve).catch(() => reject(err));
-          },
-        });
-      });
-    } catch (moduleErr) {
-      logger.warn('Printer module not available, using system printing', { jobID, error: String(moduleErr) });
-      return printViaSystem(text, jobID, options);
+/** Root of the project (two levels above /backend/src/services) */
+const projectRoot = path.resolve(__dirname, '../../..');
+
+/** Uploads directory */
+const uploadsDir = path.resolve(projectRoot, 'Uploads');
+
+/** PrintSimulation directory */
+const printSimDir = path.resolve(projectRoot, 'PrintSimulation');
+
+/**
+ * Copy file to PrintSimulation folder (when simulation mode is on) and
+ * return the destination path.
+ */
+const copyToSimulation = (srcPath: string, filename: string): string | null => {
+  if (!config.print.simulationEnabled) return null;
+  try {
+    if (!fs.existsSync(printSimDir)) {
+      fs.mkdirSync(printSimDir, { recursive: true });
     }
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Print service error', { error: err.message, stack: err.stack });
-    return {
-      success: false,
-      error: err.message,
-    };
+    const dest = path.join(printSimDir, `${Date.now()}_${filename}`);
+    fs.copyFileSync(srcPath, dest);
+    logger.info('Simulation copy saved', { dest });
+    return dest;
+  } catch (err) {
+    logger.warn('Failed to copy to PrintSimulation', { error: String(err) });
+    return null;
   }
 };
 
 /**
- * Print via system command (Windows/Linux fallback)
+ * Safe path check — prevents directory traversal
  */
-const printViaSystem = async (text: string, jobID: string, options?: Partial<PrintOptions>): Promise<PrintResult> => {
-  try {
-    const platform = os.platform();
-    logger.info('Attempting system print', { jobID, platform });
+const isSafePath = (filePath: string, baseDir: string): boolean => {
+  const resolved = path.resolve(filePath);
+  const base = path.resolve(baseDir);
+  return resolved.startsWith(base + path.sep);
+};
 
-    if (platform === 'win32') {
-      // Windows: Try multiple methods
-      
-      // Method 1: Direct USB port write (common for kiosk printers)
-      try {
-        logger.info('Trying direct USB port write', { jobID });
-        const fs_sync = require('fs');
-        fs_sync.writeFileSync('\\\\.\\USB001', text); // USB printer port
-        logger.info('Print sent via USB port', { jobID });
-        return {
-          success: true,
-          jobID,
-          method: 'usb-port',
-        };
-      } catch (usbErr) {
-        logger.warn('USB port write failed', { jobID, error: String(usbErr) });
-      }
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF printing via pdf-to-printer (Windows) or lp (Linux/macOS)
+// ─────────────────────────────────────────────────────────────────────────────
 
-      // Method 2: Direct LPT port (parallel printer)
-      try {
-        logger.info('Trying direct LPT port write', { jobID });
-        const fs_sync = require('fs');
-        fs_sync.writeFileSync('\\\\.\\LPT1', text);
-        logger.info('Print sent via LPT1 port', { jobID });
-        return {
-          success: true,
-          jobID,
-          method: 'lpt-port',
-        };
-      } catch (lptErr) {
-        logger.warn('LPT port write failed', { jobID, error: String(lptErr) });
-      }
+/**
+ * Print a PDF file using the best available method for the current platform.
+ */
+const printPdfFile = async (
+  filePath: string,
+  jobID: string
+): Promise<{ success: boolean; method: string; error?: string }> => {
+  const platform = os.platform();
 
-      // Method 3: COM port (serial printer)
-      try {
-        logger.info('Trying direct COM port write', { jobID });
-        const fs_sync = require('fs');
-        fs_sync.writeFileSync('\\\\.\\COM1', text);
-        logger.info('Print sent via COM1 port', { jobID });
-        return {
-          success: true,
-          jobID,
-          method: 'com-port',
-        };
-      } catch (comErr) {
-        logger.warn('COM port write failed', { jobID, error: String(comErr) });
-      }
-
-      // Method 4: File-based printing - save to a print folder
-      try {
-        logger.info('Trying file-based printing', { jobID });
-        const printFolder = 'C:\\PrintQueue';
-        if (!fs.existsSync(printFolder)) {
-          fs.mkdirSync(printFolder, { recursive: true });
-        }
-        const filePath = path.join(printFolder, `print_${jobID}.txt`);
-        fs.writeFileSync(filePath, text, 'utf-8');
-        logger.info('Print file saved for printing', { jobID, filePath });
-        
-        // Try to print using file
-        try {
-          execSync(`notepad /p "${filePath}"`, { stdio: 'pipe', timeout: 5000 });
-          logger.info('Print sent via notepad', { jobID });
-        } catch (notepadErr) {
-          logger.info('Notepad print attempt completed', { jobID });
-        }
-        
-        return {
-          success: true,
-          jobID,
-          method: 'file-based',
-        };
-      } catch (fileErr) {
-        logger.warn('File-based printing failed', { jobID, error: String(fileErr) });
-      }
-
-      // Method 5: PowerShell Out-Printer
-      try {
-        logger.info('Trying PowerShell Out-Printer', { jobID });
-        const tempFile = path.join(os.tmpdir(), `print_${jobID}.txt`);
-        fs.writeFileSync(tempFile, text, 'utf-8');
-        execSync(`powershell -Command "Get-Content -Path '${tempFile}' | Out-Printer"`, { stdio: 'pipe', timeout: 10000 });
-        logger.info('Print sent via Out-Printer', { jobID });
-        fs.unlinkSync(tempFile);
-        return {
-          success: true,
-          jobID,
-          method: 'out-printer',
-        };
-      } catch (psErr) {
-        logger.warn('PowerShell Out-Printer failed', { jobID, error: String(psErr) });
-      }
-
-      // Method 6: wmic print command
-      try {
-        logger.info('Trying wmic printer list', { jobID });
-        const printers = execSync('wmic printjob list', { encoding: 'utf-8' });
-        logger.info('Available printers', { jobID, printers: printers.substring(0, 200) });
-      } catch (wmicErr) {
-        logger.warn('wmic query failed', { jobID, error: String(wmicErr) });
-      }
-
-      throw new Error('All Windows print methods failed');
-    } else if (platform === 'linux') {
-      // Linux: Use lp or lpr
-      const tempFile = path.join(os.tmpdir(), `print_${jobID}.txt`);
-      fs.writeFileSync(tempFile, text, 'utf-8');
-      
-      try {
-        execSync(`lp "${tempFile}"`, { stdio: 'pipe' });
-        logger.info('Print job submitted via lp command', { jobID });
-      } catch (lpErr) {
-        execSync(`lpr "${tempFile}"`, { stdio: 'pipe' });
-        logger.info('Print job submitted via lpr command', { jobID });
-      }
-      
-      fs.unlinkSync(tempFile);
-      return {
-        success: true,
+  if (platform === 'win32') {
+    try {
+      // pdf-to-printer bundles SumatraPDF and handles Windows print queues correctly
+      const pdfToPrinter = await import('pdf-to-printer');
+      const printOptions = config.print.printerName
+        ? { printer: config.print.printerName }
+        : undefined;
+      await pdfToPrinter.default.print(filePath, printOptions);
+      logger.info('PDF printed via pdf-to-printer', { jobID, filePath });
+      return { success: true, method: 'pdf-to-printer' };
+    } catch (err) {
+      logger.warn('pdf-to-printer failed, falling back to Start-Process', {
         jobID,
-        method: 'linux-lp',
-      };
-    } else if (platform === 'darwin') {
-      // macOS: Use lp
-      const tempFile = path.join(os.tmpdir(), `print_${jobID}.txt`);
-      fs.writeFileSync(tempFile, text, 'utf-8');
-      execSync(`lp "${tempFile}"`, { stdio: 'pipe' });
-      logger.info('Print job submitted via macOS lp command', { jobID });
-      fs.unlinkSync(tempFile);
-      return {
-        success: true,
-        jobID,
-        method: 'macos-lp',
-      };
+        error: String(err).substring(0, 120),
+      });
     }
 
-    return {
-      success: false,
-      error: `Unsupported platform: ${platform}`,
-    };
+    // Fallback: PowerShell Start-Process with Print verb
+    try {
+      const escaped = filePath.replace(/'/g, "''");
+      const printerArg = config.print.printerName
+        ? `-DefaultPrinter "${config.print.printerName.replace(/"/g, '\\"')}"`
+        : '';
+      execSync(
+        `powershell -NoProfile -Command "Start-Process -FilePath '${escaped}' -Verb Print ${printerArg} -Wait"`,
+        { stdio: 'pipe', timeout: 15000, windowsHide: true }
+      );
+      logger.info('PDF printed via Start-Process', { jobID });
+      return { success: true, method: 'start-process' };
+    } catch (err) {
+      logger.warn('Start-Process failed', { jobID, error: String(err).substring(0, 120) });
+    }
+
+    // Last resort: print.exe
+    try {
+      const target = config.print.printerName
+        ? `/D:"${config.print.printerName}"`
+        : '';
+      execSync(`print ${target} "${filePath}"`, {
+        stdio: 'pipe',
+        timeout: 15000,
+        windowsHide: true,
+      } as object);
+      logger.info('PDF printed via print.exe', { jobID });
+      return { success: true, method: 'print-exe' };
+    } catch (err) {
+      logger.warn('print.exe failed', { jobID, error: String(err).substring(0, 120) });
+    }
+
+    return { success: false, method: 'windows-all-failed', error: 'All Windows PDF print methods failed' };
+  }
+
+  // Linux / macOS — use lp
+  try {
+    const printerArg = config.print.printerName ? `-d "${config.print.printerName}"` : '';
+    execSync(`lp ${printerArg} "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
+    logger.info('PDF printed via lp', { jobID, platform });
+    return { success: true, method: 'lp' };
+  } catch (err) {
+    logger.warn('lp failed, trying lpr', { jobID, error: String(err).substring(0, 120) });
+    try {
+      execSync(`lpr "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
+      logger.info('PDF printed via lpr', { jobID });
+      return { success: true, method: 'lpr' };
+    } catch (lprErr) {
+      return { success: false, method: 'lp-failed', error: String(lprErr) };
+    }
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Text printing (for raw text / receipts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Print text content using the system printer
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const printText = async (text: string, options?: Partial<PrintOptions>): Promise<PrintResult> => {
+  const jobID = `JOB-${Date.now()}`;
+  logger.info('Print text request', { jobID, contentLength: text.length });
+
+  const platform = os.platform();
+  const tempFile = path.join(os.tmpdir(), `print_${jobID}.txt`);
+
+  try {
+    fs.writeFileSync(tempFile, text, 'utf-8');
+
+    if (platform === 'win32') {
+      // PowerShell Out-Printer (works for text)
+      try {
+        const printerArg = config.print.printerName
+          ? `-Name "${config.print.printerName.replace(/"/g, '\\"')}"`
+          : '';
+        execSync(
+          `powershell -NoProfile -Command "Get-Content -Path '${tempFile.replace(/'/g, "''")}' | Out-Printer ${printerArg}"`,
+          { stdio: 'pipe', timeout: 10000, windowsHide: true }
+        );
+        logger.info('Text printed via Out-Printer', { jobID });
+        return { success: true, jobID, method: 'out-printer' };
+      } catch (err) {
+        logger.warn('Out-Printer failed', { jobID, error: String(err).substring(0, 120) });
+      }
+
+      // Notepad silent print fallback
+      try {
+        execSync(`notepad /p "${tempFile}"`, { stdio: 'pipe', timeout: 8000, windowsHide: true });
+        logger.info('Text printed via notepad', { jobID });
+        return { success: true, jobID, method: 'notepad' };
+      } catch (err) {
+        logger.warn('Notepad print failed', { jobID, error: String(err).substring(0, 120) });
+      }
+
+      return { success: false, jobID, error: 'All Windows text print methods failed' };
+    }
+
+    // Linux / macOS
+    try {
+      execSync(`lp "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
+      return { success: true, jobID, method: 'lp' };
+    } catch {
+      execSync(`lpr "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
+      return { success: true, jobID, method: 'lpr' };
+    }
   } catch (error) {
     const err = error as Error;
-    logger.error('System print method failed', { jobID, error: err.message, stack: err.stack });
-    return {
-      success: false,
-      error: err.message,
-    };
+    logger.error('printText error', { jobID, error: err.message });
+    return { success: false, jobID, error: err.message };
+  } finally {
+    try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
   }
 };
 
@@ -228,9 +212,7 @@ const printViaSystem = async (text: string, jobID: string, options?: Partial<Pri
  */
 export const printReceipt = async (receiptContent: string): Promise<PrintResult> => {
   logger.info('Printing receipt', { contentLength: receiptContent.length });
-  return printText(receiptContent, {
-    type: 'RAW',
-  });
+  return printText(receiptContent, { type: 'RAW' });
 };
 
 /**
@@ -241,215 +223,137 @@ export const printDocument = async (
   documentName?: string
 ): Promise<PrintResult> => {
   logger.info('Printing document', { documentName });
-  return printText(documentContent, {
-    type: 'RAW',
-  });
+  return printText(documentContent, { type: 'RAW' });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Print files from storage
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Print files located in the backend Uploads directory.
- * KIOSK MODE: Keeps everything local and secure.
- * Files are copied to Windows Print Queue and sent to printer.
+ * Print files located in the Uploads directory.
+ * PDFs are handled by pdf-to-printer (Windows) or lp (Linux/macOS).
+ * When simulation mode is on, files are also copied to PrintSimulation/.
  */
 export const printFilesFromStorage = async (filenames: string[]): Promise<PrintResult> => {
-  try {
-    const uploadsDir = path.join(__dirname, '../../..', 'Uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      logger.warn('Uploads directory does not exist', { uploadsDir });
-      return { success: false, error: 'Uploads directory not found' };
-    }
-
-    // Ensure PrintQueue exists on the kiosk
-    const printQueue = path.join('C:', 'PrintQueue');
-    if (!fs.existsSync(printQueue)) {
-      fs.mkdirSync(printQueue, { recursive: true });
-      logger.info('Created PrintQueue directory', { printQueue });
-    }
-
-    let processedCount = 0;
-    const platform = os.platform();
-
-    for (const filename of filenames) {
-      const filePath = path.join(uploadsDir, filename);
-
-      // Prevent directory traversal
-      if (!filePath.startsWith(uploadsDir)) {
-        logger.warn('Attempted directory traversal', { filename });
-        continue;
-      }
-
-      if (!fs.existsSync(filePath)) {
-        logger.warn('File not found', { filename });
-        continue;
-      }
-
-      try {
-        if (platform === 'win32') {
-          // WINDOWS KIOSK: Copy file and send to printer
-          const dest = path.join(printQueue, filename);
-          fs.copyFileSync(filePath, dest);
-          logger.info('✓ File copied to PrintQueue', { filename, destination: dest });
-          
-          const { execSync } = require('child_process');
-          const destWithBackslashes = dest.replace(/\//g, '\\');
-          
-          let printSuccess = false;
-          
-          // Method 1: PowerShell direct printer via WMI
-          if (!printSuccess) {
-            try {
-              logger.info('Attempting PowerShell WMI printer method', { filename });
-              const psCmd = `
-$file = "${destWithBackslashes}"
-$printer = "Brother MFC-J2730DW Printer"
-Add-Type -AssemblyName System.Printing
-[System.Printing.LocalPrintServer]::new().GetPrintQueue($printer).AddJob("Print Job", $file, $false) | Out-Null
-`;
-              execSync(`powershell -NoProfile -Command "${psCmd.replace(/"/g, '\\"')}"`, {
-                stdio: 'pipe',
-                timeout: 8000,
-                shell: true,
-                windowsHide: true
-              });
-              logger.info('✓ Print submitted via PowerShell WMI', { filename });
-              printSuccess = true;
-              processedCount++;
-            } catch (wmiErr) {
-              logger.warn('PowerShell WMI failed', { error: String(wmiErr).substring(0, 80) });
-            }
-          }
-          
-          // Method 2: Use rundll32 to invoke the Print verb
-          if (!printSuccess) {
-            try {
-              logger.info('Attempting rundll32 print verb', { filename });
-              execSync(`rundll32 shell32.dll, ShellExec_RunDLL "${destWithBackslashes}"`, {
-                stdio: 'pipe',
-                timeout: 5000,
-                shell: true,
-                windowsHide: true
-              });
-              logger.info('✓ Print submitted via rundll32', { filename });
-              printSuccess = true;
-              processedCount++;
-            } catch (runErr) {
-              logger.warn('rundll32 failed', { error: String(runErr).substring(0, 80) });
-            }
-          }
-          
-          // Method 3: Try print.exe one more time with timeout
-          if (!printSuccess) {
-            try {
-              logger.info('Attempting print.exe (final attempt)', { filename });
-              execSync(`print /D:"Brother MFC-J2730DW Printer" "${destWithBackslashes}"`, {
-                stdio: 'pipe',
-                timeout: 15000,
-                shell: true,
-                windowsHide: true
-              });
-              logger.info('✓ Print sent via print.exe', { filename });
-              printSuccess = true;
-              processedCount++;
-            } catch (printErr) {
-              logger.warn('print.exe failed', { error: String(printErr).substring(0, 80) });
-            }
-          }
-          
-          // Method 4: Last resort - copy to spooler directory manually
-          if (!printSuccess) {
-            try {
-              logger.info('Attempting manual spooler directory copy', { filename });
-              const spoolDir = 'C:\\Windows\\System32\\spool\\PRINTERS';
-              if (fs.existsSync(spoolDir)) {
-                const spoolFile = path.join(spoolDir, `${Date.now()}_${filename}`);
-                fs.copyFileSync(dest, spoolFile);
-                logger.info('✓ Copied to spooler directory', { filename, spoolFile });
-                printSuccess = true;
-                processedCount++;
-              } else {
-                logger.warn('Spooler directory not found', { spoolDir });
-              }
-            } catch (spoolErr) {
-              logger.warn('Spooler copy failed', { error: String(spoolErr).substring(0, 80) });
-            }
-          }
-          
-          // Method 5: If absolutely nothing works, at least it's in PrintQueue
-          if (!printSuccess) {
-            logger.info('✓ File queued in C:\\PrintQueue - manual printing may be required', { filename });
-            processedCount++;
-          }
-        } else if (platform === 'linux') {
-          // LINUX KIOSK: Use CUPS/lp directly
-          const tempFile = path.join(os.tmpdir(), filename);
-          fs.copyFileSync(filePath, tempFile);
-          try {
-            execSync(`lp "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
-            logger.info('✓ Print job sent via lp', { filename });
-            processedCount++;
-          } catch (err) {
-            logger.error('lp command failed', { filename, error: String(err) });
-          }
-          try { fs.unlinkSync(tempFile); } catch {}
-        } else if (platform === 'darwin') {
-          // MACOS KIOSK: Use lp command
-          const tempFile = path.join(os.tmpdir(), filename);
-          fs.copyFileSync(filePath, tempFile);
-          try {
-            execSync(`lp "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
-            logger.info('✓ Print job sent via lp', { filename });
-            processedCount++;
-          } catch (err) {
-            logger.error('lp command failed', { filename, error: String(err) });
-          }
-          try { fs.unlinkSync(tempFile); } catch {}
-        }
-      } catch (fileErr) {
-        logger.error('Error processing file for printing', { filename, error: String(fileErr) });
-      }
-    }
-
-    if (processedCount === 0) {
-      return { 
-        success: false, 
-        error: 'No files were successfully queued for printing',
-        jobID: `JOB-${Date.now()}`
-      };
-    }
-
-    logger.info('Batch print job completed', { totalFiles: filenames.length, processedCount });
-    return { 
-      success: true, 
-      jobID: `JOB-${Date.now()}`, 
-      method: 'kiosk-local-print'
-    };
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error in printFilesFromStorage', { error: err.message });
-    return { success: false, error: err.message };
+  if (!fs.existsSync(uploadsDir)) {
+    logger.warn('Uploads directory does not exist', { uploadsDir });
+    return { success: false, error: 'Uploads directory not found' };
   }
+
+  let processedCount = 0;
+  const simulatedPaths: string[] = [];
+  const jobID = `JOB-${Date.now()}`;
+
+  for (const filename of filenames) {
+    const filePath = path.join(uploadsDir, filename);
+
+    if (!isSafePath(filePath, uploadsDir)) {
+      logger.warn('Attempted directory traversal', { filename });
+      continue;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      logger.warn('File not found in storage', { filename });
+      continue;
+    }
+
+    try {
+      const ext = path.extname(filename).toLowerCase();
+      let printSuccess = false;
+
+      if (ext === '.pdf') {
+        const result = await printPdfFile(filePath, jobID);
+        printSuccess = result.success;
+        if (!result.success) {
+          logger.error('PDF print failed', { filename, error: result.error });
+        }
+      } else {
+        // For non-PDF files, read as text and use printText
+        try {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const result = await printText(content);
+          printSuccess = result.success;
+        } catch (readErr) {
+          logger.error('Could not read file as text', { filename, error: String(readErr) });
+        }
+      }
+
+      // Simulation copy (regardless of print outcome — useful for demo)
+      const simPath = copyToSimulation(filePath, filename);
+      if (simPath) simulatedPaths.push(simPath);
+
+      if (printSuccess) processedCount++;
+    } catch (fileErr) {
+      logger.error('Error processing file for printing', { filename, error: String(fileErr) });
+    }
+  }
+
+  if (processedCount === 0 && !config.print.simulationEnabled) {
+    return {
+      success: false,
+      error: 'No files were successfully sent to the printer',
+      jobID,
+      simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
+    };
+  }
+
+  logger.info('Batch print job completed', {
+    totalFiles: filenames.length,
+    processedCount,
+    simulatedCount: simulatedPaths.length,
+  });
+
+  return {
+    success: true,
+    jobID,
+    method: 'kiosk-storage-print',
+    simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
+  };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Printer enumeration
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get available printers
+ * Get available printers via pdf-to-printer, with platform fallbacks
  */
 export const getAvailablePrinters = async (): Promise<string[]> => {
   try {
-    let printer: any;
-    try {
-      printer = require('printer');
-    } catch (err) {
-      logger.warn('Printer module not available');
-      return [];
-    }
+    const pdfToPrinter = await import('pdf-to-printer');
+    const printers = await pdfToPrinter.default.getPrinters();
+    const names = printers.map((p: { name: string }) => p.name).filter(Boolean);
+    logger.info('Retrieved printers via pdf-to-printer', { count: names.length });
+    return names;
+  } catch (importErr) {
+    logger.warn('pdf-to-printer not available for printer list', { error: String(importErr) });
+  }
 
-    const printers = printer.getPrinters();
-    logger.info('Retrieved printers', { count: printers.length });
-    return printers.map((p: any) => p.name || p);
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Error getting printers', { error: err.message });
+  // Fallback: PowerShell on Windows
+  if (os.platform() === 'win32') {
+    try {
+      const out = execSync(
+        'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
+        { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+      );
+      const names = out.split('\n').map((s) => s.trim()).filter(Boolean);
+      logger.info('Retrieved printers via PowerShell', { count: names.length });
+      return names;
+    } catch (err) {
+      logger.warn('PowerShell printer list failed', { error: String(err) });
+    }
+  }
+
+  // Fallback: lpstat on Linux/macOS
+  try {
+    const out = execSync('lpstat -a', { encoding: 'utf-8', timeout: 5000 });
+    const names = out.split('\n')
+      .map((line) => line.split(' ')[0])
+      .filter(Boolean);
+    logger.info('Retrieved printers via lpstat', { count: names.length });
+    return names;
+  } catch {
     return [];
   }
 };

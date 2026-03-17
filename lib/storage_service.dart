@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/http.dart' show MediaType;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'config.dart';
 
 class StorageDocument {
   final String id;
@@ -50,7 +51,7 @@ class StorageDocument {
 }
 
 class StorageService {
-  static const String _baseUrl = 'http://localhost:5000/api/storage';
+  static String get _baseUrl => BackendConfig.storageApiUrl;
 
   /// Get MIME type based on file extension
   static String getMimeType(String fileName) {

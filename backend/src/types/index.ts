@@ -27,13 +27,14 @@ export interface GCashPaymentRequest {
 }
 
 export interface GCashPaymentResponse {
+  success: boolean;
   data: {
     transactionId: string;
     referenceNumber: string;
     qrCode: string;
     expiresIn: number;
+    amount: number;
   };
-  status: 'success' | 'error';
   message: string;
 }
 

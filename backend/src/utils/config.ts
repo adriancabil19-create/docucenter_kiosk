@@ -44,6 +44,8 @@ export const config = {
     // Enable copying printed files to PrintSimulation folder when true.
     // Set env var PRINT_SIMULATION_ENABLED=false to disable.
     simulationEnabled: (process.env.PRINT_SIMULATION_ENABLED || 'true') === 'true',
+    // Name of the printer to use. Leave empty to use the system default.
+    printerName: process.env.PRINTER_NAME || '',
   },
   
   // Aiven / External DB (optional)

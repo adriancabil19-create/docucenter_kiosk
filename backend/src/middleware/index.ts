@@ -84,6 +84,7 @@ export const requestLoggingMiddleware = (req: Request, res: Response, next: Next
 /**
  * Error handling middleware
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const errorHandlingMiddleware = (
   err: any,
   req: Request,

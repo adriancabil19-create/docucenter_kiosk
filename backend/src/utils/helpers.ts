@@ -16,10 +16,11 @@ export const generateSignature = (payload: string, secret: string = config.gcash
  */
 export const verifyWebhookSignature = (payload: string, signature: string, secret: string = config.gcash.webhookSecret): boolean => {
   const expectedSignature = generateSignature(payload, secret);
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expectedSignature);
+  // timingSafeEqual requires equal-length buffers; differing lengths mean invalid signature
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 };
 
 /**

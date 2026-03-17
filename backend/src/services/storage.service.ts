@@ -21,17 +21,30 @@ interface StorageResult {
   error?: string;
 }
 
+interface FileMeta {
+  originalName: string;
+  mimeType: string;
+}
+
 // Get the Uploads directory path (relative to project root)
 const getUploadsDir = (): string => {
-  const uploadsDir = path.join(__dirname, '../../..', 'Uploads');
-  
-  // Ensure directory exists
+  const uploadsDir = path.resolve(__dirname, '../../..', 'Uploads');
+
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
     logger.info('Created Uploads directory', { path: uploadsDir });
   }
-  
+
   return uploadsDir;
+};
+
+/**
+ * Safe path validation — guards against directory traversal
+ */
+const isSafePath = (filePath: string, baseDir: string): boolean => {
+  const resolved = path.resolve(filePath);
+  const base = path.resolve(baseDir);
+  return resolved.startsWith(base + path.sep);
 };
 
 /**
@@ -47,54 +60,79 @@ const getFileSize = (sizeInBytes: number): string => {
  * Get file format from filename
  */
 const getFileFormat = (filename: string): string => {
-  return filename.split('.').pop()?.toUpperCase() || 'UNKNOWN';
+  return path.extname(filename).replace('.', '').toUpperCase() || 'UNKNOWN';
 };
 
 /**
- * Estimate number of pages from file
- * For PDFs, attempts to read page count; defaults to 1 for other formats
+ * Estimate number of pages from file.
+ * For PDFs, attempts to read page count from structure; defaults to 1 for other formats.
  */
 const estimatePages = (filename: string, filePath: string): number => {
-  const format = getFileFormat(filename).toLowerCase();
-  
-  // For PDFs: attempt to read page count from structure
-  if (format === 'pdf') {
+  const ext = path.extname(filename).toLowerCase();
+
+  if (ext === '.pdf') {
     try {
       const buffer = fs.readFileSync(filePath);
       const content = buffer.toString('latin1');
-      
-      // Find the /Count value in the PDF catalog
+
       const match = content.match(/Type\s*\/Catalog[\s\S]*?\/Count\s+(\d+)/);
-      if (match && match[1]) {
-        const count = parseInt(match[1], 10);
-        return Math.max(1, count);
-      }
-      
-      // Fallback: look for /Pages count
+      if (match?.[1]) return Math.max(1, parseInt(match[1], 10));
+
       const pagesMatch = content.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
-      if (pagesMatch && pagesMatch[1]) {
-        const count = parseInt(pagesMatch[1], 10);
-        return Math.max(1, count);
-      }
-      
+      if (pagesMatch?.[1]) return Math.max(1, parseInt(pagesMatch[1], 10));
+
       return 1;
     } catch {
       return 1;
     }
   }
-  
-  // All other formats: 1 page
+
   return 1;
 };
 
 /**
- * Create document metadata from file (synchronous, fast)
+ * Sidecar metadata path for a given file UUID (no extension)
  */
-const createDocumentMetadata = (filename: string, filePath: string, mimeType: string, originalName?: string): StorageDocument => {
+const metaPath = (uploadsDir: string, fileUuid: string): string =>
+  path.join(uploadsDir, `${fileUuid}.meta.json`);
+
+/**
+ * Read sidecar metadata for a file, returning defaults if absent
+ */
+const readMeta = (uploadsDir: string, fileUuid: string, fallbackName: string): FileMeta => {
+  const mp = metaPath(uploadsDir, fileUuid);
+  try {
+    if (fs.existsSync(mp)) {
+      return JSON.parse(fs.readFileSync(mp, 'utf-8')) as FileMeta;
+    }
+  } catch {
+    // ignore malformed sidecar
+  }
+  return { originalName: fallbackName, mimeType: 'application/octet-stream' };
+};
+
+/**
+ * Write sidecar metadata for a file
+ */
+const writeMeta = (uploadsDir: string, fileUuid: string, meta: FileMeta): void => {
+  fs.writeFileSync(metaPath(uploadsDir, fileUuid), JSON.stringify(meta), 'utf-8');
+};
+
+/**
+ * Create document metadata from file.
+ * The stable ID is derived from the filename UUID (strip extension).
+ */
+const createDocumentMetadata = (
+  filename: string,
+  filePath: string,
+  mimeType: string,
+  originalName?: string
+): StorageDocument => {
   const stats = fs.statSync(filePath);
+  const fileUuid = path.basename(filename, path.extname(filename));
 
   return {
-    id: randomUUID(),
+    id: fileUuid,
     name: filename,
     originalName: originalName || filename,
     format: getFileFormat(filename),
@@ -117,101 +155,92 @@ export const saveFile = (
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
-      const fileId = randomUUID();
+      const fileUuid = randomUUID();
       const ext = path.extname(originalFileName);
-      const filename = `${fileId}${ext}`;
+      const filename = `${fileUuid}${ext}`;
       const filePath = path.join(uploadsDir, filename);
-      
-      logger.info('Saving file to storage', { 
-        fileId, 
-        originalFileName, 
+
+      logger.info('Saving file to storage', {
+        fileUuid,
+        originalFileName,
         size: fileBuffer.length,
         mimeType,
-        filename
-      });
-      
-      // Save file synchronously (immediate write)
-      fs.writeFileSync(filePath, fileBuffer);
-      
-      // Create metadata immediately with accurate page count
-      const document = createDocumentMetadata(filename, filePath, mimeType, originalFileName);
-      
-      logger.info('File saved successfully', { 
-        fileId, 
-        path: filePath, 
         filename,
-        pages: document.pages
       });
-      
-      resolve({
-        success: true,
-        data: document,
+
+      fs.writeFileSync(filePath, fileBuffer);
+
+      // Persist sidecar so originalName and mimeType survive relisting
+      writeMeta(uploadsDir, fileUuid, { originalName: originalFileName, mimeType });
+
+      const document = createDocumentMetadata(filename, filePath, mimeType, originalFileName);
+
+      logger.info('File saved successfully', {
+        fileUuid,
+        path: filePath,
+        filename,
+        pages: document.pages,
       });
+
+      resolve({ success: true, data: document });
     } catch (error) {
       const err = error as Error;
       logger.error('Error saving file', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };
 
 /**
- * Get all stored documents
+ * Get all stored documents (skips .meta.json sidecars)
  */
 export const getAllDocuments = (): Promise<StorageResult> => {
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
       const files = fs.readdirSync(uploadsDir);
-      
+
       const documents: StorageDocument[] = [];
-      
+
       for (const filename of files) {
+        // Skip sidecar metadata files
+        if (filename.endsWith('.meta.json')) continue;
+
         try {
           const filePath = path.join(uploadsDir, filename);
           const stats = fs.statSync(filePath);
-          
-          // Skip if it's a directory
+
           if (!stats.isFile()) continue;
-          
-          // Get accurate page count synchronously
-          const pageCount = estimatePages(filename, filePath);
-          
+
+          const fileUuid = path.basename(filename, path.extname(filename));
+          const meta = readMeta(uploadsDir, fileUuid, filename);
+
           documents.push({
-            id: randomUUID(),
+            id: fileUuid,
             name: filename,
-            originalName: filename,
+            originalName: meta.originalName,
             format: getFileFormat(filename),
-            pages: pageCount,
+            pages: estimatePages(filename, filePath),
             size: getFileSize(stats.size),
             date: new Date(stats.mtime).toISOString().split('T')[0],
             filePath: filePath,
-            mimeType: 'application/octet-stream',
+            mimeType: meta.mimeType,
           });
         } catch (error) {
           logger.warn('Error reading file', { filename, error: String(error) });
         }
       }
-      
+
       // Sort by date descending
       documents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
+
       logger.info('Retrieved all documents', { count: documents.length });
-      
-      resolve({
-        success: true,
-        data: documents,
-      });
+
+      resolve({ success: true, data: documents });
     } catch (error) {
       const err = error as Error;
       logger.error('Error retrieving documents', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };
@@ -224,41 +253,30 @@ export const getDocument = (filename: string): Promise<StorageResult> => {
     try {
       const uploadsDir = getUploadsDir();
       const filePath = path.join(uploadsDir, filename);
-      
-      // Prevent directory traversal attacks
-      if (!filePath.startsWith(uploadsDir)) {
+
+      if (!isSafePath(filePath, uploadsDir)) {
         logger.warn('Attempted directory traversal', { filename });
-        resolve({
-          success: false,
-          error: 'Invalid file path',
-        });
+        resolve({ success: false, error: 'Invalid file path' });
         return;
       }
-      
+
       if (!fs.existsSync(filePath)) {
         logger.warn('File not found', { filename });
-        resolve({
-          success: false,
-          error: 'File not found',
-        });
+        resolve({ success: false, error: 'File not found' });
         return;
       }
-      
-      const document = createDocumentMetadata(filename, filePath, 'application/octet-stream');
-      
+
+      const fileUuid = path.basename(filename, path.extname(filename));
+      const meta = readMeta(uploadsDir, fileUuid, filename);
+      const document = createDocumentMetadata(filename, filePath, meta.mimeType, meta.originalName);
+
       logger.info('Retrieved document', { filename });
-      
-      resolve({
-        success: true,
-        data: document,
-      });
+
+      resolve({ success: true, data: document });
     } catch (error) {
       const err = error as Error;
       logger.error('Error retrieving document', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };
@@ -271,133 +289,106 @@ export const getFileBuffer = (filename: string): Promise<{ success: boolean; buf
     try {
       const uploadsDir = getUploadsDir();
       const filePath = path.join(uploadsDir, filename);
-      
-      // Prevent directory traversal attacks
-      if (!filePath.startsWith(uploadsDir)) {
+
+      if (!isSafePath(filePath, uploadsDir)) {
         logger.warn('Attempted directory traversal on download', { filename });
-        resolve({
-          success: false,
-          error: 'Invalid file path',
-        });
+        resolve({ success: false, error: 'Invalid file path' });
         return;
       }
-      
+
       if (!fs.existsSync(filePath)) {
         logger.warn('File not found for download', { filename });
-        resolve({
-          success: false,
-          error: 'File not found',
-        });
+        resolve({ success: false, error: 'File not found' });
         return;
       }
-      
+
       const buffer = fs.readFileSync(filePath);
-      
+
       logger.info('Retrieved file buffer', { filename, size: buffer.length });
-      
-      resolve({
-        success: true,
-        buffer: buffer,
-      });
+
+      resolve({ success: true, buffer });
     } catch (error) {
       const err = error as Error;
       logger.error('Error retrieving file buffer', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };
 
 /**
- * Delete document from storage
+ * Delete document from storage (also removes sidecar)
  */
 export const deleteDocument = (filename: string): Promise<StorageResult> => {
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
       const filePath = path.join(uploadsDir, filename);
-      
-      // Prevent directory traversal attacks
-      if (!filePath.startsWith(uploadsDir)) {
+
+      if (!isSafePath(filePath, uploadsDir)) {
         logger.warn('Attempted directory traversal on delete', { filename });
-        resolve({
-          success: false,
-          error: 'Invalid file path',
-        });
+        resolve({ success: false, error: 'Invalid file path' });
         return;
       }
-      
+
       if (!fs.existsSync(filePath)) {
         logger.warn('File not found for deletion', { filename });
-        resolve({
-          success: false,
-          error: 'File not found',
-        });
+        resolve({ success: false, error: 'File not found' });
         return;
       }
-      
+
       fs.unlinkSync(filePath);
-      
+
+      // Remove sidecar if present
+      const fileUuid = path.basename(filename, path.extname(filename));
+      const mp = metaPath(uploadsDir, fileUuid);
+      if (fs.existsSync(mp)) {
+        try { fs.unlinkSync(mp); } catch { /* ignore */ }
+      }
+
       logger.info('Document deleted', { filename });
-      
-      resolve({
-        success: true,
-      });
+
+      resolve({ success: true });
     } catch (error) {
       const err = error as Error;
       logger.error('Error deleting document', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };
 
 /**
- * Get storage statistics
+ * Get storage statistics (excludes sidecar files)
  */
 export const getStorageStats = (): Promise<{ success: boolean; stats?: { totalFiles: number; totalSize: string }; error?: string }> => {
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
       const files = fs.readdirSync(uploadsDir);
-      
+
       let totalSize = 0;
       let totalFiles = 0;
-      
-      files.forEach((filename) => {
+
+      for (const filename of files) {
+        if (filename.endsWith('.meta.json')) continue;
         try {
           const filePath = path.join(uploadsDir, filename);
           const stats = fs.statSync(filePath);
-          
           if (stats.isFile()) {
             totalSize += stats.size;
             totalFiles += 1;
           }
-        } catch (error) {
+        } catch {
           logger.warn('Error reading file stats', { filename });
         }
-      });
-      
+      }
+
       logger.info('Retrieved storage stats', { totalFiles, totalSize });
-      
-      resolve({
-        success: true,
-        stats: {
-          totalFiles,
-          totalSize: getFileSize(totalSize),
-        },
-      });
+
+      resolve({ success: true, stats: { totalFiles, totalSize: getFileSize(totalSize) } });
     } catch (error) {
       const err = error as Error;
       logger.error('Error retrieving storage stats', { error: err.message });
-      resolve({
-        success: false,
-        error: err.message,
-      });
+      resolve({ success: false, error: err.message });
     }
   });
 };

@@ -42,17 +42,18 @@ export class GCashController {
       });
 
       const response: GCashPaymentResponse = {
+        success: true,
         data: {
           transactionId: transaction.transactionId,
           referenceNumber: transaction.referenceNumber,
           qrCode: transaction.qrCode,
           expiresIn: config.payment.timeoutSeconds,
+          amount: transaction.amount,
         },
-        status: 'success',
         message: 'Payment created successfully',
       };
 
-      res.status(201).json(response);
+      res.status(200).json(response);
     } catch (error) {
       logger.error('Error in createPayment', { error: String(error) });
       res.status(500).json({

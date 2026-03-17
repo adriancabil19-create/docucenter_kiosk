@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'config.dart';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const String BACKEND_URL = 'http://localhost:5000/api/gcash';
+String get BACKEND_URL => BackendConfig.baseUrl;
 const Duration TIMEOUT_DURATION = Duration(seconds: 30);
 const Duration POLLING_INTERVAL = Duration(seconds: 3);
 
@@ -378,14 +379,12 @@ class GCashPaymentService {
 // Print Service
 // ============================================================================
 
-const String PRINT_API_URL = 'http://localhost:5000/api/print';
-
 class PrintService {
   /// Print raw text content
   static Future<bool> printText(String content) async {
     try {
       final response = await http.post(
-        Uri.parse(PRINT_API_URL),
+        Uri.parse(BackendConfig.printApiUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'content': content}),
       ).timeout(TIMEOUT_DURATION);
@@ -405,7 +404,7 @@ class PrintService {
   static Future<bool> printReceipt(String receiptContent) async {
     try {
       final response = await http.post(
-        Uri.parse('$PRINT_API_URL/receipt'),
+        Uri.parse('${BackendConfig.printApiUrl}/receipt'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'content': receiptContent}),
       ).timeout(TIMEOUT_DURATION);
@@ -425,7 +424,7 @@ class PrintService {
   static Future<bool> printDocument(String content, {String? documentName}) async {
     try {
       final response = await http.post(
-        Uri.parse('$PRINT_API_URL/document'),
+        Uri.parse('${BackendConfig.printApiUrl}/document'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'content': content,
@@ -448,7 +447,7 @@ class PrintService {
   static Future<bool> printFromStorage(List<String> filenames) async {
     try {
       final response = await http.post(
-        Uri.parse('$PRINT_API_URL/from-storage'),
+        Uri.parse('${BackendConfig.printApiUrl}/from-storage'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'filenames': filenames}),
       ).timeout(TIMEOUT_DURATION);
@@ -478,7 +477,7 @@ class PrintService {
   static Future<List<String>> getAvailablePrinters() async {
     try {
       final response = await http.get(
-        Uri.parse('$PRINT_API_URL/printers'),
+        Uri.parse('${BackendConfig.printApiUrl}/printers'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(TIMEOUT_DURATION);
 

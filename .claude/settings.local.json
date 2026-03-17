@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Projects/Thesis/2026/docucenter_kiosk/**)",
+      "Read(//d/Projects-Shem/Thesis/2026/docucenter_kiosk/**)",
+      "WebSearch",
+      "Bash(cmd //c \"where flutter\")",
+      "Bash(powershell -Command \"Get-Command flutter -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(\"/c/Users/Shaloh/OneDrive/Desktop/Projects/Flutter/flutter/bin/flutter\" analyze:*)",
+      "Bash(powershell -Command \"& ''C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat'' analyze ''D:\\\\Projects-Shem\\\\Thesis\\\\2026\\\\docucenter_kiosk''\")",
+      "Bash(powershell -Command \"ls ''C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\'' -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command \"Test-Path ''C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin''\")",
+      "Bash(powershell -Command \"Get-Item ''C:\\\\Users\\\\Shaloh\\\\OneDrive'' -ErrorAction SilentlyContinue; ls ''C:\\\\Users\\\\Shaloh'' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell -Command \"& ''D:\\\\Projects-Shem\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat'' analyze ''D:\\\\Projects-Shem\\\\Thesis\\\\2026\\\\docucenter_kiosk''\")",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}

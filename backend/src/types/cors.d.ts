@@ -1,4 +1,5 @@
 declare module 'cors' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   import { Express, Request, Response, NextFunction } from 'express';
 
   interface CorsOptions {
