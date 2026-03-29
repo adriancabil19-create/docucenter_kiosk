@@ -4,11 +4,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { config } from '../utils/config';
+import PDFDocument from 'pdfkit';
 
 interface PrintOptions {
-  data: string;
   type?: string;
   printerName?: string;
+  paperSize?: string; // 'A4' | 'Folio' | 'Letter' | 'Legal'
 }
 
 interface PrintResult {
@@ -18,6 +19,36 @@ interface PrintResult {
   method?: string;
   simulatedPaths?: string[];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paper size helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalise paper size string to a value PDFKit accepts (uppercase).
+ * PDFKit supports: A4, FOLIO, LETTER, LEGAL, TABLOID, EXECUTIVE, etc.
+ */
+const toPdfKitSize = (size?: string): string => {
+  if (!size) return 'A4';
+  const s = size.toUpperCase();
+  // PDFKit uses 'FOLIO', SumatraPDF uses 'folio' — unify here to uppercase
+  const map: Record<string, string> = {
+    FOLIO: 'FOLIO',
+    A4: 'A4',
+    LETTER: 'LETTER',
+    LEGAL: 'LEGAL',
+    TABLOID: 'TABLOID',
+  };
+  return map[s] ?? 'A4';
+};
+
+/**
+ * Normalise paper size for pdf-to-printer / SumatraPDF (lowercase preferred).
+ */
+const toSumatraSize = (size?: string): string | undefined => {
+  if (!size) return undefined;
+  return size.toLowerCase();
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -31,30 +62,6 @@ const uploadsDir = path.resolve(projectRoot, 'Uploads');
 
 /** PrintSimulation directory */
 const printSimDir = path.resolve(projectRoot, 'PrintSimulation');
-
-/**
- * Ensure PrintSimulation directory exists and copy/write a file into it.
- * Returns the destination path, or null on failure.
- */
-const writeToSimulation = (content: string | Buffer, filename: string): string | null => {
-  if (!config.print.simulationEnabled) return null;
-  try {
-    if (!fs.existsSync(printSimDir)) {
-      fs.mkdirSync(printSimDir, { recursive: true });
-    }
-    const dest = path.join(printSimDir, `${Date.now()}_${filename}`);
-    if (typeof content === 'string') {
-      fs.writeFileSync(dest, content, 'utf-8');
-    } else {
-      fs.writeFileSync(dest, content);
-    }
-    logger.info('Simulation file saved', { dest });
-    return dest;
-  } catch (err) {
-    logger.warn('Failed to write to PrintSimulation', { error: String(err) });
-    return null;
-  }
-};
 
 /**
  * Copy an existing file to PrintSimulation folder.
@@ -76,6 +83,25 @@ const copyToSimulation = (srcPath: string, filename: string): string | null => {
 };
 
 /**
+ * Write text content to PrintSimulation folder as a .txt file.
+ */
+const writeTextToSimulation = (text: string, filename: string): string | null => {
+  if (!config.print.simulationEnabled) return null;
+  try {
+    if (!fs.existsSync(printSimDir)) {
+      fs.mkdirSync(printSimDir, { recursive: true });
+    }
+    const dest = path.join(printSimDir, `${Date.now()}_${filename}`);
+    fs.writeFileSync(dest, text, 'utf-8');
+    logger.info('Simulation text file saved', { dest });
+    return dest;
+  } catch (err) {
+    logger.warn('Failed to write simulation text', { error: String(err) });
+    return null;
+  }
+};
+
+/**
  * Safe path check — prevents directory traversal
  */
 const isSafePath = (filePath: string, baseDir: string): boolean => {
@@ -85,35 +111,78 @@ const isSafePath = (filePath: string, baseDir: string): boolean => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PDF printing via pdf-to-printer (Windows) or lp (Linux/macOS)
+// Text → PDF conversion (PDFKit)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Render plain text to a PDF file using PDFKit.
+ * Uses Courier (monospace) so receipt columns align correctly.
+ * Returns the path of the created PDF file.
+ */
+const renderTextToPdf = (
+  text: string,
+  outputPath: string,
+  paperSize: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: toPdfKitSize(paperSize),
+        margin: 40,
+        autoFirstPage: true,
+      });
+
+      const stream = fs.createWriteStream(outputPath);
+      doc.pipe(stream);
+
+      doc
+        .font('Courier')
+        .fontSize(9)
+        .text(text, { lineGap: 1, paragraphGap: 0 });
+
+      doc.end();
+
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core PDF printing via pdf-to-printer (Windows) or lp (Linux/macOS)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Print a PDF file using the best available method for the current platform.
  *
  * Windows strategy (in order):
- *   1. pdf-to-printer (bundles SumatraPDF — best option, supports printer selection)
- *   2. PowerShell Start-Process -Verb Print (uses system default printer)
+ *   1. pdf-to-printer (bundles SumatraPDF — best, supports printer + paper size)
+ *   2. PowerShell Start-Process -Verb Print (system default printer, no size control)
  *   3. print.exe (legacy fallback)
- *
- * Note: Start-Process does NOT support printer selection via a flag. If a
- * specific printer is needed and pdf-to-printer fails, use the environment
- * variable PRINTER_NAME to configure it for pdf-to-printer instead.
  */
 const printPdfFile = async (
   filePath: string,
-  jobID: string
+  jobID: string,
+  paperSize?: string
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
   if (platform === 'win32') {
-    // ── Method 1: pdf-to-printer (uses SumatraPDF, best for Windows) ──────────
+    // ── Method 1: pdf-to-printer (SumatraPDF) ───────────────────────────────
     try {
       const pdfToPrinter = await import('pdf-to-printer');
-      const printOptions: { printer?: string; silent?: boolean } = { silent: true };
+      const printOptions: {
+        printer?: string;
+        silent?: boolean;
+        paperSize?: string;
+      } = { silent: true };
       if (config.print.printerName) printOptions.printer = config.print.printerName;
+      const sumatraSize = toSumatraSize(paperSize);
+      if (sumatraSize) printOptions.paperSize = sumatraSize;
       await pdfToPrinter.default.print(filePath, printOptions);
-      logger.info('PDF printed via pdf-to-printer', { jobID, filePath });
+      logger.info('PDF printed via pdf-to-printer', { jobID, paperSize: sumatraSize });
       return { success: true, method: 'pdf-to-printer' };
     } catch (err) {
       logger.warn('pdf-to-printer failed, falling back to Start-Process', {
@@ -122,11 +191,7 @@ const printPdfFile = async (
       });
     }
 
-    // ── Method 2: PowerShell Start-Process -Verb Print ────────────────────────
-    // Note: -Verb Print uses the file's default handler (e.g. Adobe Reader,
-    // Edge, or SumatraPDF) and always sends to the system default printer.
-    // There is no -DefaultPrinter flag for Start-Process; set PRINTER_NAME
-    // in .env and use pdf-to-printer instead for printer selection.
+    // ── Method 2: PowerShell Start-Process -Verb Print ───────────────────────
     try {
       const escaped = filePath.replace(/'/g, "''");
       execSync(
@@ -139,7 +204,7 @@ const printPdfFile = async (
       logger.warn('Start-Process failed', { jobID, error: String(err).substring(0, 200) });
     }
 
-    // ── Method 3: print.exe (legacy, works for some file types) ──────────────
+    // ── Method 3: print.exe (legacy) ─────────────────────────────────────────
     try {
       const target = config.print.printerName
         ? `/D:"${config.print.printerName}"`
@@ -155,7 +220,11 @@ const printPdfFile = async (
       logger.warn('print.exe failed', { jobID, error: String(err).substring(0, 200) });
     }
 
-    return { success: false, method: 'windows-all-failed', error: 'All Windows PDF print methods failed' };
+    return {
+      success: false,
+      method: 'windows-all-failed',
+      error: 'All Windows PDF print methods failed',
+    };
   }
 
   // ── Linux / macOS — use lp ─────────────────────────────────────────────────
@@ -168,7 +237,6 @@ const printPdfFile = async (
     logger.warn('lp failed, trying lpr', { jobID, error: String(err).substring(0, 200) });
     try {
       execSync(`lpr "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
-      logger.info('PDF printed via lpr', { jobID });
       return { success: true, method: 'lpr' };
     } catch (lprErr) {
       return { success: false, method: 'lp-failed', error: String(lprErr) };
@@ -177,114 +245,93 @@ const printPdfFile = async (
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Text printing (for raw text / receipts)
+// Text printing — convert to PDF first, then print
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Print text content using the system printer.
+ * Print plain text content by first rendering it to a PDF (via PDFKit),
+ * then sending the PDF to the printer (via pdf-to-printer / SumatraPDF).
  *
- * Windows strategy (in order):
- *   1. PowerShell Out-Printer — sends text directly to the print queue
- *   2. Start-Process notepad -Verb Print — silent print via Notepad
- *   3. Simulation fallback — writes to PrintSimulation/ when simulation is on
+ * This approach eliminates all Windows encoding / codepage issues because
+ * the text is rendered as vectors inside the PDF rather than sent as raw
+ * bytes to the printer driver.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const printText = async (text: string, _options?: Partial<PrintOptions>): Promise<PrintResult> => {
+export const printText = async (
+  text: string,
+  options?: Partial<PrintOptions>
+): Promise<PrintResult> => {
   const jobID = `JOB-${Date.now()}`;
-  logger.info('Print text request', { jobID, contentLength: text.length });
+  const paperSize = options?.paperSize ?? 'A4';
+  logger.info('Print text request', { jobID, contentLength: text.length, paperSize });
 
-  const platform = os.platform();
-  const tempFile = path.join(os.tmpdir(), `print_${jobID}.txt`);
+  const tempPdf = path.join(os.tmpdir(), `print_${jobID}.pdf`);
 
   try {
-    fs.writeFileSync(tempFile, text, 'utf-8');
+    // 1. Render text → PDF
+    await renderTextToPdf(text, tempPdf, paperSize);
+    logger.info('Text rendered to PDF', { jobID, tempPdf });
 
-    if (platform === 'win32') {
-      // ── Method 1: PowerShell Out-Printer ────────────────────────────────────
-      try {
-        const printerArg = config.print.printerName
-          ? `-Name "${config.print.printerName.replace(/"/g, '\\"')}"`
-          : '';
-        execSync(
-          `powershell -NoProfile -Command "Get-Content -Path '${tempFile.replace(/'/g, "''")}' | Out-Printer ${printerArg}"`,
-          { stdio: 'pipe', timeout: 15000, windowsHide: true }
-        );
-        logger.info('Text printed via Out-Printer', { jobID });
-        return { success: true, jobID, method: 'out-printer' };
-      } catch (err) {
-        logger.warn('Out-Printer failed', { jobID, error: String(err).substring(0, 200) });
-      }
-
-      // ── Method 2: Notepad silent print ──────────────────────────────────────
-      // Using Start-Process with -ArgumentList is more reliable than `notepad /p`
-      // on Windows 10/11 because it does not require the legacy notepad binary.
-      try {
-        const escapedTemp = tempFile.replace(/'/g, "''");
-        execSync(
-          `powershell -NoProfile -Command "Start-Process notepad.exe -ArgumentList '/p','${escapedTemp}' -Wait -WindowStyle Hidden"`,
-          { stdio: 'pipe', timeout: 15000, windowsHide: true }
-        );
-        logger.info('Text printed via notepad', { jobID });
-        return { success: true, jobID, method: 'notepad' };
-      } catch (err) {
-        logger.warn('Notepad print failed', { jobID, error: String(err).substring(0, 200) });
-      }
-
-      // ── Simulation fallback (Windows) ────────────────────────────────────────
+    // 2. Print the PDF
+    const result = await printPdfFile(tempPdf, jobID, paperSize);
+    if (result.success) {
+      // Save simulation copy of the original text too
       if (config.print.simulationEnabled) {
-        const simPath = writeToSimulation(text, `receipt_${jobID}.txt`);
-        if (simPath) {
-          logger.info('Text print simulated', { jobID, simPath });
-          return { success: true, jobID, method: 'simulation', simulatedPaths: [simPath] };
-        }
+        writeTextToSimulation(text, `receipt_${jobID}.txt`);
+        copyToSimulation(tempPdf, `receipt_${jobID}.pdf`);
       }
-
-      return { success: false, jobID, error: 'All Windows text print methods failed' };
+      return { success: true, jobID, method: result.method };
     }
 
-    // ── Linux / macOS ──────────────────────────────────────────────────────────
-    try {
-      const printerArg = config.print.printerName ? `-d "${config.print.printerName}"` : '';
-      execSync(`lp ${printerArg} "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
-      return { success: true, jobID, method: 'lp' };
-    } catch {
-      try {
-        execSync(`lpr "${tempFile}"`, { stdio: 'pipe', timeout: 10000 });
-        return { success: true, jobID, method: 'lpr' };
-      } catch (lprErr) {
-        if (config.print.simulationEnabled) {
-          const simPath = writeToSimulation(text, `receipt_${jobID}.txt`);
-          if (simPath) return { success: true, jobID, method: 'simulation', simulatedPaths: [simPath] };
-        }
-        return { success: false, jobID, error: String(lprErr) };
+    // 3. All print methods failed — simulation fallback
+    if (config.print.simulationEnabled) {
+      const simPath = copyToSimulation(tempPdf, `receipt_${jobID}.pdf`);
+      writeTextToSimulation(text, `receipt_${jobID}.txt`);
+      if (simPath) {
+        logger.info('Text print simulated', { jobID, simPath });
+        return { success: true, jobID, method: 'simulation', simulatedPaths: [simPath] };
       }
     }
+
+    return { success: false, jobID, error: result.error ?? 'Print failed' };
   } catch (error) {
     const err = error as Error;
     logger.error('printText error', { jobID, error: err.message });
+
+    // Simulation fallback even on unexpected error
+    if (config.print.simulationEnabled) {
+      const simPath = writeTextToSimulation(text, `receipt_${jobID}.txt`);
+      if (simPath) {
+        return { success: true, jobID, method: 'simulation', simulatedPaths: [simPath] };
+      }
+    }
+
     return { success: false, jobID, error: err.message };
   } finally {
-    try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
+    try { fs.unlinkSync(tempPdf); } catch { /* temp file may not exist */ }
   }
 };
 
 /**
  * Print receipt content
  */
-export const printReceipt = async (receiptContent: string): Promise<PrintResult> => {
-  logger.info('Printing receipt', { contentLength: receiptContent.length });
-  return printText(receiptContent, { type: 'RAW' });
+export const printReceipt = async (
+  receiptContent: string,
+  paperSize?: string
+): Promise<PrintResult> => {
+  logger.info('Printing receipt', { contentLength: receiptContent.length, paperSize });
+  return printText(receiptContent, { paperSize: paperSize ?? 'A4' });
 };
 
 /**
- * Print document from content
+ * Print document from raw text content
  */
 export const printDocument = async (
   documentContent: string,
-  documentName?: string
+  documentName?: string,
+  paperSize?: string
 ): Promise<PrintResult> => {
-  logger.info('Printing document', { documentName });
-  return printText(documentContent, { type: 'RAW' });
+  logger.info('Printing document', { documentName, paperSize });
+  return printText(documentContent, { paperSize: paperSize ?? 'A4' });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,10 +340,14 @@ export const printDocument = async (
 
 /**
  * Print files located in the Uploads directory.
- * PDFs are handled by pdf-to-printer (Windows) or lp (Linux/macOS).
+ * PDFs → pdf-to-printer directly.
+ * Other files → rendered to PDF via PDFKit, then printed.
  * When simulation mode is on, files are also copied to PrintSimulation/.
  */
-export const printFilesFromStorage = async (filenames: string[]): Promise<PrintResult> => {
+export const printFilesFromStorage = async (
+  filenames: string[],
+  paperSize?: string
+): Promise<PrintResult> => {
   if (!fs.existsSync(uploadsDir)) {
     logger.warn('Uploads directory does not exist', { uploadsDir });
     return { success: false, error: 'Uploads directory not found' };
@@ -324,33 +375,31 @@ export const printFilesFromStorage = async (filenames: string[]): Promise<PrintR
       let printSuccess = false;
 
       if (ext === '.pdf') {
-        const result = await printPdfFile(filePath, jobID);
+        const result = await printPdfFile(filePath, jobID, paperSize);
         printSuccess = result.success;
         if (!result.success) {
           logger.error('PDF print failed', { filename, error: result.error });
         }
+        const simPath = copyToSimulation(filePath, filename);
+        if (simPath) simulatedPaths.push(simPath);
       } else {
-        // For non-PDF files, read as text and use printText
+        // Non-PDF: read as text, render to PDF, print
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
-          const result = await printText(content);
+          const result = await printText(content, { paperSize });
           printSuccess = result.success;
-          // Collect any simulation paths from text print
           if (result.simulatedPaths) simulatedPaths.push(...result.simulatedPaths);
         } catch (readErr) {
           logger.error('Could not read file as text', { filename, error: String(readErr) });
         }
       }
 
-      // Simulation copy for PDF files (non-PDF gets handled above via printText)
-      if (ext === '.pdf') {
-        const simPath = copyToSimulation(filePath, filename);
-        if (simPath) simulatedPaths.push(simPath);
-      }
-
       if (printSuccess || config.print.simulationEnabled) processedCount++;
     } catch (fileErr) {
-      logger.error('Error processing file for printing', { filename, error: String(fileErr) });
+      logger.error('Error processing file for printing', {
+        filename,
+        error: String(fileErr),
+      });
     }
   }
 
@@ -378,28 +427,68 @@ export const printFilesFromStorage = async (filenames: string[]): Promise<PrintR
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Test print
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Print a test page to verify the printer is working.
+ * Useful for kiosk setup / diagnostics.
+ */
+export const printTestPage = async (paperSize?: string): Promise<PrintResult> => {
+  const now = new Date().toLocaleString();
+  const printerName = config.print.printerName || '(system default)';
+  const testContent = `
+========================================
+         DOCUCENTER KIOSK
+         PRINTER TEST PAGE
+========================================
+
+Date/Time : ${now}
+Printer   : ${printerName}
+Paper Size: ${paperSize ?? 'A4'}
+Status    : OK
+
+----------------------------------------
+If you can read this clearly with no
+garbled characters, the printer is
+configured correctly.
+
+- Receipt printing: READY
+- PDF printing: READY
+- Paper size: ${paperSize ?? 'A4'}
+
+========================================
+        Thank you for using
+        DocuCenter Kiosk
+========================================
+`;
+
+  logger.info('Printing test page', { printerName, paperSize });
+  return printText(testContent, { paperSize: paperSize ?? 'A4' });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Printer enumeration
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Get available printers via pdf-to-printer, with platform fallbacks.
- *
- * On Windows, pdf-to-printer calls SumatraPDF to enumerate printers.
- * Falls back to PowerShell Get-Printer if the module is unavailable.
  */
-export const getAvailablePrinters = async (): Promise<string[]> => {
+export const getAvailablePrinters = async (): Promise<{ name: string; paperSizes: string[] }[]> => {
   // ── pdf-to-printer (Windows primary) ────────────────────────────────────────
   try {
     const pdfToPrinter = await import('pdf-to-printer');
     const printers = await pdfToPrinter.default.getPrinters();
-    const names = printers.map((p: { name: string }) => p.name).filter(Boolean);
-    logger.info('Retrieved printers via pdf-to-printer', { count: names.length });
-    return names;
+    logger.info('Retrieved printers via pdf-to-printer', { count: printers.length });
+    return printers.map((p: { name: string; paperSizes?: string[] }) => ({
+      name: p.name,
+      paperSizes: p.paperSizes ?? [],
+    }));
   } catch (importErr) {
     logger.warn('pdf-to-printer not available for printer list', { error: String(importErr) });
   }
 
-  // ── PowerShell fallback (Windows) ──────────────────────────────────────────
+  // ── PowerShell fallback (Windows) ─────────────────────────────────────────
   if (os.platform() === 'win32') {
     try {
       const out = execSync(
@@ -408,20 +497,17 @@ export const getAvailablePrinters = async (): Promise<string[]> => {
       );
       const names = out.split('\n').map((s) => s.trim()).filter(Boolean);
       logger.info('Retrieved printers via PowerShell', { count: names.length });
-      return names;
+      return names.map((name) => ({ name, paperSizes: [] }));
     } catch (err) {
       logger.warn('PowerShell printer list failed', { error: String(err) });
     }
   }
 
-  // ── lpstat fallback (Linux / macOS) ────────────────────────────────────────
+  // ── lpstat fallback (Linux / macOS) ──────────────────────────────────────
   try {
     const out = execSync('lpstat -a', { encoding: 'utf-8', timeout: 5000 });
-    const names = out.split('\n')
-      .map((line) => line.split(' ')[0])
-      .filter(Boolean);
-    logger.info('Retrieved printers via lpstat', { count: names.length });
-    return names;
+    const names = out.split('\n').map((line) => line.split(' ')[0]).filter(Boolean);
+    return names.map((name) => ({ name, paperSizes: [] }));
   } catch {
     return [];
   }

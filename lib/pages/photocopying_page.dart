@@ -30,29 +30,29 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   /// Build receipt text for photocopying — called after payment succeeds.
   String _buildCopyingReceipt() {
     return '''
-╔═══════════════════════════════════════╗
-║    PHOTOCOPYING RECEIPT               ║
-║   ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
+========================================
+         PHOTOCOPYING RECEIPT
+   ${DateTime.now().toString().split('.')[0]}
+========================================
 
 Service: Photocopying
 Copies Requested: $_copies
 Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 
-═══════════════════════════════════════
+----------------------------------------
 Cost Breakdown:
-Cost per Copy: ₱${(_colorMode == 'color' ? 3.0 : 2.0).toStringAsFixed(2)}
+Cost per Copy: PHP ${(_colorMode == 'color' ? 3.0 : 2.0).toStringAsFixed(2)}
 Total Copies: $_copies
-Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}
+Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}
 
-═══════════════════════════════════════
+----------------------------------------
 Date: ${DateTime.now().toString().split('.')[0]}
-Status: ✓ COPY JOB SUBMITTED
+Status: [COPY JOB SUBMITTED]
 
 Document will be copied automatically.
 
-═══════════════════════════════════════
+----------------------------------------
 Thank you for using our service!
 ''';
   }
@@ -60,12 +60,13 @@ Thank you for using our service!
   void _startPhotocopying() {
     GCashPaymentPageState.pendingAmount = _calculateCopyingCost();
     GCashPaymentPageState.printContent = '''PHOTOCOPYING JOB
-─────────────────
+-----------------
 Copies: $_copies
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Paper Size: $_paperSize
-Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
+Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
     GCashPaymentPageState.printFiles = [];
+    GCashPaymentPageState.paperSize = _paperSize;
     // Store the photocopying receipt so it prints AFTER payment succeeds
     GCashPaymentPageState.pendingReceiptContent = _buildCopyingReceipt();
 
@@ -214,7 +215,7 @@ Total Cost: ₱${_calculateCopyingCost().toStringAsFixed(2)}''';
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
-                    children: ['A4', 'Letter', 'Legal'].map((size) {
+                    children: ['A4', 'Folio', 'Letter', 'Legal'].map((size) {
                       return FilterChip(
                         label: Text(size),
                         selected: _paperSize == size,

@@ -24,10 +24,12 @@ class PrintingInterface extends StatefulWidget {
 class _PrintingInterfaceState extends State<PrintingInterface> {
   String _colorMode = 'bw';
   String _quality = 'standard';
+  String _paperSize = 'A4';
   int _copies = 1;
   /// Locally selected files that have been uploaded to backend storage.
   final List<StorageDocument> _uploadedFiles = [];
   bool _isUploading = false;
+  late final TextEditingController _copiesController;
 
   double _calculateCost() {
     double costPerPage;
@@ -39,6 +41,18 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     final totalPages = _uploadedFiles.fold<int>(0, (sum, doc) => sum + doc.pages) +
         widget.selectedDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
     return costPerPage * totalPages * _copies;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _copiesController = TextEditingController(text: _copies.toString());
+  }
+
+  @override
+  void dispose() {
+    _copiesController.dispose();
+    super.dispose();
   }
 
   /// Open file picker, upload selected files to backend, track them locally.
@@ -84,24 +98,31 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     final allDocs = [..._uploadedFiles, ...widget.selectedDocs];
     if (allDocs.isEmpty) return;
 
+    final totalPages = allDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
+    final costPerPage = totalPages > 0 && _copies > 0
+        ? (_calculateCost() / (totalPages * _copies))
+        : 0.0;
+
     final printDetails = '''
 PRINT JOB DETAILS
-─────────────────
+-----------------
+Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
 Copies: $_copies
 
 Files to Print: ${allDocs.length}
-${allDocs.map((doc) => '• ${doc.originalName} (${doc.pages} pages)').join('\n')}
+${allDocs.map((doc) => '- ${doc.originalName} (${doc.pages} pages)').join('\n')}
 
 Cost Breakdown:
-Total Pages: ${allDocs.fold<int>(0, (sum, doc) => sum + doc.pages)}
-Cost per Page: ₱${allDocs.isEmpty ? '0.00' : (_calculateCost() / (allDocs.fold<int>(0, (sum, doc) => sum + doc.pages) * _copies)).toStringAsFixed(2)}
-Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
+Total Pages: $totalPages
+Cost per Page: PHP ${costPerPage.toStringAsFixed(2)}
+Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
 
     GCashPaymentPageState.pendingAmount = _calculateCost();
     GCashPaymentPageState.printContent = printDetails;
     GCashPaymentPageState.printFiles = allDocs.map((d) => d.name).toList();
+    GCashPaymentPageState.paperSize = _paperSize;
     GCashPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
   }
@@ -279,7 +300,13 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                             ),
                           ),
                           const SizedBox(height: 16),
-                          _buildSettingField('Paper Size', 'Letter (8.5" × 11")'),
+                          _buildDropdown(
+                            'Paper Size',
+                            _paperSize,
+                            ['A4', 'Folio', 'Letter', 'Legal'],
+                            (val) => setState(() => _paperSize = val),
+                            ['A4 (210 x 297 mm)', 'Folio (216 x 330 mm)', 'Letter (216 x 279 mm)', 'Legal (216 x 356 mm)'],
+                          ),
                           const SizedBox(height: 16),
                           _buildDropdown(
                             'Color Mode',
@@ -308,7 +335,12 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                             children: [
                               ElevatedButton(
                                 onPressed: () {
-                                  if (_copies > 1) setState(() => _copies--);
+                                  if (_copies > 1) {
+                                    setState(() {
+                                      _copies--;
+                                      _copiesController.text = _copies.toString();
+                                    });
+                                  }
                                 },
                                 child: const Text('-'),
                               ),
@@ -316,19 +348,26 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
                                   child: TextField(
-                                    controller: TextEditingController(text: _copies.toString()),
+                                    controller: _copiesController,
                                     onChanged: (val) {
-                                      setState(() {
-                                        _copies = int.tryParse(val) ?? 1;
-                                      });
+                                      final parsed = int.tryParse(val);
+                                      if (parsed != null && parsed > 0) {
+                                        setState(() => _copies = parsed.clamp(1, 100));
+                                      }
                                     },
                                     textAlign: TextAlign.center,
+                                    keyboardType: TextInputType.number,
                                   ),
                                 ),
                               ),
                               ElevatedButton(
                                 onPressed: () {
-                                  if (_copies < 100) setState(() => _copies++);
+                                  if (_copies < 100) {
+                                    setState(() {
+                                      _copies++;
+                                      _copiesController.text = _copies.toString();
+                                    });
+                                  }
                                 },
                                 child: const Text('+'),
                               ),
@@ -355,25 +394,6 @@ Total Cost: ₱${_calculateCost().toStringAsFixed(2)}''';
               ),
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSettingField(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        const SizedBox(height: 4),
-        TextField(
-          controller: TextEditingController(text: value),
-          enabled: false,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-            filled: true,
-            fillColor: const Color(0xFFF3F4F6),
-          ),
         ),
       ],
     );

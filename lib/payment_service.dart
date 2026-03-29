@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 
@@ -395,7 +396,7 @@ class PrintService {
       }
       return false;
     } catch (e) {
-      print('Error printing text: $e');
+      debugPrint('Error printing text: $e');
       return false;
     }
   }
@@ -415,7 +416,7 @@ class PrintService {
       }
       return false;
     } catch (e) {
-      print('Error printing receipt: $e');
+      debugPrint('Error printing receipt: $e');
       return false;
     }
   }
@@ -438,18 +439,20 @@ class PrintService {
       }
       return false;
     } catch (e) {
-      print('Error printing document: $e');
+      debugPrint('Error printing document: $e');
       return false;
     }
   }
 
   /// Print files that exist in backend storage by filename(s)
-  static Future<bool> printFromStorage(List<String> filenames) async {
+  static Future<bool> printFromStorage(List<String> filenames, {String? paperSize}) async {
     try {
+      final body = <String, dynamic>{'filenames': filenames};
+      if (paperSize != null) body['paperSize'] = paperSize;
       final response = await http.post(
         Uri.parse('${BackendConfig.printApiUrl}/from-storage'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'filenames': filenames}),
+        body: jsonEncode(body),
       ).timeout(TIMEOUT_DURATION);
 
       if (response.statusCode == 200) {
@@ -458,9 +461,9 @@ class PrintService {
         if (data['simulatedPaths'] != null) {
           try {
             final List<dynamic> paths = data['simulatedPaths'];
-            print('Simulated print files:');
+            debugPrint('Simulated print files:');
             for (final p in paths) {
-              print(p.toString());
+              debugPrint(p.toString());
             }
           } catch (_) {}
         }
@@ -468,13 +471,33 @@ class PrintService {
       }
       return false;
     } catch (e) {
-      print('Error printing from storage: $e');
+      debugPrint('Error printing from storage: $e');
       return false;
     }
   }
 
-  /// Get available printers
-  static Future<List<String>> getAvailablePrinters() async {
+  /// Print a test page to verify printer is working
+  static Future<bool> printTestPage({String paperSize = 'A4'}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${BackendConfig.printApiUrl}/test'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'paperSize': paperSize}),
+      ).timeout(TIMEOUT_DURATION);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error printing test page: $e');
+      return false;
+    }
+  }
+
+  /// Get available printers with paper sizes
+  static Future<List<Map<String, dynamic>>> getAvailablePrinters() async {
     try {
       final response = await http.get(
         Uri.parse('${BackendConfig.printApiUrl}/printers'),
@@ -484,12 +507,14 @@ class PrintService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['printers'] is List) {
-          return List<String>.from(data['printers']);
+          return List<Map<String, dynamic>>.from(
+            (data['printers'] as List).map((p) => Map<String, dynamic>.from(p as Map)),
+          );
         }
       }
       return [];
     } catch (e) {
-      print('Error getting printers: $e');
+      debugPrint('Error getting printers: $e');
       return [];
     }
   }
@@ -507,6 +532,8 @@ class PaymentPollingManager {
   final void Function(PaymentStatus) onStatusUpdate;
   final void Function(String)? onError;
 
+  bool _cancelled = false;
+
   PaymentPollingManager({
     required this.transactionId,
     required this.onStatusUpdate,
@@ -515,32 +542,30 @@ class PaymentPollingManager {
     this.maxDuration = const Duration(minutes: 5),
   }) : _service = GCashPaymentService();
 
+  void stopPolling() => _cancelled = true;
+
   Future<void> startPolling() async {
     final startTime = DateTime.now();
-    bool keepPolling = true;
+    _cancelled = false;
 
-    while (keepPolling) {
+    while (!_cancelled) {
       try {
         final status = await _service.checkPaymentStatus(transactionId);
+        if (_cancelled) return;
         onStatusUpdate(status);
 
-        // Stop polling if payment is complete or failed
-        if (status.isSuccessful || status.isFailed) {
-          keepPolling = false;
-        }
+        if (status.isSuccessful || status.isFailed) return;
 
-        // Check if polling has exceeded max duration
         if (DateTime.now().difference(startTime) > maxDuration) {
-          keepPolling = false;
           onError?.call('Payment polling timed out');
+          return;
         }
 
-        if (keepPolling) {
-          await Future.delayed(pollingInterval);
-        }
+        await Future.delayed(pollingInterval);
       } catch (e) {
+        if (_cancelled) return;
         onError?.call('Error checking payment status: $e');
-        keepPolling = false;
+        return;
       }
     }
   }

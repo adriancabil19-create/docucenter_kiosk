@@ -25,6 +25,7 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
   static double pendingAmount = 50.0;
   static String printContent = '';
   static List<String> printFiles = [];
+  static String paperSize = 'A4';
   /// Receipt content that should be printed after payment succeeds
   /// (e.g., photocopying receipt). Cleared after printing.
   static String pendingReceiptContent = '';
@@ -260,7 +261,10 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     try {
       final filenames = GCashPaymentPageState.printFiles;
       if (filenames.isNotEmpty) {
-        await PrintService.printFromStorage(filenames);
+        await PrintService.printFromStorage(
+          filenames,
+          paperSize: GCashPaymentPageState.paperSize,
+        );
       }
     } catch (e) {
       debugPrint('Error printing files from storage: $e');
@@ -276,21 +280,21 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
       if (_transaction == null) return;
 
       final receiptContent = '''
-╔═══════════════════════════════════════╗
-║        PAYMENT RECEIPT                ║
-║   ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
+========================================
+         PAYMENT RECEIPT
+   ${DateTime.now().toString().split('.')[0]}
+========================================
 
 Transaction ID: ${_transaction!.transactionId}
 Reference #: ${_transaction!.referenceNumber}
 
-Amount: ₱${widget.amount.toStringAsFixed(2)}
-Status: ✓ PAID
+Amount: PHP ${widget.amount.toStringAsFixed(2)}
+Status: [PAID]
 
-═══════════════════════════════════════
+----------------------------------------
 ${GCashPaymentPageState.printContent.isNotEmpty ? GCashPaymentPageState.printContent : 'Standard Receipt'}
 
-═══════════════════════════════════════
+----------------------------------------
 Thank you for using our service!
 Date: ${DateTime.now().toString().split('.')[0]}
 ''';
@@ -384,18 +388,18 @@ Date: ${DateTime.now().toString().split('.')[0]}
       if (!mounted) return;
       try {
         final cancelReceipt = '''
-╔═══════════════════════════════════════╗
-║        PAYMENT CANCELLED              ║
-║   ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
+========================================
+         PAYMENT CANCELLED
+   ${DateTime.now().toString().split('.')[0]}
+========================================
 
 Transaction ID: ${_transaction!.transactionId}
 Reference #: ${_transaction!.referenceNumber}
 
-Status: ✗ PAYMENT FAILED / CANCELLED
+Status: [FAILED / CANCELLED]
 Reason: Simulated failure
 
-═══════════════════════════════════════
+----------------------------------------
 No files will be printed.
 Date: ${DateTime.now().toString().split('.')[0]}
 ''';
@@ -418,25 +422,16 @@ Date: ${DateTime.now().toString().split('.')[0]}
 
   Future<void> _testPrintDirect() async {
     try {
-      final filenames = GCashPaymentPageState.printFiles;
-      if (filenames.isNotEmpty) {
-        final success = await PrintService.printFromStorage(filenames);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success ? 'Print job sent!' : 'Print unavailable (demo mode)'),
-            backgroundColor: success ? Colors.green : Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        return;
-      }
+      final paperSize = GCashPaymentPageState.paperSize;
+      final success = await PrintService.printTestPage(paperSize: paperSize);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No documents selected to print.'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(success
+              ? 'Test page sent to printer ($paperSize)'
+              : 'Print unavailable — check PrintSimulation/ folder'),
+          backgroundColor: success ? Colors.green : Colors.orange,
+          duration: const Duration(seconds: 3),
         ),
       );
     } catch (e) {
@@ -451,6 +446,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
   void dispose() {
     _countdownTimer?.cancel();
     _pollingTimer?.cancel();
+    _pollingManager?.stopPolling();
     super.dispose();
   }
 

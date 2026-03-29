@@ -51,21 +51,24 @@ class _StorageInterfaceState extends State<StorageInterface> {
             TextButton.icon(
               onPressed: () async {
                 Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
                 if (widget.transferManager == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
                   return;
                 }
                 final docsToTransfer = _selectedDocs.isNotEmpty
                     ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
                     : widget.documents;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Discovering Bluetooth devices...')));
+                final navigator = Navigator.of(context);
+                messenger.showSnackBar(const SnackBar(content: Text('Discovering Bluetooth devices...')));
                 final devices = await widget.transferManager!.bluetooth.discoverDevices();
+                if (!mounted) return;
                 if (devices.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
+                  messenger.showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
                   return;
                 }
                 final selected = await showDialog<BluetoothDevice?>(
-                  context: context,
+                  context: navigator.context,
                   builder: (ctx2) => SimpleDialog(
                     title: const Text('Select Bluetooth device'),
                     children: devices.map((dev) => SimpleDialogOption(
@@ -74,15 +77,16 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     )).toList(),
                   ),
                 );
-                if (selected == null) return;
+                if (selected == null || !mounted) return;
                 final connected = await widget.transferManager!.bluetooth.connectToDevice(selected.address, selected.name);
+                if (!mounted) return;
                 if (!connected) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to connect to device')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Failed to connect to device')));
                   return;
                 }
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Starting Bluetooth transfer...')));
+                messenger.showSnackBar(const SnackBar(content: Text('Starting Bluetooth transfer...')));
                 final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToTransfer);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+                messenger.showSnackBar(SnackBar(content: Text(result.message)));
               },
               icon: const Icon(Icons.bluetooth),
               label: const Text('Bluetooth'),
@@ -90,29 +94,34 @@ class _StorageInterfaceState extends State<StorageInterface> {
             TextButton.icon(
               onPressed: () async {
                 Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
                 if (widget.transferManager == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
                   return;
                 }
                 final docsToTransfer = _selectedDocs.isNotEmpty
                     ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
                     : widget.documents;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preparing WiFi transfer...')));
+                final navigator = Navigator.of(context);
+                messenger.showSnackBar(const SnackBar(content: Text('Preparing WiFi transfer...')));
                 try {
                   await widget.transferManager!.wifiHotspot.initialize();
+                  if (!mounted) return;
                   final link = await widget.transferManager!.wifiHotspot.generateTransferLink(docsToTransfer);
+                  if (!mounted) return;
                   await showDialog<void>(
-                    context: context,
+                    context: navigator.context,
                     builder: (ctx2) => AlertDialog(
                       title: const Text('WiFi Transfer Link'),
                       content: SelectableText(link),
                       actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Close'))],
                     ),
                   );
+                  if (!mounted) return;
                   final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, docsToTransfer);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+                  messenger.showSnackBar(SnackBar(content: Text(result.message)));
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
+                  messenger.showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
                 }
               },
               icon: const Icon(Icons.wifi),
@@ -121,8 +130,9 @@ class _StorageInterfaceState extends State<StorageInterface> {
             TextButton.icon(
               onPressed: () async {
                 Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
                 try {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecting files...')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Selecting files...')));
                   final paths = await openFiles();
                   if (paths.isEmpty) return;
                   int uploaded = 0;
@@ -136,10 +146,10 @@ class _StorageInterfaceState extends State<StorageInterface> {
                       debugPrint('Failed to upload file: $e');
                     }
                   }
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploaded $uploaded file(s)')));
+                  messenger.showSnackBar(SnackBar(content: Text('Uploaded $uploaded file(s)')));
                   widget.onUpload?.call();
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('USB upload failed: $e')));
+                  messenger.showSnackBar(SnackBar(content: Text('USB upload failed: $e')));
                 }
               },
               icon: const Icon(Icons.usb),
@@ -148,16 +158,17 @@ class _StorageInterfaceState extends State<StorageInterface> {
             TextButton.icon(
               onPressed: () async {
                 Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
                 if (widget.transferManager == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
                   return;
                 }
                 final docsToTransfer = _selectedDocs.isNotEmpty
                     ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
                     : widget.documents;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
+                messenger.showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
                 final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+                messenger.showSnackBar(SnackBar(content: Text(result.message)));
               },
               icon: const Icon(Icons.download),
               label: const Text('Export to USB'),
