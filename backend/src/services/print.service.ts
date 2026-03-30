@@ -172,16 +172,22 @@ const printPdfFile = async (
   if (platform === 'win32') {
     // ── Method 1: pdf-to-printer (SumatraPDF) ───────────────────────────────
     try {
-      const pdfToPrinter = await import('pdf-to-printer');
-      const printOptions: {
-        printer?: string;
-        silent?: boolean;
-        paperSize?: string;
-      } = { silent: true };
+      // pdf-to-printer is a CJS module — dynamic import exposes named exports
+      // directly (no .default wrapper) when running in a CJS host.
+      const pdfModule = await import('pdf-to-printer');
+      // Handle both CJS named export and ESM default wrapping
+      const printFn: ((file: string, opts?: object) => Promise<void>) | undefined =
+        (pdfModule as Record<string, unknown>).print as typeof printFn ??
+        (pdfModule.default as Record<string, unknown> | undefined)?.print as typeof printFn;
+
+      if (typeof printFn !== 'function') throw new Error('pdf-to-printer print function not found');
+
+      const printOptions: { printer?: string; silent?: boolean; paperSize?: string } = { silent: true };
       if (config.print.printerName) printOptions.printer = config.print.printerName;
       const sumatraSize = toSumatraSize(paperSize);
       if (sumatraSize) printOptions.paperSize = sumatraSize;
-      await pdfToPrinter.default.print(filePath, printOptions);
+
+      await printFn(filePath, printOptions);
       logger.info('PDF printed via pdf-to-printer', { jobID, paperSize: sumatraSize });
       return { success: true, method: 'pdf-to-printer' };
     } catch (err) {
@@ -202,22 +208,6 @@ const printPdfFile = async (
       return { success: true, method: 'start-process' };
     } catch (err) {
       logger.warn('Start-Process failed', { jobID, error: String(err).substring(0, 200) });
-    }
-
-    // ── Method 3: print.exe (legacy) ─────────────────────────────────────────
-    try {
-      const target = config.print.printerName
-        ? `/D:"${config.print.printerName}"`
-        : '';
-      execSync(`print ${target} "${filePath}"`, {
-        stdio: 'pipe',
-        timeout: 15000,
-        windowsHide: true,
-      } as object);
-      logger.info('PDF printed via print.exe', { jobID });
-      return { success: true, method: 'print-exe' };
-    } catch (err) {
-      logger.warn('print.exe failed', { jobID, error: String(err).substring(0, 200) });
     }
 
     return {
@@ -477,13 +467,15 @@ configured correctly.
 export const getAvailablePrinters = async (): Promise<{ name: string; paperSizes: string[] }[]> => {
   // ── pdf-to-printer (Windows primary) ────────────────────────────────────────
   try {
-    const pdfToPrinter = await import('pdf-to-printer');
-    const printers = await pdfToPrinter.default.getPrinters();
+    const pdfModule = await import('pdf-to-printer');
+    const getPrintersFn: (() => Promise<{ name: string; paperSizes?: string[] }[]>) | undefined =
+      (pdfModule as Record<string, unknown>).getPrinters as typeof getPrintersFn ??
+      (pdfModule.default as Record<string, unknown> | undefined)?.getPrinters as typeof getPrintersFn;
+
+    if (typeof getPrintersFn !== 'function') throw new Error('getPrinters not found');
+    const printers = await getPrintersFn();
     logger.info('Retrieved printers via pdf-to-printer', { count: printers.length });
-    return printers.map((p: { name: string; paperSizes?: string[] }) => ({
-      name: p.name,
-      paperSizes: p.paperSizes ?? [],
-    }));
+    return printers.map((p) => ({ name: p.name, paperSizes: p.paperSizes ?? [] }));
   } catch (importErr) {
     logger.warn('pdf-to-printer not available for printer list', { error: String(importErr) });
   }
