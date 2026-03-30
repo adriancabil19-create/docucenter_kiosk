@@ -6,6 +6,7 @@ import { sanitizeError, isValidAmount } from '../utils/helpers';
 import { verifyWebhookSignature } from '../utils/helpers';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
+import { insertTransaction, updateTransactionStatus } from '../database';
 
 export class GCashController {
   /**
@@ -39,6 +40,15 @@ export class GCashController {
       logger.info('Payment creation endpoint called', {
         transactionId: transaction.transactionId,
         amount,
+      });
+
+      // Persist to SQLite
+      insertTransaction({
+        id: transaction.transactionId,
+        reference_number: transaction.referenceNumber,
+        amount: transaction.amount,
+        status: 'PENDING',
+        service_type: serviceType ?? 'document_service',
       });
 
       const response: GCashPaymentResponse = {
@@ -293,6 +303,9 @@ export class GCashController {
 
       logger.info('Payment simulation - success', { transactionId });
 
+      // Update DB record
+      updateTransactionStatus(transactionId, 'SUCCESS', new Date().toISOString());
+
       // If filenames were provided in the body, attempt to print them from storage
       const { filenames } = req.body as { filenames?: string[] };
       let printResult: any = null;
@@ -355,6 +368,9 @@ export class GCashController {
       gcashService.simulatePaymentFailure(transactionId, reason || 'Test failure');
 
       logger.info('Payment simulation - failure', { transactionId, reason });
+
+      // Update DB record
+      updateTransactionStatus(transactionId, 'FAILED', new Date().toISOString());
 
       res.status(200).json({
         success: true,

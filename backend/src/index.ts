@@ -9,6 +9,7 @@ import gcashRoutes from './routes/gcash';
 import qrRoutes from './routes/qr';
 import printRoutes from './routes/print';
 import storageRoutes from './routes/storage';
+import monitoringRoutes from './routes/monitoring';
 import {
   corsMiddleware,
   securityHeadersMiddleware,
@@ -79,6 +80,7 @@ app.use('/api/gcash', gcashRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/storage', storageRoutes);
+app.use('/api/monitoring', monitoringRoutes);
 
 // API status endpoint
 app.get('/api/status', (_req: any, res: any) => {

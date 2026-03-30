@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import {
   printText,
   printReceipt,
@@ -8,6 +9,7 @@ import {
   printTestPage,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
+import { insertPrintJob } from '../database';
 
 const router = Router();
 
@@ -110,6 +112,17 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
 
     logger.info('Print from storage request received', { count: filenames.length, paperSize });
     const result = await printFilesFromStorage(filenames, paperSize);
+
+    // Log to SQLite regardless of outcome
+    insertPrintJob({
+      id: result.jobID ?? randomUUID(),
+      filenames,
+      paper_size: paperSize ?? 'A4',
+      copies: 1,
+      status: result.success ? 'submitted' : 'failed',
+      method: result.method,
+      simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
+    });
 
     if (result.success) {
       const resp: Record<string, unknown> = {

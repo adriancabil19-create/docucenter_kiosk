@@ -21,6 +21,9 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   int _copies = 1;
   String _colorMode = 'color';
   String _paperSize = 'A4';
+  bool _collate = true;
+  double _brightness = 0.0; // -1.0 to 1.0
+  double _contrast = 0.0;   // -1.0 to 1.0
 
   double _calculateCopyingCost() {
     final double costPerCopy = _colorMode == 'color' ? 3.0 : 2.0;
@@ -29,6 +32,24 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
 
   /// Build receipt text for photocopying — called after payment succeeds.
   String _buildCopyingReceipt() {
+    String brightnessLabel;
+    if (_brightness < -0.1) {
+      brightnessLabel = 'Dark (${(_brightness * 100).round()}%)';
+    } else if (_brightness > 0.1) {
+      brightnessLabel = 'Bright (+${(_brightness * 100).round()}%)';
+    } else {
+      brightnessLabel = 'Normal';
+    }
+
+    String contrastLabel;
+    if (_contrast < -0.1) {
+      contrastLabel = 'Low (${(_contrast * 100).round()}%)';
+    } else if (_contrast > 0.1) {
+      contrastLabel = 'High (+${(_contrast * 100).round()}%)';
+    } else {
+      contrastLabel = 'Normal';
+    }
+
     return '''
 ========================================
          PHOTOCOPYING RECEIPT
@@ -39,6 +60,9 @@ Service: Photocopying
 Copies Requested: $_copies
 Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
+Collate: ${_collate ? 'Yes (1-2-3, 1-2-3)' : 'No (1-1-1, 2-2-2)'}
+Brightness: $brightnessLabel
+Contrast: $contrastLabel
 
 ----------------------------------------
 Cost Breakdown:
@@ -64,6 +88,7 @@ Thank you for using our service!
 Copies: $_copies
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Paper Size: $_paperSize
+Collate: ${_collate ? 'Yes' : 'No'}
 Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
     GCashPaymentPageState.printFiles = [];
     GCashPaymentPageState.paperSize = _paperSize;
@@ -161,7 +186,7 @@ Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
                         ),
                       ),
                       IconButton(
-                        onPressed: _copies < 999 ? () => setState(() => _copies++) : null,
+                        onPressed: _copies < 20 ? () => setState(() => _copies++) : null,
                         icon: const Icon(Icons.add_circle),
                       ),
                     ],
@@ -223,6 +248,89 @@ Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
                       );
                     }).toList(),
                   ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: CheckboxListTile(
+                title: const Text('Collate Copies'),
+                subtitle: const Text('Output order: 1-2-3, 1-2-3 (instead of 1-1-1, 2-2-2)'),
+                value: _collate,
+                onChanged: (val) => setState(() => _collate = val ?? true),
+                secondary: const Icon(Icons.sort),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Image Adjustments',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const SizedBox(width: 80, child: Text('Brightness', style: TextStyle(fontSize: 12))),
+                      Expanded(
+                        child: Slider(
+                          value: _brightness,
+                          min: -1.0,
+                          max: 1.0,
+                          divisions: 20,
+                          label: _brightness == 0 ? 'Normal' : '${(_brightness * 100).round()}%',
+                          onChanged: (val) => setState(() => _brightness = val),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 48,
+                        child: Text(
+                          _brightness == 0 ? 'Norm' : '${(_brightness * 100).round()}%',
+                          style: const TextStyle(fontSize: 11),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const SizedBox(width: 80, child: Text('Contrast', style: TextStyle(fontSize: 12))),
+                      Expanded(
+                        child: Slider(
+                          value: _contrast,
+                          min: -1.0,
+                          max: 1.0,
+                          divisions: 20,
+                          label: _contrast == 0 ? 'Normal' : '${(_contrast * 100).round()}%',
+                          onChanged: (val) => setState(() => _contrast = val),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 48,
+                        child: Text(
+                          _contrast == 0 ? 'Norm' : '${(_contrast * 100).round()}%',
+                          style: const TextStyle(fontSize: 11),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_brightness != 0 || _contrast != 0)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => setState(() { _brightness = 0; _contrast = 0; }),
+                        child: const Text('Reset'),
+                      ),
+                    ),
                 ],
               ),
             ),

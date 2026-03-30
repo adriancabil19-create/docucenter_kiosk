@@ -23,7 +23,9 @@
       "Bash(node -e \"const p=require\\(''pdf-to-printer''\\); console.log\\(Object.keys\\(p\\)\\)\")",
       "Bash(node -e \"const p=require\\(''pdf-to-printer''\\); p.getPrinters\\(\\).then\\(r=>console.log\\(JSON.stringify\\(r,null,2\\)\\)\\).catch\\(e=>console.error\\(e.message\\)\\)\")",
       "Bash(node -e \"const p=require\\(''pdf-to-printer''\\); p.getDefaultPrinter\\(\\).then\\(r=>console.log\\(JSON.stringify\\(r,null,2\\)\\)\\).catch\\(e=>console.error\\(e.message\\)\\)\")",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(node -e \"require\\(''better-sqlite3''\\); console.log\\(''ok''\\)\")",
+      "Bash(\"D:\\\\Projects-Shem\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat\" analyze:*)"
     ]
   }
 }

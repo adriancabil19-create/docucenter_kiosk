@@ -119,9 +119,14 @@ Total Pages: $totalPages
 Cost per Page: PHP ${costPerPage.toStringAsFixed(2)}
 Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
 
+    // Expand filenames by copies count so the backend prints each file N times
+    final baseFilenames = allDocs.map((d) => d.name).toList();
+    final expandedFilenames = [
+      for (int i = 0; i < _copies; i++) ...baseFilenames,
+    ];
     GCashPaymentPageState.pendingAmount = _calculateCost();
     GCashPaymentPageState.printContent = printDetails;
-    GCashPaymentPageState.printFiles = allDocs.map((d) => d.name).toList();
+    GCashPaymentPageState.printFiles = expandedFilenames;
     GCashPaymentPageState.paperSize = _paperSize;
     GCashPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
@@ -352,7 +357,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                                     onChanged: (val) {
                                       final parsed = int.tryParse(val);
                                       if (parsed != null && parsed > 0) {
-                                        setState(() => _copies = parsed.clamp(1, 100));
+                                        setState(() => _copies = parsed.clamp(1, 20));
                                       }
                                     },
                                     textAlign: TextAlign.center,
@@ -362,7 +367,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                               ),
                               ElevatedButton(
                                 onPressed: () {
-                                  if (_copies < 100) {
+                                  if (_copies < 20) {
                                     setState(() {
                                       _copies++;
                                       _copiesController.text = _copies.toString();

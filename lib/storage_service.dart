@@ -94,9 +94,12 @@ class StorageService {
         ),
       );
 
-      var response = await request.send();
+      var response = await request.send().timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw Exception('Upload timed out after 60 seconds'),
+      );
       final responseBody = await response.stream.bytesToString();
-      
+
       if (response.statusCode == 200) {
         final json = jsonDecode(responseBody);
         if (json['success'] == true && json['document'] != null) {

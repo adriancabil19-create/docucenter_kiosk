@@ -36,9 +36,9 @@ export const config = {
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
 
-  // Validation
+  // Validation — treat missing NODE_ENV as 'development' (thesis/demo default)
   isProduction: process.env.NODE_ENV === 'production',
-  isDevelopment: process.env.NODE_ENV === 'development',
+  isDevelopment: (process.env.NODE_ENV || 'development') !== 'production',
   // Print options
   print: {
     // Enable copying printed files to PrintSimulation folder when true.

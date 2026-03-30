@@ -25,6 +25,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   List<String> _scannedPages = [];
   String _colorMode = 'color';
   String _dpi = '300';
+  String _outputFormat = 'PDF';
   bool _doubleScanning = false;
   String _documentName = '';
 
@@ -139,6 +140,32 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                         label: Text(dpi),
                         selected: _dpi == dpi,
                         onSelected: (_) => setState(() => _dpi = dpi),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Output Format',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: ['PDF', 'JPG', 'PNG'].map((fmt) {
+                      return FilterChip(
+                        label: Text(fmt),
+                        selected: _outputFormat == fmt,
+                        onSelected: (_) => setState(() => _outputFormat = fmt),
                       );
                     }).toList(),
                   ),
@@ -288,34 +315,38 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   }
 
   Future<void> _printScanReceipt() async {
+    // Capture messenger before any await — avoids use_build_context_synchronously
+    final messenger = ScaffoldMessenger.of(context);
     try {
+      final docName = _documentName.isEmpty
+          ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}'
+          : _documentName;
       final scanReceipt = '''
-╔═══════════════════════════════════════╗
-║       SCANNING RECEIPT                ║
-║   ${DateTime.now().toString().split('.')[0]}    ║
-╚═══════════════════════════════════════╝
+========================================
+         SCANNING RECEIPT
+   ${DateTime.now().toString().split('.')[0]}
+========================================
 
-Document Name: ${_documentName.isEmpty ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}' : _documentName}
-Format: PDF
+Document Name: $docName
+Output Format: $_outputFormat
 Pages Scanned: ${_scannedPages.length}
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-DPI Resolution: $_dpi
-Double Scanning: ${_doubleScanning ? 'Yes' : 'No'}
+Color Mode: ${_colorMode == 'color' ? 'Color' : _colorMode == 'grayscale' ? 'Grayscale' : 'B&W'}
+DPI Resolution: $_dpi DPI
+Double-Sided: ${_doubleScanning ? 'Yes' : 'No'}
 
-═══════════════════════════════════════
-File Size: ${(_scannedPages.length * 250)} KB
+----------------------------------------
+File Size (est.): ${(_scannedPages.length * 250)} KB
 Date: ${DateTime.now().toString().split('.')[0]}
 
-Status: ✓ SCAN COMPLETE
+Status: [SCAN COMPLETE]
 Document saved to system storage.
 
-═══════════════════════════════════════
+----------------------------------------
 Thank you for using our service!
 ''';
 
       final success = await PrintService.printReceipt(scanReceipt);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(success ? 'Scan receipt printed!' : 'Print unavailable (demo mode)'),
           backgroundColor: success ? Colors.green : Colors.orange,
@@ -431,15 +462,21 @@ Thank you for using our service!
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () async {
+                        final ext = _outputFormat.toLowerCase();
                         final fileName = _documentName.isEmpty
-                            ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}.pdf'
-                            : '$_documentName.pdf';
+                            ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}.$ext'
+                            : '$_documentName.$ext';
 
-                        // Demo: generate placeholder PDF bytes
+                        // Demo: generate placeholder bytes (simulated scan output)
                         final List<int> pdfBytes = List.generate(250000, (i) => i % 256);
 
+                        final mimeType = _outputFormat == 'PDF'
+                            ? 'application/pdf'
+                            : _outputFormat == 'JPG'
+                                ? 'image/jpeg'
+                                : 'image/png';
                         final doc = await StorageService.uploadFile(
-                          fileName, pdfBytes, fileName, 'application/pdf',
+                          fileName, pdfBytes, fileName, mimeType,
                         );
 
                         if (doc != null && mounted) {
@@ -450,7 +487,7 @@ Thank you for using our service!
                               backgroundColor: Colors.green,
                             ),
                           );
-                          _printScanReceipt();
+                          await _printScanReceipt();
                         }
 
                         setState(() {
@@ -460,7 +497,7 @@ Thank you for using our service!
                         });
                       },
                       icon: const Icon(Icons.save),
-                      label: const Text('Save to Storage'),
+                      label: Text('Save as $_outputFormat'),
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                     ),
                   ),
@@ -489,6 +526,7 @@ Thank you for using our service!
                   onPressed: () => setState(() {
                     _isScanning = true;
                     _scannedPages = [];
+                    _documentName = '';
                   }),
                   icon: const Icon(Icons.add),
                   label: const Text('Scan More'),

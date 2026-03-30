@@ -242,10 +242,13 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     _pollingTimer?.cancel();
     if (mounted) setState(() => _paymentStatus = 'success');
 
-    // Print payment receipt
+    // Capture context references before any awaits
+    final messenger = mounted ? ScaffoldMessenger.of(context) : null;
+
+    // 1. Print payment receipt
     await _printReceipt();
 
-    // Print any pending service receipt (e.g., photocopying) AFTER payment
+    // 2. Print any pending service receipt (e.g., photocopying) AFTER payment
     final pending = GCashPaymentPageState.pendingReceiptContent;
     if (pending.isNotEmpty) {
       try {
@@ -257,22 +260,44 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
       }
     }
 
-    // Print files from storage if selected
+    // 3. Print files from storage if selected
+    bool printSuccess = true;
+    bool hadFiles = false;
     try {
       final filenames = GCashPaymentPageState.printFiles;
-      if (filenames.isNotEmpty) {
-        await PrintService.printFromStorage(
+      hadFiles = filenames.isNotEmpty;
+      if (hadFiles) {
+        printSuccess = await PrintService.printFromStorage(
           filenames,
           paperSize: GCashPaymentPageState.paperSize,
         );
       }
     } catch (e) {
       debugPrint('Error printing files from storage: $e');
+      printSuccess = false;
+    } finally {
+      // Clear static state so the next job starts clean
+      GCashPaymentPageState.printFiles = [];
     }
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) widget.onPaymentComplete(true);
-    });
+    // Notify user of print outcome
+    if (hadFiles && messenger != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            printSuccess
+                ? 'Files sent to printer successfully.'
+                : 'Payment received, but printing failed. Check PrintSimulation/ folder or printer connection.',
+          ),
+          backgroundColor: printSuccess ? Colors.green : Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+
+    // 4. Navigate back — await all prints first, then delay
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) widget.onPaymentComplete(true);
   }
 
   Future<void> _printReceipt() async {
@@ -351,34 +376,16 @@ Date: ${DateTime.now().toString().split('.')[0]}
 
   Future<void> _simulateSuccess() async {
     if (_transaction == null) return;
-    try {
-      final filenames = GCashPaymentPageState.printFiles;
-      final resp = await _paymentService.simulatePaymentSuccess(
-        _transaction!.transactionId,
-        filenames: filenames.isNotEmpty ? filenames : null,
-      );
-      if (!mounted) return;
-      if (resp != null && resp['simulatedPaths'] != null) {
-        final List<dynamic> paths = resp['simulatedPaths'];
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Simulated print: ${paths.length} file(s) copied to PrintSimulation'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment simulated as successful.'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Simulate success error: $e');
-    }
+    // Stop polling FIRST to prevent double-trigger from the polling loop
+    _pollingManager?.stopPolling();
+    _countdownTimer?.cancel();
+
+    // Notify backend (best-effort — silently ignored if backend is unavailable)
+    // Do NOT send filenames here; all printing is handled by _handlePaymentSuccess
+    _paymentService.simulatePaymentSuccess(_transaction!.transactionId).ignore();
+
+    // Trigger the full success flow locally
+    await _handlePaymentSuccess();
   }
 
   Future<void> _simulateFailure() async {
