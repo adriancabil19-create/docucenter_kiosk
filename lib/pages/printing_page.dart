@@ -128,6 +128,8 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
     GCashPaymentPageState.printContent = printDetails;
     GCashPaymentPageState.printFiles = expandedFilenames;
     GCashPaymentPageState.paperSize = _paperSize;
+    GCashPaymentPageState.colorMode = _colorMode;
+    GCashPaymentPageState.quality = _quality;
     GCashPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
   }

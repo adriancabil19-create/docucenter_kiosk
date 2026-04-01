@@ -445,10 +445,12 @@ class PrintService {
   }
 
   /// Print files that exist in backend storage by filename(s)
-  static Future<bool> printFromStorage(List<String> filenames, {String? paperSize}) async {
+  static Future<bool> printFromStorage(List<String> filenames, {String? paperSize, String? colorMode, String? quality}) async {
     try {
       final body = <String, dynamic>{'filenames': filenames};
       if (paperSize != null) body['paperSize'] = paperSize;
+      if (colorMode != null) body['colorMode'] = colorMode;
+      if (quality != null) body['quality'] = quality;
       final response = await http.post(
         Uri.parse('${BackendConfig.printApiUrl}/from-storage'),
         headers: {'Content-Type': 'application/json'},
@@ -568,5 +570,19 @@ class PaymentPollingManager {
         return;
       }
     }
+  }
+
+  Future<Map<String, dynamic>> printFiles(List<String> filenames, String paperSize, String colorMode, String quality) async {
+    final response = await http.post(
+      Uri.parse('$BACKEND_URL/api/print/from-storage'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'filenames': filenames,
+        'paperSize': paperSize,
+        'colorMode': colorMode,
+        'quality': quality,
+      }),
+    );
+    return jsonDecode(response.body);
   }
 }

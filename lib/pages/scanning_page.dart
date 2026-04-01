@@ -26,6 +26,8 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   String _colorMode = 'color';
   String _dpi = '300';
   String _outputFormat = 'PDF';
+  String _paperSize = 'A4';
+  String _quality = 'standard';
   bool _doubleScanning = false;
   String _documentName = '';
 
@@ -155,17 +157,44 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Output Format',
+                    'Paper Size',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
-                    children: ['PDF', 'JPG', 'PNG'].map((fmt) {
+                    children: ['A4', 'Folio', 'Letter', 'Legal'].map((size) {
                       return FilterChip(
-                        label: Text(fmt),
-                        selected: _outputFormat == fmt,
-                        onSelected: (_) => setState(() => _outputFormat = fmt),
+                        label: Text(size),
+                        selected: _paperSize == size,
+                        onSelected: (_) => setState(() => _paperSize = size),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Scan Quality',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: ['draft', 'standard'].map((quality) {
+                      final label = quality == 'draft' ? 'Draft' : 'Standard';
+                      return FilterChip(
+                        label: Text(label),
+                        selected: _quality == quality,
+                        onSelected: (_) => setState(() => _quality = quality),
                       );
                     }).toList(),
                   ),
@@ -332,6 +361,8 @@ Output Format: $_outputFormat
 Pages Scanned: ${_scannedPages.length}
 Color Mode: ${_colorMode == 'color' ? 'Color' : _colorMode == 'grayscale' ? 'Grayscale' : 'B&W'}
 DPI Resolution: $_dpi DPI
+Paper Size: $_paperSize
+Scan Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
 Double-Sided: ${_doubleScanning ? 'Yes' : 'No'}
 
 ----------------------------------------

@@ -103,15 +103,15 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { filenames, paperSize } = req.body;
+    const { filenames, paperSize, colorMode, quality } = req.body;
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
       return;
     }
 
-    logger.info('Print from storage request received', { count: filenames.length, paperSize });
-    const result = await printFilesFromStorage(filenames, paperSize);
+    logger.info('Print from storage request received', { count: filenames.length, paperSize, colorMode, quality });
+    const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality);
 
     // Log to SQLite regardless of outcome
     insertPrintJob({

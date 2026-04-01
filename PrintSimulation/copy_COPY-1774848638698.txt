@@ -1,0 +1,6 @@
+Photocopy Job COPY-1774848638698
+Copies: 1
+Color Mode: bw
+Paper Size: Folio
+Timestamp: 2026-03-30T05:30:38.698Z
+Printer: Brother MFC-J2730DW Printer

@@ -21,6 +21,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   int _copies = 1;
   String _colorMode = 'color';
   String _paperSize = 'A4';
+  String _quality = 'standard';
   bool _collate = true;
   double _brightness = 0.0; // -1.0 to 1.0
   double _contrast = 0.0;   // -1.0 to 1.0
@@ -60,6 +61,7 @@ Service: Photocopying
 Copies Requested: $_copies
 Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
+Copy Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
 Collate: ${_collate ? 'Yes (1-2-3, 1-2-3)' : 'No (1-1-1, 2-2-2)'}
 Brightness: $brightnessLabel
 Contrast: $contrastLabel
@@ -88,10 +90,13 @@ Thank you for using our service!
 Copies: $_copies
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Paper Size: $_paperSize
+Copy Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
 Collate: ${_collate ? 'Yes' : 'No'}
 Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
     GCashPaymentPageState.printFiles = [];
     GCashPaymentPageState.paperSize = _paperSize;
+    GCashPaymentPageState.colorMode = _colorMode;
+    GCashPaymentPageState.quality = _quality;
     // Store the photocopying receipt so it prints AFTER payment succeeds
     GCashPaymentPageState.pendingReceiptContent = _buildCopyingReceipt();
 
@@ -256,12 +261,26 @@ Total Cost: PHP ${_calculateCopyingCost().toStringAsFixed(2)}''';
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: CheckboxListTile(
-                title: const Text('Collate Copies'),
-                subtitle: const Text('Output order: 1-2-3, 1-2-3 (instead of 1-1-1, 2-2-2)'),
-                value: _collate,
-                onChanged: (val) => setState(() => _collate = val ?? true),
-                secondary: const Icon(Icons.sort),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Copy Quality',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: ['draft', 'standard'].map((quality) {
+                      final label = quality == 'draft' ? 'Draft' : 'Standard';
+                      return FilterChip(
+                        label: Text(label),
+                        selected: _quality == quality,
+                        onSelected: (_) => setState(() => _quality = quality),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
             ),
           ),

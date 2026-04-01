@@ -26,6 +26,8 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
   static String printContent = '';
   static List<String> printFiles = [];
   static String paperSize = 'A4';
+  static String colorMode = 'bw';
+  static String quality = 'standard';
   /// Receipt content that should be printed after payment succeeds
   /// (e.g., photocopying receipt). Cleared after printing.
   static String pendingReceiptContent = '';
@@ -66,16 +68,58 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
           child: SingleChildScrollView(
             child: PaymentInterface(
               amount: pendingAmount,
-              onPaymentComplete: (success) {
+              onPaymentComplete: (success) async {
                 if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Payment successful! Returning to services...'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
+                  // Attempt to print the files
+                  if (printFiles.isNotEmpty) {
+                    try {
+                      final printSuccess = await PrintService.printFromStorage(
+                        printFiles,
+                        paperSize: paperSize,
+                        colorMode: colorMode,
+                        quality: quality,
+                      );
+                      if (printSuccess) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Payment successful! Printing started...'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Payment successful but printing failed'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Payment successful but printing error: $e'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Payment successful! Returning to services...'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
                   Future.delayed(const Duration(seconds: 2), () {
-                    if (mounted) widget.onNavigate('services');
+                    if (mounted) {
+                      // Clear the static state
+                      printFiles = [];
+                      paperSize = 'A4';
+                      colorMode = 'bw';
+                      quality = 'standard';
+                      pendingReceiptContent = '';
+                      widget.onNavigate('services');
+                    }
                   });
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -270,6 +314,8 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
         printSuccess = await PrintService.printFromStorage(
           filenames,
           paperSize: GCashPaymentPageState.paperSize,
+          colorMode: GCashPaymentPageState.colorMode,
+          quality: GCashPaymentPageState.quality,
         );
       }
     } catch (e) {

@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { config } from '../utils/config';
 import PDFDocument from 'pdfkit';
+import { PDFDocument as PDFLibDocument } from 'pdf-lib';
 
 interface PrintOptions {
   type?: string;
@@ -48,6 +49,58 @@ const toPdfKitSize = (size?: string): string => {
 const toSumatraSize = (size?: string): string | undefined => {
   if (!size) return undefined;
   return size.toLowerCase();
+};
+
+/**
+ * Paper sizes in mm for resizing
+ */
+const paperSizesMm: Record<string, { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  FOLIO: { width: 216, height: 330 },
+  LETTER: { width: 216, height: 279 },
+  LEGAL: { width: 216, height: 356 },
+};
+
+/**
+ * Resize PDF to fit the target paper size by scaling content.
+ */
+const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paperSize: string): Promise<void> => {
+  const targetSize = paperSizesMm[paperSize.toUpperCase()];
+  if (!targetSize) {
+    // Copy original if size not defined
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+
+  const pdfBytes = fs.readFileSync(inputPath);
+  const pdfDoc = await PDFLibDocument.load(pdfBytes);
+  const pages = pdfDoc.getPages();
+
+  for (const page of pages) {
+    const { width, height } = page.getSize();
+    // Assume PDF size is in points (1/72 inch), convert target to points
+    const targetWidthPt = targetSize.width * 72 / 25.4;
+    const targetHeightPt = targetSize.height * 72 / 25.4;
+
+    const scaleX = targetWidthPt / width;
+    const scaleY = targetHeightPt / height;
+    const scale = Math.min(scaleX, scaleY); // Fit to page
+
+    page.scaleContent(scale, scale);
+
+    // Center the content
+    const newWidth = width * scale;
+    const newHeight = height * scale;
+    const offsetX = (targetWidthPt - newWidth) / 2;
+    const offsetY = (targetHeightPt - newHeight) / 2;
+    page.translateContent(offsetX, offsetY);
+
+    // Set page size
+    page.setSize(targetWidthPt, targetHeightPt);
+  }
+
+  const resizedBytes = await pdfDoc.save();
+  fs.writeFileSync(outputPath, resizedBytes);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,10 +215,12 @@ const renderTextToPdf = (
  *   2. PowerShell Start-Process -Verb Print (system default printer, no size control)
  *   3. print.exe (legacy fallback)
  */
-const printPdfFile = async (
+export const printPdfFile = async (
   filePath: string,
   jobID: string,
-  paperSize?: string
+  paperSize?: string,
+  colorMode?: string,
+  quality?: string
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
@@ -182,10 +237,22 @@ const printPdfFile = async (
 
       if (typeof printFn !== 'function') throw new Error('pdf-to-printer print function not found');
 
-      const printOptions: { printer?: string; silent?: boolean; paperSize?: string } = { silent: true };
+      const printOptions: { printer?: string; silent?: boolean; paperSize?: string; monochrome?: boolean; printQuality?: string; bin?: string } = { silent: true };
       if (config.print.printerName) printOptions.printer = config.print.printerName;
       const sumatraSize = toSumatraSize(paperSize);
       if (sumatraSize) printOptions.paperSize = sumatraSize;
+      if (colorMode === 'bw') printOptions.monochrome = true;
+      if (quality === 'draft') printOptions.printQuality = 'draft';
+      else if (quality === 'standard') printOptions.printQuality = 'high';
+
+      // Set paper tray based on paper size
+      if (paperSize?.toUpperCase() === 'A4') {
+        printOptions.bin = 'Tray 1';
+      } else if (paperSize?.toUpperCase() === 'LETTER') {
+        printOptions.bin = 'Tray 2';
+      } else if (paperSize?.toUpperCase() === 'FOLIO') {
+        printOptions.bin = 'MP Tray';
+      }
 
       await printFn(filePath, printOptions);
       logger.info('PDF printed via pdf-to-printer', { jobID, paperSize: sumatraSize });
@@ -336,7 +403,9 @@ export const printDocument = async (
  */
 export const printFilesFromStorage = async (
   filenames: string[],
-  paperSize?: string
+  paperSize?: string,
+  colorMode?: string,
+  quality?: string
 ): Promise<PrintResult> => {
   if (!fs.existsSync(uploadsDir)) {
     logger.warn('Uploads directory does not exist', { uploadsDir });
@@ -365,13 +434,19 @@ export const printFilesFromStorage = async (
       let printSuccess = false;
 
       if (ext === '.pdf') {
-        const result = await printPdfFile(filePath, jobID, paperSize);
-        printSuccess = result.success;
-        if (!result.success) {
-          logger.error('PDF print failed', { filename, error: result.error });
+        const tempResizedPdf = path.join(os.tmpdir(), `resized_${jobID}_${path.basename(filename, '.pdf')}.pdf`);
+        try {
+          await resizePdfToPaperSize(filePath, tempResizedPdf, paperSize || 'A4');
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality);
+          printSuccess = result.success;
+          if (!result.success) {
+            logger.error('PDF print failed', { filename, error: result.error });
+          }
+          const simPath = copyToSimulation(filePath, filename);
+          if (simPath) simulatedPaths.push(simPath);
+        } finally {
+          try { fs.unlinkSync(tempResizedPdf); } catch {}
         }
-        const simPath = copyToSimulation(filePath, filename);
-        if (simPath) simulatedPaths.push(simPath);
       } else {
         // Non-PDF: read as text, render to PDF, print
         try {
