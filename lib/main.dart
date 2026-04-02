@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'services.dart';
 import 'about.dart';
 import 'pages/payment_page.dart';
+import 'dart:io';
 
 void main() {
+  debugPrint('Main called - Platform.isWindows: ${Platform.isWindows}');
   runApp(const MainApp());
 }
 

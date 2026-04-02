@@ -1,6 +1,17 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ffi';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fb;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:network_info_plus/network_info_plus.dart';
+import 'package:wifi_iot/wifi_iot.dart';
+import 'package:win_ble/win_ble.dart';
+import 'package:win_ble/win_file.dart';
+import 'package:win32/win32.dart';
+import 'package:ffi/ffi.dart' show calloc;
 import 'storage_service.dart';
 
 /// Transfer method types
@@ -52,6 +63,31 @@ abstract class TransferService {
   /// Clean up resources
   void dispose() {
     statusNotifier.dispose();
+  }
+
+  /// Discover available devices (Bluetooth only)
+  Future<List<LocalBluetoothDevice>> discoverDevices() async {
+    throw UnsupportedError('Device discovery not supported by this service');
+  }
+
+  /// Connect to a specific device (Bluetooth only)
+  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
+    throw UnsupportedError('Device connection not supported by this service');
+  }
+
+  /// Connect to default device (Bluetooth only)
+  Future<bool> connectToDefaultDevice() async {
+    throw UnsupportedError('Default device connection not supported by this service');
+  }
+
+  /// Get network information (WiFi hotspot only)
+  Future<Map<String, String>> getNetworkInfo() async {
+    throw UnsupportedError('Network info not supported by this service');
+  }
+
+  /// Generate transfer link (WiFi hotspot only)
+  Future<String> generateTransferLink(List<StorageDocument> documents) async {
+    throw UnsupportedError('Transfer link generation not supported by this service');
   }
 }
 
@@ -136,16 +172,38 @@ class USBTransferService extends TransferService {
 
 /// Bluetooth Transfer Service
 class BluetoothTransferService extends TransferService {
-  static const String _serviceName = 'WebDoc Bluetooth Transfer';
   String? _deviceAddress;
   double _progress = 0.0;
+  fb.BluetoothDevice? _connectedDevice;
 
   @override
   Future<void> initialize() async {
+    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux
+    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      status = TransferStatus.failed;
+      throw Exception('Bluetooth not supported on this platform - REGULAR SERVICE');
+    }
+
     try {
       status = TransferStatus.initializing;
-      // TODO: initialize bluetooth adapter and permissions
-      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (!await Permission.bluetooth.request().isGranted) {
+        status = TransferStatus.failed;
+        throw Exception('Bluetooth permission denied');
+      }
+
+      // Check if Bluetooth is available and enabled
+      if (!await fb.FlutterBluePlus.isAvailable) {
+        status = TransferStatus.failed;
+        throw Exception('Bluetooth not available on this device');
+      }
+
+      final adapterState = await fb.FlutterBluePlus.adapterState.first;
+      if (adapterState != fb.BluetoothAdapterState.on) {
+        status = TransferStatus.failed;
+        throw Exception('Bluetooth is not enabled. Please enable Bluetooth in settings.');
+      }
+
       status = TransferStatus.idle;
     } catch (e) {
       status = TransferStatus.failed;
@@ -155,22 +213,83 @@ class BluetoothTransferService extends TransferService {
 
   @override
   Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux
+    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux) {
+      return TransferResult(
+        success: false,
+        message: 'Bluetooth not supported on this platform',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
+
+      if (_connectedDevice == null) {
+        final connected = await connectToDefaultDevice();
+        if (!connected) {
+          status = TransferStatus.failed;
+          return TransferResult(
+            success: false,
+            message: 'No system Bluetooth device available',
+            transferredDocumentIds: [],
+            timestamp: DateTime.now(),
+          );
+        }
+      }
+
       final transferred = <String>[];
 
+      // discover services and characteristics
+      final services = await _connectedDevice!.discoverServices();
+      fb.BluetoothCharacteristic? writeChar;
+
+      for (var service in services) {
+        for (var char in service.characteristics) {
+          if (char.properties.write || char.properties.writeWithoutResponse) {
+            writeChar = char;
+            break;
+          }
+        }
+        if (writeChar != null) break;
+      }
+
+      if (writeChar == null) {
+        status = TransferStatus.failed;
+        return TransferResult(
+          success: false,
+          message: 'No writable Bluetooth characteristic found',
+          transferredDocumentIds: [],
+          timestamp: DateTime.now(),
+        );
+      }
+
       for (int i = 0; i < documents.length; i++) {
-        // TODO: implement real bluetooth transfer
-        await Future.delayed(const Duration(milliseconds: 200));
-        transferred.add(documents[i].id);
+        final doc = documents[i];
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null || bytes.isEmpty) {
+          continue;
+        }
+
+        const chunkSize = 512;
+        for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+          final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
+          await writeChar.write(bytes.sublist(offset, end), withoutResponse: true);
+          await Future.delayed(const Duration(milliseconds: 20));
+        }
+
+        transferred.add(doc.id);
         _progress = (i + 1) / documents.length;
       }
 
       status = TransferStatus.completed;
       return TransferResult(
-        success: true,
-        message: 'Simulated Bluetooth transfer completed',
+        success: transferred.isNotEmpty,
+        message: transferred.isNotEmpty
+            ? 'Bluetooth transfer to default device (${_deviceAddress ?? 'unknown'}) completed'
+            : 'No documents were transferred',
         transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
@@ -194,23 +313,64 @@ class BluetoothTransferService extends TransferService {
     _progress = 0.0;
   }
 
-  /// Discover nearby Bluetooth devices (simulated)
-  Future<List<BluetoothDevice>> discoverDevices() async {
-    // TODO: replace with real discovery logic
-    await Future.delayed(const Duration(milliseconds: 200));
-    return [
-      BluetoothDevice(address: '00:11:22:33:44:55', name: 'WebDoc-Printer-1'),
-      BluetoothDevice(address: 'AA:BB:CC:DD:EE:FF', name: 'WebDoc-Phone-1'),
-    ];
+  Future<List<LocalBluetoothDevice>> discoverDevices() async {
+    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
+    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      throw Exception('Bluetooth not supported on this platform');
+    }
+
+    final List<LocalBluetoothDevice> devices = [];
+    final List<fb.ScanResult> results = [];
+
+    final subscription = fb.FlutterBluePlus.scanResults.listen((list) {
+      results.clear();
+      results.addAll(list);
+    });
+
+    await fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)); // wait for scan to complete
+    await subscription.cancel();
+
+    for (var result in results) {
+      devices.add(LocalBluetoothDevice(address: result.device.id.id, name: result.device.name));
+    }
+
+    return devices;
   }
 
   /// Connect to a specific device. Returns true on success.
   Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
+    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
+    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      throw Exception('Bluetooth not supported on this platform');
+    }
+
     try {
       status = TransferStatus.initializing;
+
+      // First scan if no recent results
+      List<fb.ScanResult> currentResults = [];
+      final subscription = fb.FlutterBluePlus.scanResults.listen((list) {
+        currentResults = list;
+      });
+      if (currentResults.isEmpty) {
+        await fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)); // wait for scan to complete
+        await subscription.cancel();
+      } else {
+        await subscription.cancel();
+      }
+
+      final results = currentResults;
+      final found = results.firstWhere(
+        (r) => r.device.id.id == deviceAddress,
+        orElse: () => throw Exception('Device not found'),
+      );
+
+      _connectedDevice = found.device;
       _deviceAddress = deviceAddress;
-      // TODO: implement actual connection
-      await Future.delayed(const Duration(milliseconds: 400));
+
+      await _connectedDevice!.connect(timeout: const Duration(seconds: 10));
+      await _connectedDevice!.discoverServices();
+
       status = TransferStatus.idle;
       return true;
     } catch (e) {
@@ -219,27 +379,41 @@ class BluetoothTransferService extends TransferService {
     }
   }
 
+  /// Connect to the default system Bluetooth device (first available)
+  Future<bool> connectToDefaultDevice() async {
+    final devices = await discoverDevices();
+    if (devices.isEmpty) return false;
+    return connectToDevice(devices.first.address, devices.first.name);
+  }
+
   Future<void> disconnect() async {
     _deviceAddress = null;
     status = TransferStatus.idle;
   }
 }
 
-/// WiFi Hotspot Transfer Service
-class WiFiHotspotTransferService extends TransferService {
-  static const int defaultPort = 8888;
-  String? _hotspotName;
-  String? _hotspotPassword;
-  late int _port;
+/// Windows Bluetooth Transfer Service (using win_ble)
+class WindowsBluetoothTransferService extends TransferService {
+  String? _deviceAddress;
   double _progress = 0.0;
+  final Map<String, BleDevice> _discoveredDevices = {};
+  StreamSubscription? _scanSubscription;
+  StreamSubscription? _connectionSubscription;
 
   @override
   Future<void> initialize() async {
+    debugPrint('WindowsBluetoothTransferService.initialize() called');
     try {
       status = TransferStatus.initializing;
-      _port = defaultPort;
-      // TODO: initialize wifi/hotspot and permissions
-      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Windows Bluetooth is only supported on Windows
+      if (!Platform.isWindows) {
+        status = TransferStatus.failed;
+        throw Exception('Windows Bluetooth not supported on this platform - WRONG SERVICE USED');
+      }
+
+      // Initialize win_ble
+      await WinBle.initialize(serverPath: await WinServer.path());
       status = TransferStatus.idle;
     } catch (e) {
       status = TransferStatus.failed;
@@ -249,23 +423,575 @@ class WiFiHotspotTransferService extends TransferService {
 
   @override
   Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    // Windows Bluetooth is only supported on Windows
+    if (!Platform.isWindows) {
+      return TransferResult(
+        success: false,
+        message: 'Windows Bluetooth not supported on this platform',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
       final transferred = <String>[];
 
+      // For classic Bluetooth, export files to a folder for manual transfer
+      final baseDir = await getApplicationDocumentsDirectory();
+      final exportDir = Directory('${baseDir.path}${Platform.pathSeparator}Bluetooth_Transfer');
+      if (!await exportDir.exists()) {
+        await exportDir.create(recursive: true);
+      }
+
       for (int i = 0; i < documents.length; i++) {
-        // TODO: implement real wifi/http transfer
-        await Future.delayed(const Duration(milliseconds: 200));
-        transferred.add(documents[i].id);
+        final doc = documents[i];
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null) {
+          continue;
+        }
+
+        final fileName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
+        final outFile = File('${exportDir.path}${Platform.pathSeparator}$fileName');
+        await outFile.writeAsBytes(bytes, flush: true);
+        // Open Bluetooth send dialog for the file
+        final result = await Process.run('rundll32.exe', ['bthprops.cpl,BluetoothSendFile', outFile.path]);
+        debugPrint('Bluetooth send result: ${result.exitCode} ${result.stdout} ${result.stderr}');
+        transferred.add(doc.id);
         _progress = (i + 1) / documents.length;
       }
 
       status = TransferStatus.completed;
       return TransferResult(
-        success: true,
-        message: 'Simulated WiFi transfer completed',
+        success: transferred.isNotEmpty,
+        message: transferred.isNotEmpty
+            ? 'Files prepared for Bluetooth transfer. Sending dialogs have opened for each file. Select the device and send.'
+            : 'No documents were exported',
         transferredDocumentIds: transferred,
+        timestamp: DateTime.now(),
+      );
+    } catch (e) {
+      status = TransferStatus.failed;
+      return TransferResult(
+        success: false,
+        message: 'Bluetooth export failed: $e',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  double getProgress() => _progress;
+
+  @override
+  Future<void> cancel() async {
+    status = TransferStatus.cancelled;
+    _progress = 0.0;
+  }
+
+  Future<List<LocalBluetoothDevice>> discoverDevices() async {
+    // Windows Bluetooth is only supported on Windows
+    if (!Platform.isWindows) {
+      throw Exception('Windows Bluetooth not supported on this platform');
+    }
+
+    final devices = <LocalBluetoothDevice>[];
+
+    // Use win32 to enumerate Bluetooth devices
+    final searchParams = calloc<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
+    searchParams.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
+    searchParams.ref.fReturnAuthenticated = TRUE;
+    searchParams.ref.fReturnRemembered = TRUE;
+    searchParams.ref.fReturnUnknown = TRUE;
+    searchParams.ref.fReturnConnected = TRUE;
+    searchParams.ref.fIssueInquiry = TRUE;
+    searchParams.ref.cTimeoutMultiplier = 5;
+
+    final deviceInfo = calloc<BLUETOOTH_DEVICE_INFO>();
+    deviceInfo.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_INFO>();
+
+    final hFind = BluetoothFindFirstDevice(searchParams, deviceInfo);
+    if (hFind == NULL) {
+      calloc.free(searchParams);
+      calloc.free(deviceInfo);
+      throw Exception('Failed to start Bluetooth device search');
+    }
+
+    do {
+      final address = deviceInfo.ref.Address.ullLong;
+      final addressStr = address.toRadixString(16).padLeft(12, '0').toUpperCase();
+      final formattedAddress = '${addressStr.substring(0, 2)}:${addressStr.substring(2, 4)}:${addressStr.substring(4, 6)}:${addressStr.substring(6, 8)}:${addressStr.substring(8, 10)}:${addressStr.substring(10, 12)}';
+      final name = deviceInfo.ref.szName.replaceAll('\x00', '').trim();
+      debugPrint('Bluetooth Device found - Address: $formattedAddress, Name: "$name"');
+      devices.add(LocalBluetoothDevice(
+        address: formattedAddress,
+        name: name.isNotEmpty ? name : 'Unknown Device',
+      ));
+    } while (BluetoothFindNextDevice(hFind, deviceInfo) != FALSE);
+
+    BluetoothFindDeviceClose(hFind);
+    calloc.free(searchParams);
+    calloc.free(deviceInfo);
+
+    return devices;
+  }
+
+  String getDeviceName(String address) {
+    final device = _discoveredDevices[address];
+    if (device != null && device.name.isNotEmpty && device.name != 'N/A') {
+      return device.name;
+    }
+    return address;
+  }
+
+  Future<String?> _fetchGattDeviceName(String address) async {
+    try {
+      debugPrint('Fetching GATT name for $address');
+      final services = await WinBle.discoverServices(address);
+      debugPrint('Services for $address: $services');
+      final gattService = services.firstWhere(
+        (s) => s.toLowerCase().contains('1800'),
+        orElse: () => '',
+      );
+      debugPrint('GATT service for $address: $gattService');
+      if (gattService.isEmpty) return null;
+
+      final characteristics = await WinBle.discoverCharacteristics(
+        address: address,
+        serviceId: gattService,
+      );
+      debugPrint('Characteristics for $address: $characteristics');
+
+      final propertyChars = characteristics.where((c) => c.uuid.toLowerCase().contains('2a00')).toList();
+      debugPrint('Name chars for $address: $propertyChars');
+      if (propertyChars.isEmpty) return null;
+      final nameChar = propertyChars.first;
+
+      final data = await WinBle.read(
+        address: address,
+        serviceId: gattService,
+        characteristicId: nameChar.uuid,
+      );
+      debugPrint('Data for $address: $data');
+      if (data == null || data.isEmpty) return null;
+      final name = String.fromCharCodes(data).trim();
+      debugPrint('Decoded name for $address: "$name"');
+      return name;
+    } catch (e) {
+      debugPrint('Exception fetching GATT name for $address: $e');
+      return null;
+    }
+  }
+
+  /// Connect to a specific device. Returns true on success.
+  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
+    // Windows Bluetooth is only supported on Windows
+    if (!Platform.isWindows) {
+      throw Exception('Windows Bluetooth not supported on this platform');
+    }
+
+    try {
+      status = TransferStatus.initializing;
+
+      _deviceAddress = deviceAddress;
+
+      // For classic Bluetooth, skip BLE connection
+      // await WinBle.connect(deviceAddress);
+
+      // Try to fetch GATT device name if the scanned name is missing.
+      final gattName = await _fetchGattDeviceName(deviceAddress);
+      if (gattName != null && gattName.isNotEmpty && gattName != 'N/A') {
+        // Update name if needed
+      }
+
+      // Listen for connection status (dummy for classic)
+      // _connectionSubscription = WinBle.connectionStreamOf(deviceAddress).listen((bool isConnected) {
+      //   if (!isConnected) {
+      //     _deviceAddress = null;
+      //     status = TransferStatus.idle;
+      //   }
+      // });
+
+      status = TransferStatus.idle;
+      return true;
+    } catch (e) {
+      debugPrint('Bluetooth connect failed: $e');
+      status = TransferStatus.failed;
+      return false;
+    }
+  }
+
+  /// Connect to the default system Bluetooth device (first available)
+  Future<bool> connectToDefaultDevice() async {
+    final devices = await discoverDevices();
+    if (devices.isEmpty) return false;
+    return connectToDevice(devices.first.address, devices.first.name);
+  }
+
+  Future<void> disconnect() async {
+    if (_deviceAddress != null) {
+      await WinBle.disconnect(_deviceAddress!);
+      await _connectionSubscription?.cancel();
+      _connectionSubscription = null;
+    }
+    _deviceAddress = null;
+    status = TransferStatus.idle;
+  }
+
+  @override
+  Future<void> dispose() async {
+    await disconnect();
+    await _scanSubscription?.cancel();
+    WinBle.dispose();
+    super.dispose();
+  }
+}
+
+/// Windows WiFi Hotspot Transfer Service
+class WindowsWiFiHotspotTransferService extends TransferService {
+  static const int defaultPort = 8888;
+  String? _hotspotName;
+  String _hotspotKey = 'WebDoc1234';
+  bool _hostedNetworkSupported = false;
+  late int _port;
+  double _progress = 0.0;
+  HttpServer? _httpServer;
+  final Map<String, List<int>> _fileCache = {};
+  Process? _hotspotProcess;
+
+  Future<bool> _isHostedNetworkSupported() async {
+    try {
+      final result = await Process.run('netsh', ['wlan', 'show', 'drivers']);
+      if (result.exitCode != 0) return false;
+      final output = result.stdout.toString();
+      return output.contains('Hosted network supported  : Yes');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> initialize() async {
+    // Windows WiFi hotspot is only supported on Windows
+    if (!Platform.isWindows) {
+      status = TransferStatus.failed;
+      throw Exception('Windows WiFi hotspot not supported on this platform');
+    }
+
+    status = TransferStatus.initializing;
+    _port = defaultPort;
+    _hotspotName = 'WebDocHotspot';
+    _hotspotKey = 'WebDoc1234';
+
+    _hostedNetworkSupported = await _isHostedNetworkSupported();
+    if (!_hostedNetworkSupported) {
+      status = TransferStatus.failed;
+      debugPrint('Windows hosted network not supported on this adapter');
+      return;
+    }
+
+    final started = await _startWindowsHostedNetwork();
+    if (!started) {
+      status = TransferStatus.failed;
+      debugPrint('netsh start hostednetwork failed. Need admin & adapter support.');
+      return;
+    }
+
+    status = TransferStatus.idle;
+  }
+
+  Future<bool> _startWindowsHostedNetwork() async {
+    try {
+      final setResult = await Process.run('netsh', [
+        'wlan',
+        'set',
+        'hostednetwork',
+        'mode=allow',
+        'ssid=$_hotspotName',
+        'key=$_hotspotKey',
+      ]);
+
+      if (setResult.exitCode != 0) {
+        debugPrint('netsh set hostednetwork failed: ${setResult.stderr}');
+        return false;
+      }
+
+      final startResult = await Process.run('netsh', [
+        'wlan',
+        'start',
+        'hostednetwork',
+      ]);
+
+      if (startResult.exitCode != 0) {
+        debugPrint('netsh start hostednetwork failed: ${startResult.stderr}');
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error starting Windows hosted network: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _stopWindowsHostedNetwork() async {
+    try {
+      final stopResult = await Process.run('netsh', [
+        'wlan',
+        'stop',
+        'hostednetwork',
+      ]);
+
+      return stopResult.exitCode == 0;
+    } catch (e) {
+      debugPrint('Error stopping Windows hosted network: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    // Windows WiFi hotspot is only supported on Windows
+    if (!Platform.isWindows) {
+      return TransferResult(
+        success: false,
+        message: 'Windows WiFi hotspot not supported on this platform',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
+    if (!_hostedNetworkSupported) {
+      return TransferResult(
+        success: false,
+        message: 'WiFi hotspot not supported by your WiFi adapter or OS',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
+    // ensure hotspot is running before transfer
+    final started = await _startWindowsHostedNetwork();
+    if (!started) {
+      return TransferResult(
+        success: false,
+        message: 'Failed to start Windows WiFi hotspot; please run app as Administrator and ensure hosted network is supported.',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
+    try {
+      status = TransferStatus.transferring;
+      _progress = 0.0;
+      _fileCache.clear();
+
+      // Ensure hotspot is running before file transfer begins
+      final started = await _startWindowsHostedNetwork();
+      if (!started) {
+        status = TransferStatus.failed;
+        return TransferResult(
+          success: false,
+          message: 'Failed to start Windows WiFi hotspot. Make sure your WiFi adapter supports hosted network and you are running with sufficient privileges.',
+          transferredDocumentIds: [],
+          timestamp: DateTime.now(),
+        );
+      }
+
+      // In a real app, a system-level hotspot may require elevated rights.
+
+      for (int i = 0; i < documents.length; i++) {
+        final doc = documents[i];
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null || bytes.isEmpty) continue;
+
+        _fileCache[doc.originalName.isNotEmpty ? doc.originalName : doc.name] = bytes;
+        _progress = (i + 1) / documents.length;
+      }
+
+      _httpServer ??= await HttpServer.bind(InternetAddress.anyIPv4, _port);
+      _httpServer!.listen((HttpRequest request) {
+        final path = request.uri.pathSegments.isNotEmpty ? request.uri.pathSegments.last : '';
+        if (_fileCache.containsKey(path)) {
+          request.response.headers.contentType = ContentType.binary;
+          request.response.add(_fileCache[path]!);
+          request.response.close();
+        } else if (request.uri.path == '/files') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(_fileCache.keys.toList());
+          request.response.close();
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+          request.response.close();
+        }
+      });
+
+      final runMsg = 'Windows WiFi hotspot HTTP server started on port $_port, available files: ${_fileCache.keys.join(', ')}';
+      status = TransferStatus.completed;
+      return TransferResult(
+        success: _fileCache.isNotEmpty,
+        message: runMsg,
+        transferredDocumentIds: documents.where((d) => _fileCache.containsKey(d.originalName.isNotEmpty ? d.originalName : d.name)).map((d) => d.id).toList(),
+        timestamp: DateTime.now(),
+      );
+    } catch (e) {
+      status = TransferStatus.failed;
+      return TransferResult(
+        success: false,
+        message: 'Windows WiFi transfer failed: $e',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  double getProgress() => _progress;
+
+  @override
+  Future<void> cancel() async {
+    status = TransferStatus.cancelled;
+    _progress = 0.0;
+    await _httpServer?.close(force: true);
+    _httpServer = null;
+    _fileCache.clear();
+
+    // Stop hosted network when transfer is cancelled
+    await _stopWindowsHostedNetwork();
+    _hotspotProcess?.kill();
+    _hotspotProcess = null;
+  }
+
+  Future<Map<String, String>> getNetworkInfo() async {
+    // Windows WiFi hotspot is only supported on Windows
+    if (!Platform.isWindows) {
+      return {
+        'ip': '',
+        'hostname': 'webdoc-device',
+        'port': _port.toString(),
+      };
+    }
+
+    // For Windows, attempt to detect the hotspot IP on the shared network interface
+    final ip = await NetworkInfo().getWifiIP();
+    final hostname = _hotspotName ?? 'WebDocHotspot';
+    return {
+      'ip': ip ?? '192.168.137.1',
+      'hostname': hostname,
+      'port': _port.toString(),
+    };
+  }
+
+  Future<String> generateTransferLink(List<StorageDocument> documents) async {
+    final info = await getNetworkInfo();
+    return 'http://${info['ip']}:${info['port']}/files';
+  }
+
+  void setPort(int port) {
+    _port = port;
+  }
+}
+
+/// WiFi Hotspot Transfer Service
+class WiFiHotspotTransferService extends TransferService {
+  static const int defaultPort = 8888;
+  String? _hotspotName;
+  late int _port;
+  double _progress = 0.0;
+  HttpServer? _httpServer;
+  final Map<String, List<int>> _fileCache = {};
+
+  @override
+  Future<void> initialize() async {
+    // WiFi hotspot is only supported on Android
+    if (!Platform.isAndroid) {
+      status = TransferStatus.failed;
+      throw Exception('WiFi hotspot not supported on this platform');
+    }
+
+    try {
+      status = TransferStatus.initializing;
+      _port = defaultPort;
+
+      final wifiEnabled = await WiFiForIoTPlugin.isEnabled();
+      if (!wifiEnabled) {
+        final enabled = await WiFiForIoTPlugin.setEnabled(true);
+        if (!enabled) {
+          status = TransferStatus.failed;
+          throw Exception('Failed to enable WiFi');
+        }
+      }
+
+      _hotspotName = await NetworkInfo().getWifiName();
+      status = TransferStatus.idle;
+    } catch (e) {
+      status = TransferStatus.failed;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    // WiFi hotspot is only supported on Android
+    if (!Platform.isAndroid) {
+      return TransferResult(
+        success: false,
+        message: 'WiFi hotspot not supported on this platform',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
+    try {
+      status = TransferStatus.transferring;
+      _progress = 0.0;
+      _fileCache.clear();
+
+      final networkInfo = await getNetworkInfo();
+      if (networkInfo['ip'] == null || networkInfo['ip']!.isEmpty) {
+        status = TransferStatus.failed;
+        return TransferResult(
+          success: false,
+          message: 'No network info available from default WiFi hotspot',
+          transferredDocumentIds: [],
+          timestamp: DateTime.now(),
+        );
+      }
+
+      for (int i = 0; i < documents.length; i++) {
+        final doc = documents[i];
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null || bytes.isEmpty) continue;
+
+        _fileCache[doc.originalName.isNotEmpty ? doc.originalName : doc.name] = bytes;
+        _progress = (i + 1) / documents.length;
+      }
+
+      _httpServer ??= await HttpServer.bind(InternetAddress.anyIPv4, _port);
+      _httpServer!.listen((HttpRequest request) {
+        final path = request.uri.pathSegments.isNotEmpty ? request.uri.pathSegments.last : '';
+        if (_fileCache.containsKey(path)) {
+          request.response.headers.contentType = ContentType.binary;
+          request.response.add(_fileCache[path]!);
+          request.response.close();
+        } else if (request.uri.path == '/files') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(_fileCache.keys.toList());
+          request.response.close();
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+          request.response.close();
+        }
+      });
+
+      final runMsg = 'WiFi hotspot HTTP server started on ${networkInfo['ip']}:${_port}, available files: ${_fileCache.keys.join(', ')}';
+      status = TransferStatus.completed;
+      return TransferResult(
+        success: _fileCache.isNotEmpty,
+        message: runMsg,
+        transferredDocumentIds: documents.where((d) => _fileCache.containsKey(d.originalName.isNotEmpty ? d.originalName : d.name)).map((d) => d.id).toList(),
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -286,20 +1012,33 @@ class WiFiHotspotTransferService extends TransferService {
   Future<void> cancel() async {
     status = TransferStatus.cancelled;
     _progress = 0.0;
+    await _httpServer?.close(force: true);
+    _httpServer = null;
+    _fileCache.clear();
   }
 
   Future<Map<String, String>> getNetworkInfo() async {
-    // TODO: return actual network info
+    // WiFi hotspot is only supported on Android
+    if (!Platform.isAndroid) {
+      return {
+        'ip': '',
+        'hostname': 'webdoc-device',
+        'port': _port.toString(),
+      };
+    }
+
+    final info = await NetworkInfo().getWifiIP();
+    final name = _hotspotName ?? await NetworkInfo().getWifiName();
     return {
-      'ip': '192.168.0.100',
-      'hostname': 'webdoc-device',
+      'ip': info ?? '',
+      'hostname': name ?? 'webdoc-device',
       'port': _port.toString(),
     };
   }
 
   Future<String> generateTransferLink(List<StorageDocument> documents) async {
     final info = await getNetworkInfo();
-    return 'http://${info['ip']}:${info['port']}/transfer?token=demo';
+    return 'http://${info['ip']}:${info['port']}/files';
   }
 
   void setPort(int port) {
@@ -394,22 +1133,45 @@ class QrCodeTransferService extends TransferService {
 
 /// Manager for coordinating transfer operations
 class TransferManager {
+  static bool _created = false;
+  
   final USBTransferService usb = USBTransferService();
-  final BluetoothTransferService bluetooth = BluetoothTransferService();
-  final WiFiHotspotTransferService wifiHotspot = WiFiHotspotTransferService();
+  final TransferService bluetooth;
+  final TransferService wifiHotspot;
   final QrCodeTransferService qrCode = QrCodeTransferService();
+
+  TransferManager() :
+    bluetooth = WindowsBluetoothTransferService(),
+    wifiHotspot = WindowsWiFiHotspotTransferService() {
+    debugPrint('=== TransferManager constructor START ===');
+    _created = true;
+    debugPrint('TransferManager constructor called - Created: $_created');
+    debugPrint('Bluetooth service type: ${bluetooth.runtimeType}');
+    debugPrint('WiFi service type: ${wifiHotspot.runtimeType}');
+    debugPrint('=== TransferManager constructor END ===');
+  }
 
   /// Initialize all transfer services
   Future<void> initializeAll() async {
-    try {
-      await Future.wait([
-        usb.initialize(),
-        bluetooth.initialize(),
-        wifiHotspot.initialize(),
-        qrCode.initialize(),
-      ]);
-    } catch (e) {
-      debugPrint('Error initializing transfer services: $e');
+    debugPrint('=== TransferManager.initializeAll() START ===');
+    debugPrint('TransferManager.initializeAll() called - Created: $_created');
+    final services = [
+      ('USB', usb),
+      ('Bluetooth', bluetooth),
+      ('WiFi Hotspot', wifiHotspot),
+      ('QR Code', qrCode),
+    ];
+
+    for (final serviceEntry in services) {
+      final name = serviceEntry.$1;
+      final service = serviceEntry.$2;
+      try {
+        await service.initialize();
+        debugPrint('$name transfer service initialized successfully');
+      } catch (e) {
+        debugPrint('Failed to initialize $name transfer service: $e');
+        // Continue with other services
+      }
     }
   }
 
@@ -423,6 +1185,24 @@ class TransferManager {
   }
 
   /// Get service for transfer method
+  /// Check if a transfer service is available on this platform
+  bool isServiceAvailable(TransferMethod method) {
+    switch (method) {
+      case TransferMethod.usb:
+      case TransferMethod.qrCode:
+        return true; // Always available
+      case TransferMethod.bluetooth:
+        return Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isLinux || Platform.isWindows;
+      case TransferMethod.wifiHotspot:
+        return Platform.isAndroid || Platform.isWindows;
+    }
+  }
+
+  /// Get available transfer methods for this platform
+  List<TransferMethod> getAvailableMethods() {
+    return TransferMethod.values.where((method) => isServiceAvailable(method)).toList();
+  }
+
   TransferService _getService(TransferMethod method) {
     return switch (method) {
       TransferMethod.usb => usb,
@@ -441,15 +1221,18 @@ class TransferManager {
   }
 }
 
-/// Bluetooth Device (placeholder)
-class BluetoothDevice {
+/// Local Bluetooth Device wrapper
+class LocalBluetoothDevice {
   final String address;
   final String name;
   final bool isConnected;
 
-  BluetoothDevice({
+  LocalBluetoothDevice({
     required this.address,
     required this.name,
     this.isConnected = false,
   });
+
+  @override
+  String toString() => '$name ($address)';
 }

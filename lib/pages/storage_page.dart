@@ -33,11 +33,100 @@ class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
   bool _isLoading = false;
 
+  List<LocalBluetoothDevice> _bluetoothDevices = [];
+  LocalBluetoothDevice? _connectedBluetoothDevice;
+  bool _isBluetoothScanning = false;
+
+  bool _isWifiActive = false;
+  String _wifiStatusMessage = 'WiFi hotspot not initialized';
+
   Future<void> _refreshDocuments() async {
     setState(() => _isLoading = true);
     await Future.delayed(const Duration(milliseconds: 500));
     widget.onUpload?.call();
     setState(() => _isLoading = false);
+  }
+
+  Future<void> _scanBluetoothDevices() async {
+    if (widget.transferManager == null) return;
+    setState(() {
+      _isBluetoothScanning = true;
+      _bluetoothDevices = [];
+    });
+    try {
+      final devices = await widget.transferManager!.bluetooth.discoverDevices();
+      setState(() {
+        _bluetoothDevices = devices;
+      });
+      if (devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Bluetooth scan failed: $e')));
+    } finally {
+      setState(() => _isBluetoothScanning = false);
+    }
+  }
+
+  Future<void> _connectBluetoothDevice(LocalBluetoothDevice device) async {
+    if (widget.transferManager == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connecting to ${device.name}...')));
+    final ok = await widget.transferManager!.bluetooth.connectToDevice(device.address, device.name);
+    if (ok) {
+      String displayName = device.name;
+      if (widget.transferManager!.bluetooth is WindowsBluetoothTransferService) {
+        final winService = widget.transferManager!.bluetooth as WindowsBluetoothTransferService;
+        displayName = winService.getDeviceName(device.address);
+      }
+
+      setState(() {
+        _connectedBluetoothDevice = LocalBluetoothDevice(address: device.address, name: displayName, isConnected: true);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connected to $displayName')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to connect to ${device.name}')));
+    }
+  }
+
+  Future<void> _initWifiHotspot() async {
+    if (widget.transferManager == null) return;
+    setState(() {
+      _wifiStatusMessage = 'Initializing Wifi hotspot...';
+    });
+
+    try {
+      await widget.transferManager!.wifiHotspot.initialize();
+      final info = await widget.transferManager!.wifiHotspot.getNetworkInfo();
+      setState(() {
+        _isWifiActive = true;
+        _wifiStatusMessage = 'Hotspot active on ${info['hostname']} (${info['ip']})';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_wifiStatusMessage)));
+    } catch (e) {
+      setState(() {
+        _isWifiActive = false;
+        _wifiStatusMessage = 'Wifi hotspot init failed: $e';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_wifiStatusMessage)));
+    }
+  }
+
+  Future<void> _startWifiTransfer() async {
+    if (widget.transferManager == null) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    final selectedDocs = _selectedDocs.isNotEmpty
+        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+        : widget.documents;
+    final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, selectedDocs);
+    setState(() {
+      _isLoading = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   void _showUploadOptions(BuildContext context) {
@@ -56,40 +145,29 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
                   return;
                 }
+
+                // Check if Bluetooth is available on this platform
+                if (!widget.transferManager!.isServiceAvailable(TransferMethod.bluetooth)) {
+                  messenger.showSnackBar(const SnackBar(content: Text('Bluetooth transfer not available on this platform')));
+                  return;
+                }
+
                 final docsToTransfer = _selectedDocs.isNotEmpty
                     ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
                     : widget.documents;
-                final navigator = Navigator.of(context);
-                messenger.showSnackBar(const SnackBar(content: Text('Discovering Bluetooth devices...')));
-                final devices = await widget.transferManager!.bluetooth.discoverDevices();
-                if (!mounted) return;
-                if (devices.isEmpty) {
-                  messenger.showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
-                  return;
-                }
-                final selected = await showDialog<BluetoothDevice?>(
-                  context: navigator.context,
-                  builder: (ctx2) => SimpleDialog(
-                    title: const Text('Select Bluetooth device'),
-                    children: devices.map((dev) => SimpleDialogOption(
-                      onPressed: () => Navigator.pop(ctx2, dev),
-                      child: Text(dev.toString()),
-                    )).toList(),
-                  ),
-                );
-                if (selected == null || !mounted) return;
-                final connected = await widget.transferManager!.bluetooth.connectToDevice(selected.address, selected.name);
+                messenger.showSnackBar(const SnackBar(content: Text('Using system default Bluetooth device...')));
+                final connected = await widget.transferManager!.bluetooth.connectToDefaultDevice();
                 if (!mounted) return;
                 if (!connected) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Failed to connect to device')));
+                  messenger.showSnackBar(const SnackBar(content: Text('No system Bluetooth device found')));
                   return;
                 }
-                messenger.showSnackBar(const SnackBar(content: Text('Starting Bluetooth transfer...')));
+                messenger.showSnackBar(const SnackBar(content: Text('Initializing default Bluetooth transfer...')));
                 final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToTransfer);
                 messenger.showSnackBar(SnackBar(content: Text(result.message)));
               },
               icon: const Icon(Icons.bluetooth),
-              label: const Text('Bluetooth'),
+              label: const Text('Bluetooth (default)'),
             ),
             TextButton.icon(
               onPressed: () async {
@@ -99,21 +177,41 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
                   return;
                 }
+
+                // Check if WiFi hotspot is available on this platform
+                if (!widget.transferManager!.isServiceAvailable(TransferMethod.wifiHotspot)) {
+                  messenger.showSnackBar(const SnackBar(content: Text('WiFi hotspot transfer not available on this platform')));
+                  return;
+                }
+
                 final docsToTransfer = _selectedDocs.isNotEmpty
                     ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
                     : widget.documents;
-                final navigator = Navigator.of(context);
-                messenger.showSnackBar(const SnackBar(content: Text('Preparing WiFi transfer...')));
+                messenger.showSnackBar(const SnackBar(content: Text('Using system default WiFi hotspot...')));
                 try {
                   await widget.transferManager!.wifiHotspot.initialize();
                   if (!mounted) return;
+                  final netInfo = await widget.transferManager!.wifiHotspot.getNetworkInfo();
+                  if (!mounted) return;
+                  if (netInfo['ip'] == null || netInfo['ip']!.isEmpty) {
+                    messenger.showSnackBar(const SnackBar(content: Text('No WiFi hotspot info available')));
+                    return;
+                  }
                   final link = await widget.transferManager!.wifiHotspot.generateTransferLink(docsToTransfer);
                   if (!mounted) return;
                   await showDialog<void>(
-                    context: navigator.context,
+                    context: context,
                     builder: (ctx2) => AlertDialog(
                       title: const Text('WiFi Transfer Link'),
-                      content: SelectableText(link),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Network: ${netInfo['hostname'] ?? 'default'}'),
+                          const SizedBox(height: 8),
+                          SelectableText(link),
+                        ],
+                      ),
                       actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Close'))],
                     ),
                   );
@@ -125,7 +223,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                 }
               },
               icon: const Icon(Icons.wifi),
-              label: const Text('WiFi Hotspot'),
+              label: const Text('WiFi Hotspot (default)'),
             ),
             TextButton.icon(
               onPressed: () async {
@@ -267,30 +365,102 @@ class _StorageInterfaceState extends State<StorageInterface> {
               ),
             ),
             if (!widget.printingMode)
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _refreshDocuments,
-                    icon: _isLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: const Text('Refresh'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isLoading ? Colors.grey : const Color(0xFF2563EB),
+              Flexible(
+                fit: FlexFit.tight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _refreshDocuments,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isLoading ? Colors.grey : const Color(0xFF2563EB),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () => _showUploadOptions(context),
+                          icon: const Icon(Icons.cloud_upload),
+                          label: const Text('Upload'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => _showUploadOptions(context),
-                    icon: const Icon(Icons.cloud_upload),
-                    label: const Text('Upload'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    Card(
+                      color: Colors.grey[50],
+                      elevation: 0,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Direct Transfer Interface', style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: _isBluetoothScanning ? null : _scanBluetoothDevices,
+                                  icon: const Icon(Icons.search),
+                                  label: Text(_isBluetoothScanning ? 'Scanning...' : 'Scan Bluetooth'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _connectedBluetoothDevice == null || _bluetoothDevices.isEmpty
+                                      ? null
+                                      : () => _connectBluetoothDevice(_connectedBluetoothDevice ?? _bluetoothDevices.first),
+                                  icon: const Icon(Icons.bluetooth),
+                                  label: const Text('Connect Bluetooth'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _initWifiHotspot,
+                                  icon: const Icon(Icons.wifi),
+                                  label: const Text('Init WiFi Hotspot'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _isWifiActive ? _startWifiTransfer : null,
+                                  icon: const Icon(Icons.wifi_tethering),
+                                  label: const Text('Start WiFi Transfer'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Bluetooth devices found: ${_bluetoothDevices.length}'),
+                            if (_bluetoothDevices.isNotEmpty)
+                              Wrap(
+                                spacing: 8,
+                                children: _bluetoothDevices.map((device) {
+                                  final selected = _connectedBluetoothDevice?.address == device.address;
+                                  return ChoiceChip(
+                                    label: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
+                                    selected: selected,
+                                    onSelected: (isSelected) {
+                                      if (isSelected) {
+                                        _connectBluetoothDevice(device);
+                                      }
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            if (_connectedBluetoothDevice != null)
+                              Text('Connected BT: ${_connectedBluetoothDevice!.name.isNotEmpty ? _connectedBluetoothDevice!.name : 'Unknown Device'}'),
+                            Text('WiFi status: $_wifiStatusMessage'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             if (widget.printingMode)
               Padding(
