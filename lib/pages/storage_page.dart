@@ -129,211 +129,58 @@ class _StorageInterfaceState extends State<StorageInterface> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
-  void _showUploadOptions(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('Upload File'),
-          content: const Text('Choose transfer method:'),
-          actions: [
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-
-                // Check if Bluetooth is available on this platform
-                if (!widget.transferManager!.isServiceAvailable(TransferMethod.bluetooth)) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Bluetooth transfer not available on this platform')));
-                  return;
-                }
-
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Using system default Bluetooth device...')));
-                final connected = await widget.transferManager!.bluetooth.connectToDefaultDevice();
-                if (!mounted) return;
-                if (!connected) {
-                  messenger.showSnackBar(const SnackBar(content: Text('No system Bluetooth device found')));
-                  return;
-                }
-                messenger.showSnackBar(const SnackBar(content: Text('Initializing default Bluetooth transfer...')));
-                final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToTransfer);
-                messenger.showSnackBar(SnackBar(content: Text(result.message)));
-              },
-              icon: const Icon(Icons.bluetooth),
-              label: const Text('Bluetooth (default)'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-
-                // Check if WiFi hotspot is available on this platform
-                if (!widget.transferManager!.isServiceAvailable(TransferMethod.wifiHotspot)) {
-                  messenger.showSnackBar(const SnackBar(content: Text('WiFi hotspot transfer not available on this platform')));
-                  return;
-                }
-
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Using system default WiFi hotspot...')));
-                try {
-                  await widget.transferManager!.wifiHotspot.initialize();
-                  if (!mounted) return;
-                  final netInfo = await widget.transferManager!.wifiHotspot.getNetworkInfo();
-                  if (!mounted) return;
-                  if (netInfo['ip'] == null || netInfo['ip']!.isEmpty) {
-                    messenger.showSnackBar(const SnackBar(content: Text('No WiFi hotspot info available')));
-                    return;
-                  }
-                  final link = await widget.transferManager!.wifiHotspot.generateTransferLink(docsToTransfer);
-                  if (!mounted) return;
-                  await showDialog<void>(
-                    context: context,
-                    builder: (ctx2) => AlertDialog(
-                      title: const Text('WiFi Transfer Link'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Network: ${netInfo['hostname'] ?? 'default'}'),
-                          const SizedBox(height: 8),
-                          SelectableText(link),
-                        ],
-                      ),
-                      actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Close'))],
-                    ),
-                  );
-                  if (!mounted) return;
-                  final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, docsToTransfer);
-                  messenger.showSnackBar(SnackBar(content: Text(result.message)));
-                } catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
-                }
-              },
-              icon: const Icon(Icons.wifi),
-              label: const Text('WiFi Hotspot (default)'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                try {
-                  messenger.showSnackBar(const SnackBar(content: Text('Selecting files...')));
-                  final paths = await openFiles();
-                  if (paths.isEmpty) return;
-                  int uploaded = 0;
-                  for (final xFile in paths) {
-                    try {
-                      final bytes = await xFile.readAsBytes();
-                      final mimeType = StorageService.getMimeType(xFile.name);
-                      final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
-                      if (doc != null) uploaded++;
-                    } catch (e) {
-                      debugPrint('Failed to upload file: $e');
-                    }
-                  }
-                  messenger.showSnackBar(SnackBar(content: Text('Uploaded $uploaded file(s)')));
-                  widget.onUpload?.call();
-                } catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text('USB upload failed: $e')));
-                }
-              },
-              icon: const Icon(Icons.usb),
-              label: const Text('From USB'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
-                final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
-                messenger.showSnackBar(SnackBar(content: Text(result.message)));
-              },
-              icon: const Icon(Icons.download),
-              label: const Text('Export to USB'),
-            ),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _showQrTransferDialog(context);
-              },
-              icon: const Icon(Icons.qr_code),
-              label: const Text('QR Code'),
-            ),
-          ],
-        );
-      },
-    );
+  Future<void> _importFromUSB() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      messenger.showSnackBar(const SnackBar(content: Text('Selecting files from USB...')));
+      final paths = await openFiles();
+      if (paths.isEmpty) return;
+      int uploaded = 0;
+      for (final xFile in paths) {
+        try {
+          final bytes = await xFile.readAsBytes();
+          final mimeType = StorageService.getMimeType(xFile.name);
+          final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
+          if (doc != null) uploaded++;
+        } catch (e) {
+          debugPrint('Failed to upload file: $e');
+        }
+      }
+      messenger.showSnackBar(SnackBar(content: Text('Imported $uploaded file(s) from USB')));
+      widget.onUpload?.call();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('USB import failed: $e')));
+    }
   }
 
-  void _showQrTransferDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('QR Code Transfer'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.qr_code, size: 80, color: Colors.grey[400]),
-                      const SizedBox(height: 12),
-                      Text(
-                        'TXN-${DateTime.now().millisecondsSinceEpoch}',
-                        style: const TextStyle(fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Scan this QR code on another device to transfer files',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
+  Future<void> _exportToUSB() async {
+    if (widget.transferManager == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
+      return;
+    }
+
+    final docsToTransfer = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
+    if (docsToTransfer.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select document(s) to export to USB')));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting selected documents to USB...')));
+    final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
   }
+
+  void _toggleDocumentSelection(String docId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedDocs.add(docId);
+      } else {
+        _selectedDocs.remove(docId);
+      }
+    });
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -388,9 +235,16 @@ class _StorageInterfaceState extends State<StorageInterface> {
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton.icon(
-                          onPressed: () => _showUploadOptions(context),
-                          icon: const Icon(Icons.cloud_upload),
-                          label: const Text('Upload'),
+                          onPressed: _importFromUSB,
+                          icon: const Icon(Icons.usb),
+                          label: const Text('Import from USB'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _exportToUSB,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Export to USB'),
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                         ),
                       ],
@@ -506,6 +360,19 @@ class _StorageInterfaceState extends State<StorageInterface> {
             ),
           ),
         if (_isLoading) const SizedBox(height: 16),
+        if (!widget.printingMode && _selectedDocs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final selected = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
+                widget.onSelectForPrint(selected);
+              },
+              icon: const Icon(Icons.print),
+              label: const Text('Print Selected Documents'),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+            ),
+          ),
         if (widget.documents.isEmpty)
           Center(
             child: Card(
@@ -536,19 +403,10 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      if (widget.printingMode)
-                        Checkbox(
-                          value: _selectedDocs.contains(doc.id),
-                          onChanged: (val) {
-                            setState(() {
-                              if (val == true) {
-                                _selectedDocs.add(doc.id);
-                              } else {
-                                _selectedDocs.remove(doc.id);
-                              }
-                            });
-                          },
-                        ),
+                      Checkbox(
+                        value: _selectedDocs.contains(doc.id),
+                        onChanged: (val) => _toggleDocumentSelection(doc.id, val == true),
+                      ),
                       const Icon(Icons.description, color: Color(0xFF2563EB)),
                       const SizedBox(width: 16),
                       Expanded(
@@ -570,12 +428,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
                       if (!widget.printingMode)
                         Row(
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: () => widget.onPrint(doc),
-                              icon: const Icon(Icons.print, size: 16),
-                              label: const Text('Print'),
-                            ),
-                            const SizedBox(width: 8),
                             ElevatedButton.icon(
                               onPressed: () => widget.onDelete(doc.id),
                               icon: const Icon(Icons.delete, size: 16),

@@ -209,6 +209,11 @@ class _ServicesPageState extends State<ServicesPage> {
               _printingFromStorage = false;
             });
           },
+          onRemoveSelectedDoc: (docId) {
+            setState(() {
+              _selectedDocsForPrint.removeWhere((doc) => doc.id == docId);
+            });
+          },
           onNavigate: widget.onNavigate,
         );
       case 'scanning':

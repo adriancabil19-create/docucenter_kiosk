@@ -1,0 +1,21 @@
+{
+  "official_test_qr": {
+    "merchant": "CHARLES ADRIAN LAURETO CA",
+    "provider": "PayMongo QR Ph",
+    "qr_code_id": "code_8T7GbSP9ztU2tQUJ5WQyJ5Cn",
+    "description": "Official test QR code for PayMongo QR Ph integration",
+    "supported_methods": [
+      "Banks (BPI, UnionBank, Metrobank, PNB, and more)",
+      "E-Wallets",
+      "And More"
+    ],
+    "instructions": [
+      "1. When payment screen shows, you can use this official test QR code",
+      "2. Scan with any supported banking app",
+      "3. Complete test transaction to verify webhook integration",
+      "4. Monitor backend logs for payment status updates"
+    ],
+    "notes": "This is an official test QR code connected to the PayMongo merchant account. Use for development and testing only.",
+    "status": "active"
+  }
+}

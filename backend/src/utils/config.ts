@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 export const config = {
   // Server
@@ -18,13 +19,13 @@ export const config = {
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
 
-  // GCash Configuration
-  gcash: {
-    merchantId: process.env.GCASH_MERCHANT_ID || '',
-    apiKey: process.env.GCASH_API_KEY || '',
-    secretKey: process.env.GCASH_SECRET_KEY || '',
-    apiBaseUrl: process.env.GCASH_API_BASE_URL || 'https://api.gcash.com',
-    webhookSecret: process.env.GCASH_WEBHOOK_SECRET || '',
+  // PAYMONGO Configuration
+  PAYMONGO: {
+    merchantId: process.env.PAYMONGO_MERCHANT_ID || '',
+    apiKey: process.env.PAYMONGO_API_KEY || '',
+    secretKey: process.env.PAYMONGO_SECRET_KEY || '',
+    apiBaseUrl: process.env.PAYMONGO_API_BASE_URL || 'https://api.paymongo.com/v1',
+    webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET || '',
   },
 
   // Payment Configuration
@@ -60,10 +61,8 @@ export const config = {
 // Validate required configuration
 export const validateConfig = (): void => {
   const requiredVars = [
-    'GCASH_MERCHANT_ID',
-    'GCASH_API_KEY',
-    'GCASH_SECRET_KEY',
-    'GCASH_WEBHOOK_SECRET',
+    'PAYMONGO_SECRET_KEY',
+    'PAYMONGO_WEBHOOK_SECRET',
   ];
 
   if (config.isProduction) {
@@ -73,3 +72,4 @@ export const validateConfig = (): void => {
     }
   }
 };
+

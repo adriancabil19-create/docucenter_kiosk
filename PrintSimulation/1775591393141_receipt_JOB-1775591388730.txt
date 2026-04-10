@@ -1,0 +1,24 @@
+========================================
+         PAYMENT RECEIPT
+   2026-04-08 03:49:48
+========================================
+
+Transaction ID: TXN-1775591386705-A1238C06E62675CC
+Reference #: REF-1775591386705-CAB2A500
+
+Amount: PHP 2.00
+Status: [PAID]
+
+----------------------------------------
+PHOTOCOPYING JOB
+-----------------
+Copies: 1
+Color Mode: Color
+Paper Size: Letter
+Copy Quality: Standard
+Collate: Yes
+Total Cost: PHP 2.00
+
+----------------------------------------
+Thank you for using our service!
+Date: 2026-04-08 03:49:48

@@ -1,7 +1,7 @@
 {
   "name": "web-doc-backend",
   "version": "1.0.0",
-  "description": "GCash Payment Integration Backend for Web Doc Kiosk System",
+  "description": "PAYMONGO Payment Integration Backend for Web Doc Kiosk System",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
@@ -11,7 +11,7 @@
     "lint": "eslint src/**/*.ts"
   },
   "keywords": [
-    "gcash",
+    "PAYMONGO",
     "payment",
     "kiosk",
     "printing"
@@ -28,6 +28,7 @@
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "multer": "^1.4.5-lts.1",
+    "ngrok": "^5.0.0-beta.2",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "pdf-to-printer": "^5.1.1",

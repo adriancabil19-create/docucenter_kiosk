@@ -388,7 +388,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildPageContent() {
     switch (widget.currentPage) {
       case 'payment':
-        return GCashPaymentPage(onNavigate: widget.onNavigate);
+        return PAYMONGOPaymentPage(onNavigate: widget.onNavigate);
       case 'services':
         return ServicesPage(onNavigate: widget.onNavigate);
       case 'about':
@@ -878,3 +878,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+

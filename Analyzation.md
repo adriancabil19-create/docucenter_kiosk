@@ -14,7 +14,7 @@ The intended product is a self-service document kiosk that supports:
 - Photocopying
 - Local storage of uploaded/scanned files
 - File transfer via USB, Bluetooth, WiFi hotspot, and QR
-- GCash payment flow
+- PAYMONGO payment flow
 - Backend-managed print dispatching
 - QR verification through an optional Aiven/Postgres integration
 
@@ -99,7 +99,7 @@ The largest blockers are:
 - `backend/src/services/print.service.ts`: ~428 lines
 - `lib/transfer_service.dart`: ~398 lines
 - `backend/src/services/storage.service.ts`: ~389 lines
-- `backend/src/controllers/gcash.ts`: ~326 lines
+- `backend/src/controllers/PAYMONGO.ts`: ~326 lines
 
 Interpretation:
 
@@ -171,7 +171,7 @@ This file currently contains:
 - Photocopying interface
 - Payment interface
 - Storage interface
-- GCash payment page wrapper
+- PAYMONGO payment page wrapper
 
 This is the main frontend implementation file and the biggest design bottleneck in the repo.
 
@@ -414,7 +414,7 @@ Primary entrypoint:
 
 Route groups:
 
-- `/api/gcash`
+- `/api/PAYMONGO`
 - `/api/qr`
 - `/api/print`
 - `/api/storage`
@@ -467,13 +467,13 @@ Status: central config object, but with risky defaults and feature toggles that 
 Good aspects:
 
 - Collects backend env configuration in one place
-- Separates payment, GCash, logging, and optional Aiven config
+- Separates payment, PAYMONGO, logging, and optional Aiven config
 
 Problems:
 
 - Security features are opt-in through env flags
 - Docs present them as implemented by default
-- Production validation only checks required GCash environment variables when `NODE_ENV=production`
+- Production validation only checks required PAYMONGO environment variables when `NODE_ENV=production`
 
 Assessment:
 
@@ -501,7 +501,7 @@ Assessment:
 - Middleware shape is solid
 - Some security edge cases remain
 
-### `backend/src/services/gcash.ts`
+### `backend/src/services/PAYMONGO.ts`
 
 Status: simulated payment engine with real structure but no real payment persistence
 
@@ -515,7 +515,7 @@ What exists:
 
 What is not real:
 
-- No live GCash API call is currently used
+- No live PAYMONGO API call is currently used
 - No database persistence for transactions
 - Process restart wipes all payment state
 
@@ -524,7 +524,7 @@ Assessment:
 - This is a mock payment backend with real architectural intent
 - It is not production payment infrastructure
 
-### `backend/src/controllers/gcash.ts`
+### `backend/src/controllers/PAYMONGO.ts`
 
 Status: full controller layer with one major contract mismatch
 
@@ -548,7 +548,7 @@ Assessment:
 - Controller coverage is good
 - API contract consistency is poor
 
-### `backend/src/routes/gcash.ts`
+### `backend/src/routes/PAYMONGO.ts`
 
 Status: straightforward and functional
 
@@ -982,7 +982,7 @@ If the goal is a thesis demo or guided walkthrough, the project already has enou
 
 The most clearly simulated or incomplete areas are:
 
-- Real GCash integration
+- Real PAYMONGO integration
 - Real QR rendering on the Flutter side
 - Direct print-file picking from the printing page
 - Scanning hardware integration
@@ -1078,3 +1078,4 @@ In short:
 ## Suggested one-sentence summary
 
 The repository currently represents a well-presented kiosk prototype with a compilable backend and partially real storage/print infrastructure, but it still depends on mocked flows, inconsistent contracts, and incomplete hardening before it can be considered truly complete.
+

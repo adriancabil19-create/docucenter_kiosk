@@ -1,4 +1,4 @@
-# Setup Guide - GCash Payment Integration Backend
+# Setup Guide - PAYMONGO Payment Integration Backend
 
 Complete setup and deployment guide for the Web Doc Backend.
 
@@ -76,11 +76,11 @@ NODE_ENV=development
 PORT=5000
 FRONTEND_URL=http://localhost:3000
 
-# GCash Merchant Credentials
-GCASH_MERCHANT_ID=your_merchant_id_here
-GCASH_API_KEY=your_api_key_here
-GCASH_SECRET_KEY=your_secret_key_here
-GCASH_WEBHOOK_SECRET=your_webhook_secret_here
+# PAYMONGO Merchant Credentials
+PAYMONGO_MERCHANT_ID=your_merchant_id_here
+PAYMONGO_API_KEY=your_api_key_here
+PAYMONGO_SECRET_KEY=your_secret_key_here
+PAYMONGO_WEBHOOK_SECRET=your_webhook_secret_here
 
 # Payment Settings
 PAYMENT_TIMEOUT_SECONDS=300
@@ -102,13 +102,13 @@ RATE_LIMIT_MAX_REQUESTS=100
 LOG_LEVEL=info
 
 # API Settings
-GCASH_API_BASE_URL=https://api.gcash.com
+PAYMONGO_API_BASE_URL=https://api.PAYMONGO.com
 PAYMENT_POLLING_INTERVAL_MS=3000
 ```
 
-### Getting GCash Credentials
+### Getting PAYMONGO Credentials
 
-1. Visit [GCash Developer Portal](https://developer.gcash.com)
+1. Visit [PAYMONGO Developer Portal](https://developer.PAYMONGO.com)
 2. Create a merchant account
 3. Generate API credentials
 4. Copy credentials to `.env` file
@@ -180,7 +180,7 @@ This runs from `dist/` directory (pre-compiled).
 
 ```bash
 # 1. Create a payment
-curl -X POST http://localhost:5000/api/gcash/create-payment \
+curl -X POST http://localhost:5000/api/PAYMONGO/create-payment \
   -H "Content-Type: application/json" \
   -d '{
     "amount": 50.00,
@@ -199,10 +199,10 @@ curl -X POST http://localhost:5000/api/gcash/create-payment \
 # }
 
 # 2. Check payment status
-curl http://localhost:5000/api/gcash/check-payment/TXN-xxx
+curl http://localhost:5000/api/PAYMONGO/check-payment/TXN-xxx
 
 # 3. Test simulation (dev only)
-curl -X POST http://localhost:5000/api/gcash/simulate/success/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/success/TXN-xxx
 
 # 4. Check health
 curl http://localhost:5000/health
@@ -234,10 +234,10 @@ When `NODE_ENV=development`, use these endpoints:
 
 ```bash
 # Simulate successful payment
-curl -X POST http://localhost:5000/api/gcash/simulate/success/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/success/TXN-xxx
 
 # Simulate failed payment
-curl -X POST http://localhost:5000/api/gcash/simulate/failure/TXN-xxx \
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/failure/TXN-xxx \
   -H "Content-Type: application/json" \
   -d '{"reason": "Insufficient funds"}'
 ```
@@ -267,10 +267,10 @@ docker images | grep web-doc-backend
 # Run container
 docker run -p 5000:5000 \
   -e NODE_ENV=development \
-  -e GCASH_MERCHANT_ID=your_id \
-  -e GCASH_API_KEY=your_key \
-  -e GCASH_SECRET_KEY=your_secret \
-  -e GCASH_WEBHOOK_SECRET=your_webhook \
+  -e PAYMONGO_MERCHANT_ID=your_id \
+  -e PAYMONGO_API_KEY=your_key \
+  -e PAYMONGO_SECRET_KEY=your_secret \
+  -e PAYMONGO_WEBHOOK_SECRET=your_webhook \
   -e FRONTEND_URL=http://localhost:3000 \
   web-doc-backend:latest
 
@@ -307,8 +307,8 @@ Edit `docker-compose.yml` to configure:
 ```yaml
 environment:
   NODE_ENV: development
-  GCASH_MERCHANT_ID: your_id
-  GCASH_API_KEY: your_key
+  PAYMONGO_MERCHANT_ID: your_id
+  PAYMONGO_API_KEY: your_key
   # ... other variables
 ```
 
@@ -337,10 +337,10 @@ heroku create web-doc-backend
 
 # 4. Set environment variables
 heroku config:set NODE_ENV=production
-heroku config:set GCASH_MERCHANT_ID=your_id
-heroku config:set GCASH_API_KEY=your_key
-heroku config:set GCASH_SECRET_KEY=your_secret
-heroku config:set GCASH_WEBHOOK_SECRET=your_webhook
+heroku config:set PAYMONGO_MERCHANT_ID=your_id
+heroku config:set PAYMONGO_API_KEY=your_key
+heroku config:set PAYMONGO_SECRET_KEY=your_secret
+heroku config:set PAYMONGO_WEBHOOK_SECRET=your_webhook
 heroku config:set FRONTEND_URL=https://your-frontend.com
 
 # 5. Deploy code
@@ -453,8 +453,8 @@ services:
     envs:
       - key: NODE_ENV
         value: production
-      - key: GCASH_MERCHANT_ID
-        value: ${GCASH_MERCHANT_ID}
+      - key: PAYMONGO_MERCHANT_ID
+        value: ${PAYMONGO_MERCHANT_ID}
       # ... other vars
 EOF
 
@@ -570,7 +570,7 @@ set -a; source .env; set +a  # Bash specific
    curl -H "Origin: http://localhost:3000" \
      -H "Access-Control-Request-Method: POST" \
      -H "Access-Control-Request-Headers: Content-Type" \
-     -X OPTIONS http://localhost:5000/api/gcash/create-payment
+     -X OPTIONS http://localhost:5000/api/PAYMONGO/create-payment
    ```
 
 ### Database Connection Issues
@@ -600,7 +600,7 @@ npm start
 
 1. Verify webhook secret:
    ```bash
-   echo $GCASH_WEBHOOK_SECRET
+   echo $PAYMONGO_WEBHOOK_SECRET
    ```
 
 2. Check payload is not modified during transmission
@@ -641,3 +641,4 @@ npm start
 
 **Version**: 1.0.0  
 **Last Updated**: February 8, 2026
+

@@ -10,6 +10,7 @@ interface ScanOptions {
   dpi?: number;
   paperSize?: string;
   outputFormat?: 'pdf' | 'jpg' | 'png';
+  doubleSided?: boolean;
 }
 
 interface ScanResult {
@@ -45,77 +46,133 @@ const scanWithWIA = async (
         Write-Host "  $($_.DeviceID) - $($_.Type) - $($_.Properties['Name'].Value)"
       }
       
-      $device = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1
-
-      if ($device -eq $null) {
-        throw "No scanner found"
-      }
-      
-      Write-Host "Selected device: $($device.DeviceID) - $($device.Properties['Name'].Value)"
-      
-      $wiaDevice = $device.Connect()
-      Write-Host "Connected to device"
-
-      # Prefer ADF item if available in scanner items; fallback to first item
-      $wiaItem = $wiaDevice.Items[1]
-      if ($wiaDevice.Items.Count -gt 1) {
-        try {
-          $wiaItem = $wiaDevice.Items[2]
-          Write-Host "Selected second item (possible ADF): $($wiaItem.ItemID)"
-        } catch {
-          Write-Host "Second item not accessible, using first item"
-          $wiaItem = $wiaDevice.Items[1]
-        }
-      } else {
-        Write-Host "Single item detected, using first item: $($wiaItem.ItemID)"
-      }
-
-      # Determine ADF capability explicitly
-      $adfSupported = $false
+      # Select Brother scanner specifically
+      $wiaDevice = $null
       try {
-        $handlingCapabilities = $wiaItem.Properties["6151"].Value  # WIA_IPS_DOCUMENT_HANDLING_CAPABILITIES
-        Write-Host "Document handling capabilities: $handlingCapabilities"
-        if (($handlingCapabilities -band 1) -ne 0) {  # FEEDER bit
-          $adfSupported = $true
-          Write-Host "ADF capability detected"
-        } else {
-          Write-Host "ADF capability not present"
+        # Look for Brother scanner specifically
+        foreach ($deviceInfo in $deviceManager.DeviceInfos) {
+          $deviceName = $deviceInfo.Properties['Name'].Value
+          Write-Host "Checking device: $deviceName"
+          if ($deviceName -like "*Brother*" -and $deviceName -like "*MFC*") {
+            Write-Host "Found Brother MFC scanner: $deviceName"
+            $wiaDevice = $deviceInfo.Connect()
+            break
+          }
+        }
+        
+        # If no Brother found, use first available scanner
+        if ($wiaDevice -eq $null) {
+          $wiaDevice = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1 | ForEach-Object { $_.Connect() }
         }
       } catch {
-        Write-Host "Could not read document handling capabilities: $($_.Exception.Message)"
+        Write-Host "Error selecting device: $($_.Exception.Message)"
+        $wiaDevice = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1 | ForEach-Object { $_.Connect() }
       }
 
-      # Set scanner role to ADF if available
-      if ($adfSupported) {
+      Write-Host "Connected to device"
+
+      $useAdf = ${options.doubleSided ? 'true' : 'false'}
+      # Try to access ADF item directly - Brother scanners often have multiple items
+      $wiaItem = $null
+      $adfFound = $false
+      
+      Write-Host "Scanner has $($wiaDevice.Items.Count) items"
+      
+      # List all items first
+      for ($i = 1; $i -le $wiaDevice.Items.Count; $i++) {
         try {
-          $wiaItem.Properties["6145"].Value = 1  # WIA_IPS_DOCUMENT_HANDLING_SELECT = FEEDER
-          Write-Host "Set document handling to FEEDER (ADF)"
-
+          $item = $wiaDevice.Items[$i]
+          Write-Host "Item $i : $($item.ItemID)"
           try {
-            $wiaItem.Properties["6152"].Value = 1  # WIA_IPS_FEEDER_READY
-            Write-Host "Set feeder ready"
+            $name = $item.Properties.Item(4098).Value
+            Write-Host "  Item Name: $name"
           } catch {
-            Write-Host "Unable to set feeder ready: $($_.Exception.Message)"
-          }
-
-          try {
-            $wiaItem.Properties["6153"].Value = 0  # WIA_IPS_PAGES = All pages
-            Write-Host "Set pages to scan: all"
-          } catch {
-            Write-Host "Unable to set pages property: $($_.Exception.Message)"
+            # ignore missing name
           }
         } catch {
-          Write-Host "Failed to set ADF mode: $($_.Exception.Message)"
-        }
-      } else {
-        Write-Host "ADF not supported from scanner; falling back to flatbed"
-        try {
-          $wiaItem.Properties["6145"].Value = 0  # WIA_IPS_DOCUMENT_HANDLING_SELECT = FLATBED
-          Write-Host "Set document handling to FLATBED"
-        } catch {
-          Write-Host "Unable to set flatbed: $($_.Exception.Message)"
+          Write-Host "Could not access item $i : $($_.Exception.Message)"
         }
       }
+
+      # Choose ADF item if double-sided is requested
+      if ($useAdf -eq 'true') {
+        for ($i = 1; $i -le $wiaDevice.Items.Count; $i++) {
+          try {
+            $item = $wiaDevice.Items[$i]
+            if ($item.ItemID -match 'ADF|Feeder|DocumentFeeder' -or ($item.Properties.Item(4098).Value -match 'ADF|Feeder|DocumentFeeder')) {
+              $wiaItem = $item
+              Write-Host "Using detected ADF item: $($wiaItem.ItemID)"
+              $adfFound = $true
+              break
+            }
+          } catch {
+            # ignore unavailable properties
+          }
+        }
+      }
+
+      if (-not $adfFound) {
+        try {
+          Write-Host "FORCING Brother ADF: Attempting to access item 2..."
+          $wiaItem = $wiaDevice.Items[2]
+          Write-Host "SUCCESS: Using item 2: $($wiaItem.ItemID)"
+          $adfFound = $true
+        } catch {
+          Write-Host "Item 2 not accessible: $($_.Exception.Message)"
+          # If item 2 fails, try item 1
+          try {
+            $wiaItem = $wiaDevice.Items[1]
+            Write-Host "Falling back to item 1: $($wiaItem.ItemID)"
+          } catch {
+            Write-Host "Item 1 also failed: $($_.Exception.Message)"
+            throw "No scanner items available"
+          }
+        }
+      }
+
+      # DEBUG: Enumerate all available properties on this item
+      Write-Host "=== AVAILABLE WIA PROPERTIES ==="
+      try {
+        foreach ($prop in $wiaItem.Properties) {
+          try {
+            $propId = $prop.PropertyID
+            $propName = ""
+            try { $propName = $prop.Name } catch { $propName = "Unknown" }
+            Write-Host "Property $propId ($propName): Available"
+          } catch {
+            Write-Host "Could not enumerate property: $($_.Exception.Message)"
+          }
+        }
+      } catch {
+        Write-Host "Could not enumerate properties: $($_.Exception.Message)"
+      }
+      Write-Host "=== END PROPERTIES LIST ==="
+
+      # AGGRESSIVE Brother ADF Configuration - Try EVERYTHING
+      Write-Host "=== BROTHER ADF FORCE CONFIGURATION ==="
+      
+      function SetPropertyValue($item, $propId, $value, $label) {
+        try {
+          $property = $item.Properties.Item($propId)
+          $property.Value = $value
+          Write-Host "✓ Set $label ($propId) to $value"
+        } catch {
+          Write-Host "✗ Could not set $label ($propId): $($_.Exception.Message)"
+        }
+      }
+
+      SetPropertyValue $wiaItem 3093 1 "DOCUMENT_HANDLING_SELECT"
+      SetPropertyValue $wiaItem 3094 1 "DOCUMENT_HANDLING_CAPABILITIES"
+      SetPropertyValue $wiaItem 3095 1 "FEEDER_READY"
+      SetPropertyValue $wiaItem 3096 0 "PAGES"
+      SetPropertyValue $wiaItem 3097 1 "PAGE_SIZE"
+      SetPropertyValue $wiaItem 3098 1 "DOCUMENT_HANDLING_STATUS"
+
+      if ($useAdf -eq 'true') {
+        SetPropertyValue $wiaItem 3084 1 "DUPLEX"
+      }
+
+      Write-Host "=== ADF FORCE CONFIGURATION COMPLETE ==="
 
       # Perform the scan
       Write-Host "Starting scan transfer..."
@@ -197,16 +254,233 @@ const scanWithWIA = async (
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Attempt scanning using TWAIN via a third-party tool or direct COM.
- * This is more complex and less reliable than WIA.
+ * Attempt scanning using TWAIN via PowerShell COM objects.
+ * Configures the TWAIN driver to use ADF (Automatic Document Feeder) only.
  */
 const scanWithTWAIN = async (
   outputPath: string,
   options: ScanOptions
 ): Promise<{ success: boolean; error?: string }> => {
-  // TWAIN implementation would require additional dependencies
-  // For now, fall back to WIA
-  return scanWithWIA(outputPath, options);
+  try {
+    const colorMode = options.colorMode === 'bw' ? 0 : 2; // 0 = BlackWhite, 2 = Color
+    const dpi = options.dpi || 300;
+
+    // PowerShell script to scan using TWAIN with ADF configuration
+    const psScript = `
+      # TWAIN scanning with ADF configuration
+      try {
+        # Try different TWAIN COM objects (excluding WIA.CommonDialog as it's not TWAIN)
+        $twain = $null
+        $comObjects = @("TWAIN.TWAINCtrl.1", "TwainControl.TwainCtrl.1", "BrTwainDS.BrTwainDS.1", "Brother.TWAIN.1", "TWAINDSM.TWAINDSM.1", "BrScnCtrl.BrScnCtrl.1", "Brother_Scanner.TWAIN", "MFCJ2730DW.TWAIN")
+        
+        foreach ($comObj in $comObjects) {
+          try {
+            $twain = New-Object -ComObject $comObj
+            Write-Host "TWAIN COM object created successfully using: $comObj"
+            break
+          } catch {
+            Write-Host "Failed to create COM object $comObj : $($_.Exception.Message)"
+          }
+        }
+        
+        if ($twain -eq $null) {
+          Write-Host "No TWAIN COM objects available, skipping TWAIN scan"
+          exit 2  # Special exit code to indicate TWAIN not available
+        }
+
+        # List available TWAIN sources
+        Write-Host "Available TWAIN sources:"
+        try {
+          $sources = $twain.Sources
+          if ($sources) {
+            $sources | ForEach-Object {
+              Write-Host "  Source: $($_.Name)"
+            }
+          }
+        } catch {
+          Write-Host "Could not enumerate TWAIN sources: $($_.Exception.Message)"
+        }
+
+        # Try to find Brother MFC-J2730DW source
+        $sourceFound = $false
+        try {
+          $sources = $twain.Sources
+          if ($sources) {
+            $brotherSource = $sources | Where-Object { $_.Name -like "*Brother*" -or $_.Name -like "*MFC*" } | Select-Object -First 1
+            if ($brotherSource) {
+              $twain.SourceName = $brotherSource.Name
+              Write-Host "Using Brother TWAIN source: $($brotherSource.Name)"
+              $sourceFound = $true
+            }
+          }
+        } catch {
+          Write-Host "Could not find Brother source: $($_.Exception.Message)"
+        }
+
+        # If Brother source not found, try TWAIN_32 or default
+        if (-not $sourceFound) {
+          try {
+            $twain.SourceName = "TWAIN_32"
+            Write-Host "Using TWAIN_32 source"
+          } catch {
+            Write-Host "TWAIN_32 not available, using default source"
+          }
+        }
+
+        # Configure TWAIN source to use ADF (Feeder)
+        Write-Host "Configuring TWAIN for ADF (Feeder) mode..."
+        try {
+          $twain.Capability = 0x100A  # ICAP_SCAN_SOURCE
+          $twain.CapabilityValue = 1   # TWSS_FEEDER (1 = feeder, 0 = flatbed)
+          Write-Host "Set ICAP_SCAN_SOURCE to TWSS_FEEDER (1)"
+        } catch {
+          Write-Host "Failed to set scan source capability: $($_.Exception.Message)"
+        }
+
+        # Configure color mode
+        try {
+          $twain.Capability = 0x1003  # ICAP_PIXELTYPE
+          $twain.CapabilityValue = ${colorMode}  # 0 = BW, 2 = Color
+          Write-Host "Set color mode to ${colorMode}"
+        } catch {
+          Write-Host "Failed to set color mode: $($_.Exception.Message)"
+        }
+
+        # Configure DPI
+        try {
+          $twain.Capability = 0x1004  # ICAP_XRESOLUTION
+          $twain.CapabilityValue = ${dpi}
+          $twain.Capability = 0x1005  # ICAP_YRESOLUTION
+          $twain.CapabilityValue = ${dpi}
+          Write-Host "Set resolution to ${dpi} DPI"
+        } catch {
+          Write-Host "Failed to set resolution: $($_.Exception.Message)"
+        }
+
+        # Configure paper size (A4)
+        try {
+          $twain.Capability = 0x1006  # ICAP_SUPPORTEDSIZES
+          $twain.CapabilityValue = 1   # TWSS_A4
+          Write-Host "Set paper size to A4"
+        } catch {
+          Write-Host "Failed to set paper size: $($_.Exception.Message)"
+        }
+
+        # Additional ADF-specific settings
+        try {
+          # Set duplex mode based on doubleSided option
+          $twain.Capability = 0x100C  # ICAP_DUPLEX
+          if (${options.doubleSided ? 'true' : 'false'}) {
+            $twain.CapabilityValue = 1   # TWDX_1PASSDUPLEX (enable duplex)
+            Write-Host "Enabled duplex scanning (ADF mode)"
+          } else {
+            $twain.CapabilityValue = 0   # TWDX_NONE (disable duplex)
+            Write-Host "Disabled duplex scanning"
+          }
+        } catch {
+          Write-Host "Could not set duplex mode: $($_.Exception.Message)"
+        }
+
+        # Try to enable automatic feeding
+        try {
+          $twain.Capability = 0x100B  # ICAP_AUTOMATICCAPTURE
+          $twain.CapabilityValue = 1   # TRUE
+          Write-Host "Enabled automatic capture"
+        } catch {
+          Write-Host "Could not set automatic capture: $($_.Exception.Message)"
+        }
+
+        # Try to set feeder loaded
+        try {
+          $twain.Capability = 0x1030  # ICAP_FEEDERLOADED
+          $twain.CapabilityValue = 1   # TRUE
+          Write-Host "Set feeder loaded"
+        } catch {
+          Write-Host "Could not set feeder loaded: $($_.Exception.Message)"
+        }
+
+        # Start scanning
+        Write-Host "Starting TWAIN scan..."
+        $result = $twain.Acquire("${outputPath.replace(/\\/g, '\\\\')}")
+
+        if ($result -eq 0) {
+          Write-Host "TWAIN scan completed with result: $result"
+          # Verify file was created
+          if (Test-Path "${outputPath.replace(/\\/g, '\\\\')}") {
+            $size = (Get-Item "${outputPath.replace(/\\/g, '\\\\')}").Length
+            Write-Host "Output file size: $size bytes"
+            if ($size -gt 1024) {
+              Write-Host "TWAIN scan successful!"
+              exit 0
+            } else {
+              Write-Error "Scan file too small ($size bytes)"
+              exit 1
+            }
+          } else {
+            Write-Error "Output file not created"
+            exit 1
+          }
+        } else {
+          Write-Error "TWAIN scan failed with result: $result"
+          exit 1
+        }
+      } catch {
+        Write-Error "TWAIN scanning error: $($_.Exception.Message)"
+        exit 1
+      }
+    `;
+
+    try {
+      const execResult = execSync('powershell -NoProfile -NonInteractive -Command -', {
+        input: psScript,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 120000, // 2 minutes timeout for scanning
+        windowsHide: true,
+      });
+
+      const output = execResult.toString('utf8').trim();
+      logger.info('TWAIN scan PowerShell output', { outputPath, options, output });
+
+      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 1024) {
+        const fileSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+        const err = `TWAIN scan file invalid or missing (${outputPath}, size ${fileSize})`;
+        logger.error('TWAIN scan file validation failed', { outputPath, fileSize });
+        return { success: false, error: err };
+      }
+
+      return { success: true };
+    } catch (execError: any) {
+      const err = execError as Error;
+      const stdout = execError.stdout ? execError.stdout.toString('utf8').trim() : undefined;
+      const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : undefined;
+      
+      // Check if TWAIN is not available (exit code 2)
+      if (execError.status === 2) {
+        logger.info('TWAIN not available on this system, will use WIA fallback', { outputPath, options });
+        return { success: false, error: 'TWAIN not available' };
+      }
+      
+      logger.error('TWAIN scan failed', {
+        error: err.message,
+        outputPath,
+        options,
+        stdout,
+        stderr,
+      });
+
+      let errorDetails = err.message;
+      if (stderr) {
+        errorDetails += ` | stderr: ${stderr}`;
+      }
+      if (stdout) {
+        errorDetails += ` | stdout: ${stdout}`;
+      }
+
+      return { success: false, error: errorDetails };
+    }
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,6 +507,7 @@ export const scanDocument = async (
     dpi: options.dpi || 300,
     paperSize: options.paperSize || 'A4',
     outputFormat: options.outputFormat || 'pdf',
+    doubleSided: options.doubleSided || false,
   };
 
   logger.info('Scan document request', { scanId, options: opts });
@@ -249,13 +524,16 @@ export const scanDocument = async (
   const finalPath = path.join(tempDir, `scan_${scanId}.${opts.outputFormat}`);
 
   try {
-    // 1. Scan using WIA
-    const scanResult = await scanWithWIA(tempImage, opts);
-    if (!scanResult.success) {
-      logger.warn('WIA scan failed, trying TWAIN', { scanId, error: scanResult.error });
-      const twainResult = await scanWithTWAIN(tempImage, opts);
-      if (!twainResult.success) {
-        return { success: false, error: scanResult.error || twainResult.error };
+    // 1. Try TWAIN first (with ADF configuration)
+    const twainResult = await scanWithTWAIN(tempImage, opts);
+    if (twainResult.success) {
+      logger.info('TWAIN scan successful', { scanId });
+    } else {
+      logger.warn('TWAIN scan failed, trying WIA', { scanId, error: twainResult.error });
+      // 2. Fall back to WIA
+      const wiaResult = await scanWithWIA(tempImage, opts);
+      if (!wiaResult.success) {
+        return { success: false, error: twainResult.error || wiaResult.error };
       }
     }
 
@@ -358,6 +636,112 @@ interface CopyResult {
   success: boolean;
   jobId?: string;
   error?: string;
+}
+
+interface ADFStatus {
+  ready: boolean;
+  status: string;
+  error?: string;
+}
+
+/**
+ * Check if the Brother MFC-J2730DW ADF (Automatic Document Feeder) is ready
+ */
+export const checkADFStatus = async (): Promise<ADFStatus> => {
+  try {
+    const psScript = `
+      Add-Type -AssemblyName "WIA"
+      $deviceManager = New-Object -ComObject WIA.DeviceManager
+      
+      Write-Host "Checking ADF status..."
+      
+      # Find Brother scanner
+      $wiaDevice = $null
+      foreach ($deviceInfo in $deviceManager.DeviceInfos) {
+        $deviceName = $deviceInfo.Properties['Name'].Value
+        if ($deviceName -like "*Brother*" -and $deviceName -like "*MFC*") {
+          Write-Host "Found Brother MFC scanner: $deviceName"
+          $wiaDevice = $deviceInfo.Connect()
+          break
+        }
+      }
+      
+      if ($wiaDevice -eq $null) {
+        Write-Error "Brother MFC scanner not found"
+        exit 1
+      }
+
+      # Try to access ADF item (usually item 2 for Brother scanners)
+      $adfItem = $null
+      try {
+        $adfItem = $wiaDevice.Items[2]
+        Write-Host "Found ADF item"
+      } catch {
+        Write-Host "Item 2 not accessible, trying item 1..."
+        try {
+          $adfItem = $wiaDevice.Items[1]
+        } catch {
+          Write-Error "Could not access scanner items"
+          exit 1
+        }
+      }
+
+      # Check FEEDER_READY property (WIA property 3095)
+      $feederReady = $false
+      try {
+        $feederReadyProp = $adfItem.Properties.Item(3095)
+        $feederReady = $feederReadyProp.Value -eq 1
+        Write-Host "FEEDER_READY property: $($feederReadyProp.Value)"
+      } catch {
+        Write-Host "Could not read FEEDER_READY property: $($_.Exception.Message)"
+      }
+
+      # Check DOCUMENT_HANDLING_STATUS property (3098)
+      $docHandlingStatus = $null
+      try {
+        $statusProp = $adfItem.Properties.Item(3098)
+        $docHandlingStatus = $statusProp.Value
+        Write-Host "DOCUMENT_HANDLING_STATUS: $docHandlingStatus"
+      } catch {
+        Write-Host "Could not read DOCUMENT_HANDLING_STATUS: $($_.Exception.Message)"
+      }
+
+      # Return status
+      if ($feederReady) {
+        Write-Host "OKAY - ADF is ready for scanning"
+        exit 0
+      } else {
+        Write-Host "ADF not ready - waiting for documents"
+        exit 2
+      }
+    `;
+
+    try {
+      const execResult = execSync('powershell -NoProfile -NonInteractive -Command -', {
+        input: psScript,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000,
+        windowsHide: true,
+      });
+
+      logger.info('ADF Status Check', { output: execResult.toString('utf8') });
+      return { ready: true, status: 'OKAY - ADF Ready' };
+    } catch (execError: any) {
+      if (execError.status === 2) {
+        logger.info('ADF Not Ready', { message: 'No document in ADF yet' });
+        return { ready: false, status: 'Please place your document on the scanner, thank you.' };
+      }
+
+      const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : '';
+      logger.warn('ADF Status Check Failed', { stderr, error: execError.message });
+      
+      // Default to not ready if unable to check
+      return { ready: false, status: 'Please place your document on the scanner, thank you.' };
+    }
+  } catch (err) {
+    logger.error('ADF Status Check Error', { error: (err as Error).message });
+    return { ready: false, status: 'Please place your document on the scanner, thank you.', error: (err as Error).message };
+  }
 }
 
 /**

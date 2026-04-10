@@ -6,7 +6,7 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║   Flutter-Backend GCash Integration Setup                     ║"
+echo "║   Flutter-Backend PAYMONGO Integration Setup                     ║"
 echo "║   DOCUCENTER Kiosk - Document Processing System              ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
@@ -94,7 +94,7 @@ echo "      • Click Print"
 echo "      • Use 'Simulate Success' to test"
 echo ""
 echo "   4. For production:"
-echo "      • Get real GCash credentials"
+echo "      • Get real PAYMONGO credentials"
 echo "      • Update backend .env file"
 echo "      • Change backend URL in lib/config.dart"
 echo "      • Disable development tools"
@@ -102,3 +102,4 @@ echo ""
 
 echo "✅ Setup complete! Ready to integrate Flutter with backend."
 echo ""
+

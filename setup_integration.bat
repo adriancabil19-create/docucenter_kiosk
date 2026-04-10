@@ -4,7 +4,7 @@ REM This script verifies and sets up the Flutter-Backend integration
 
 echo.
 echo ========================================================================
-echo    Flutter-Backend GCash Integration Setup
+echo    Flutter-Backend PayMongo Integration Setup
 echo    DOCUCENTER Kiosk - Document Processing System
 echo ========================================================================
 echo.
@@ -98,7 +98,7 @@ echo       * Click Print
 echo       * Use 'Simulate Success' to test
 echo.
 echo    4. For production:
-echo       * Get real GCash credentials
+echo       * Get real PayMongo credentials
 echo       * Update backend .env file
 echo       * Change backend URL in lib\config.dart
 echo       * Disable development tools

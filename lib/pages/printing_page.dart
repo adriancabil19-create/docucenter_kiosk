@@ -7,6 +7,7 @@ class PrintingInterface extends StatefulWidget {
   final Function() onBrowseStorage;
   final List<StorageDocument> selectedDocs;
   final Function() onClearSelectedDocs;
+  final Function(String) onRemoveSelectedDoc;
   final Function(String) onNavigate;
 
   const PrintingInterface({
@@ -14,6 +15,7 @@ class PrintingInterface extends StatefulWidget {
     required this.onBrowseStorage,
     required this.selectedDocs,
     required this.onClearSelectedDocs,
+    required this.onRemoveSelectedDoc,
     required this.onNavigate,
   });
 
@@ -124,13 +126,13 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
     final expandedFilenames = [
       for (int i = 0; i < _copies; i++) ...baseFilenames,
     ];
-    GCashPaymentPageState.pendingAmount = _calculateCost();
-    GCashPaymentPageState.printContent = printDetails;
-    GCashPaymentPageState.printFiles = expandedFilenames;
-    GCashPaymentPageState.paperSize = _paperSize;
-    GCashPaymentPageState.colorMode = _colorMode;
-    GCashPaymentPageState.quality = _quality;
-    GCashPaymentPageState.pendingReceiptContent = '';
+    PAYMONGOPaymentPageState.pendingAmount = _calculateCost();
+    PAYMONGOPaymentPageState.printContent = printDetails;
+    PAYMONGOPaymentPageState.printFiles = expandedFilenames;
+    PAYMONGOPaymentPageState.paperSize = _paperSize;
+    PAYMONGOPaymentPageState.colorMode = _colorMode;
+    PAYMONGOPaymentPageState.quality = _quality;
+    PAYMONGOPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
   }
 
@@ -232,6 +234,11 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                               padding: const EdgeInsets.only(bottom: 4),
                               child: Row(
                                 children: [
+                                  IconButton(
+                                    onPressed: () => widget.onRemoveSelectedDoc(doc.id),
+                                    icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                                    tooltip: 'Remove from print job',
+                                  ),
                                   const Icon(Icons.description, size: 16, color: Color(0xFF2563EB)),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -310,9 +317,9 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           _buildDropdown(
                             'Paper Size',
                             _paperSize,
-                            ['A4', 'Folio', 'Letter', 'Legal'],
+                            ['A4', 'Folio', 'Letter'],
                             (val) => setState(() => _paperSize = val),
-                            ['A4 (210 x 297 mm)', 'Folio (216 x 330 mm)', 'Letter (216 x 279 mm)', 'Legal (216 x 356 mm)'],
+                            ['A4 (210 x 297 mm)', 'Folio (216 x 330 mm)', 'Letter (216 x 279 mm)'],
                           ),
                           const SizedBox(height: 16),
                           _buildDropdown(
@@ -433,3 +440,4 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
     );
   }
 }
+
