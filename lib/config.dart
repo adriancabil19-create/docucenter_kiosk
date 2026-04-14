@@ -78,7 +78,7 @@ class PaymentConfig {
 class UiConfig {
   /// Show development/testing tools
   /// Set to false in production builds
-  static const bool showDevelopmentTools = true;
+  static const bool showDevelopmentTools = false;
 
   /// Enable debug logging
   static const bool enableDebugLogging = false;

@@ -69,6 +69,7 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
             child: PaymentInterface(
               amount: pendingAmount,
               onPaymentComplete: (success) async {
+                final messenger = ScaffoldMessenger.of(context);
                 if (success) {
                   // Attempt to print the files
                   if (printFiles.isNotEmpty) {
@@ -80,14 +81,14 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                         quality: quality,
                       );
                       if (printSuccess) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           const SnackBar(
                             content: Text('Payment successful! Printing started...'),
                             backgroundColor: Colors.green,
                           ),
                         );
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           const SnackBar(
                             content: Text('Payment successful but printing failed'),
                             backgroundColor: Colors.orange,
@@ -95,7 +96,7 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                         );
                       }
                     } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         SnackBar(
                           content: Text('Payment successful but printing error: $e'),
                           backgroundColor: Colors.orange,
@@ -103,7 +104,7 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                       );
                     }
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(
                         content: Text('Payment successful! Returning to services...'),
                         backgroundColor: Colors.green,
@@ -122,7 +123,7 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                     }
                   });
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
                       content: Text('Payment failed. Please try again.'),
                       backgroundColor: Colors.red,

@@ -12,6 +12,7 @@ class StorageInterface extends StatefulWidget {
   final Function() onCancelPrintMode;
   final Function()? onUpload;
   final TransferManager? transferManager;
+  final bool backendAvailable;
 
   const StorageInterface({
     super.key,
@@ -23,6 +24,7 @@ class StorageInterface extends StatefulWidget {
     required this.onCancelPrintMode,
     this.onUpload,
     this.transferManager,
+    this.backendAvailable = true,
   });
 
   @override
@@ -32,13 +34,65 @@ class StorageInterface extends StatefulWidget {
 class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
   bool _isLoading = false;
+  bool _isUploading = false;
+  bool _isExporting = false;
 
   List<LocalBluetoothDevice> _bluetoothDevices = [];
   LocalBluetoothDevice? _connectedBluetoothDevice;
   bool _isBluetoothScanning = false;
+  bool _isWifiTransferring = false;
+  String _wifiStatusMessage = '';
 
-  bool _isWifiActive = false;
-  String _wifiStatusMessage = 'WiFi hotspot not initialized';
+  // ── Upload from file picker ──────────────────────────────────────────────
+  Future<void> _uploadFromFile() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isUploading = true);
+    try {
+      final paths = await openFiles();
+      if (paths.isEmpty) {
+        setState(() => _isUploading = false);
+        return;
+      }
+      int uploaded = 0;
+      for (final xFile in paths) {
+        try {
+          final bytes = await xFile.readAsBytes();
+          final mimeType = StorageService.getMimeType(xFile.name);
+          final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
+          if (doc != null) uploaded++;
+        } catch (e) {
+          debugPrint('Failed to upload file: $e');
+        }
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text('Uploaded $uploaded file(s)'),
+        backgroundColor: uploaded > 0 ? Colors.green : Colors.orange,
+      ));
+      widget.onUpload?.call();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    } finally {
+      setState(() => _isUploading = false);
+    }
+  }
+
+  // ── Export selected docs to USB ──────────────────────────────────────────
+  Future<void> _exportToUsb() async {
+    if (widget.transferManager == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final docsToExport = _selectedDocs.isNotEmpty
+        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+        : widget.documents;
+    if (docsToExport.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('No documents to export')));
+      return;
+    }
+    setState(() => _isExporting = true);
+    messenger.showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
+    final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToExport);
+    setState(() => _isExporting = false);
+    messenger.showSnackBar(SnackBar(content: Text(result.message)));
+  }
 
   Future<void> _refreshDocuments() async {
     setState(() => _isLoading = true);
@@ -47,303 +101,153 @@ class _StorageInterfaceState extends State<StorageInterface> {
     setState(() => _isLoading = false);
   }
 
+  // ── Bluetooth ────────────────────────────────────────────────────────────
   Future<void> _scanBluetoothDevices() async {
     if (widget.transferManager == null) return;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _isBluetoothScanning = true;
       _bluetoothDevices = [];
     });
     try {
       final devices = await widget.transferManager!.bluetooth.discoverDevices();
-      setState(() {
-        _bluetoothDevices = devices;
-      });
+      setState(() => _bluetoothDevices = devices);
       if (devices.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
+        messenger.showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Bluetooth scan failed: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Bluetooth scan failed: $e')));
     } finally {
       setState(() => _isBluetoothScanning = false);
     }
   }
 
-  Future<void> _connectBluetoothDevice(LocalBluetoothDevice device) async {
+  Future<void> _connectAndSendBluetooth(LocalBluetoothDevice device) async {
     if (widget.transferManager == null) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connecting to ${device.name}...')));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(content: Text('Connecting to ${device.name}...')));
     final ok = await widget.transferManager!.bluetooth.connectToDevice(device.address, device.name);
-    if (ok) {
-      String displayName = device.name;
-      if (widget.transferManager!.bluetooth is WindowsBluetoothTransferService) {
-        final winService = widget.transferManager!.bluetooth as WindowsBluetoothTransferService;
-        displayName = winService.getDeviceName(device.address);
-      }
-
-      setState(() {
-        _connectedBluetoothDevice = LocalBluetoothDevice(address: device.address, name: displayName, isConnected: true);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connected to $displayName')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to connect to ${device.name}')));
+    if (!ok) {
+      messenger.showSnackBar(SnackBar(content: Text('Failed to connect to ${device.name}')));
+      return;
     }
+    setState(() {
+      _connectedBluetoothDevice = LocalBluetoothDevice(
+          address: device.address, name: device.name, isConnected: true);
+    });
+    final docsToSend = _selectedDocs.isNotEmpty
+        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+        : widget.documents;
+    final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToSend);
+    messenger.showSnackBar(SnackBar(content: Text(result.message)));
   }
 
-  Future<void> _initWifiHotspot() async {
+  // ── WiFi transfer ────────────────────────────────────────────────────────
+  Future<void> _startWifiTransfer() async {
     if (widget.transferManager == null) return;
-    setState(() {
-      _wifiStatusMessage = 'Initializing Wifi hotspot...';
-    });
+    final messenger = ScaffoldMessenger.of(context);
+    // Capture navigator before any await so showDialog is safe
+    final nav = Navigator.of(context);
+    setState(() => _isWifiTransferring = true);
 
     try {
       await widget.transferManager!.wifiHotspot.initialize();
-      final info = await widget.transferManager!.wifiHotspot.getNetworkInfo();
-      setState(() {
-        _isWifiActive = true;
-        _wifiStatusMessage = 'Hotspot active on ${info['hostname']} (${info['ip']})';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_wifiStatusMessage)));
-    } catch (e) {
-      setState(() {
-        _isWifiActive = false;
-        _wifiStatusMessage = 'Wifi hotspot init failed: $e';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_wifiStatusMessage)));
-    }
-  }
+      if (!mounted) return;
+      final netInfo = await widget.transferManager!.wifiHotspot.getNetworkInfo();
+      if (!mounted) return;
+      final link = await widget.transferManager!.wifiHotspot.generateTransferLink(
+        _selectedDocs.isNotEmpty
+            ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+            : widget.documents,
+      );
+      setState(() => _wifiStatusMessage = 'Hotspot: ${netInfo['hostname']} — ${netInfo['ip']}:${netInfo['port']}');
 
-  Future<void> _startWifiTransfer() async {
-    if (widget.transferManager == null) return;
-    setState(() {
-      _isLoading = true;
-    });
-
-    final selectedDocs = _selectedDocs.isNotEmpty
-        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-        : widget.documents;
-    final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, selectedDocs);
-    setState(() {
-      _isLoading = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
-  }
-
-  void _showUploadOptions(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('Upload File'),
-          content: const Text('Choose transfer method:'),
-          actions: [
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-
-                // Check if Bluetooth is available on this platform
-                if (!widget.transferManager!.isServiceAvailable(TransferMethod.bluetooth)) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Bluetooth transfer not available on this platform')));
-                  return;
-                }
-
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Using system default Bluetooth device...')));
-                final connected = await widget.transferManager!.bluetooth.connectToDefaultDevice();
-                if (!mounted) return;
-                if (!connected) {
-                  messenger.showSnackBar(const SnackBar(content: Text('No system Bluetooth device found')));
-                  return;
-                }
-                messenger.showSnackBar(const SnackBar(content: Text('Initializing default Bluetooth transfer...')));
-                final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToTransfer);
-                messenger.showSnackBar(SnackBar(content: Text(result.message)));
-              },
-              icon: const Icon(Icons.bluetooth),
-              label: const Text('Bluetooth (default)'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-
-                // Check if WiFi hotspot is available on this platform
-                if (!widget.transferManager!.isServiceAvailable(TransferMethod.wifiHotspot)) {
-                  messenger.showSnackBar(const SnackBar(content: Text('WiFi hotspot transfer not available on this platform')));
-                  return;
-                }
-
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Using system default WiFi hotspot...')));
-                try {
-                  await widget.transferManager!.wifiHotspot.initialize();
-                  if (!mounted) return;
-                  final netInfo = await widget.transferManager!.wifiHotspot.getNetworkInfo();
-                  if (!mounted) return;
-                  if (netInfo['ip'] == null || netInfo['ip']!.isEmpty) {
-                    messenger.showSnackBar(const SnackBar(content: Text('No WiFi hotspot info available')));
-                    return;
-                  }
-                  final link = await widget.transferManager!.wifiHotspot.generateTransferLink(docsToTransfer);
-                  if (!mounted) return;
-                  await showDialog<void>(
-                    context: context,
-                    builder: (ctx2) => AlertDialog(
-                      title: const Text('WiFi Transfer Link'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Network: ${netInfo['hostname'] ?? 'default'}'),
-                          const SizedBox(height: 8),
-                          SelectableText(link),
-                        ],
-                      ),
-                      actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Close'))],
-                    ),
-                  );
-                  if (!mounted) return;
-                  final result = await widget.transferManager!.transferDocuments(TransferMethod.wifiHotspot, docsToTransfer);
-                  messenger.showSnackBar(SnackBar(content: Text(result.message)));
-                } catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
-                }
-              },
-              icon: const Icon(Icons.wifi),
-              label: const Text('WiFi Hotspot (default)'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                try {
-                  messenger.showSnackBar(const SnackBar(content: Text('Selecting files...')));
-                  final paths = await openFiles();
-                  if (paths.isEmpty) return;
-                  int uploaded = 0;
-                  for (final xFile in paths) {
-                    try {
-                      final bytes = await xFile.readAsBytes();
-                      final mimeType = StorageService.getMimeType(xFile.name);
-                      final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
-                      if (doc != null) uploaded++;
-                    } catch (e) {
-                      debugPrint('Failed to upload file: $e');
-                    }
-                  }
-                  messenger.showSnackBar(SnackBar(content: Text('Uploaded $uploaded file(s)')));
-                  widget.onUpload?.call();
-                } catch (e) {
-                  messenger.showSnackBar(SnackBar(content: Text('USB upload failed: $e')));
-                }
-              },
-              icon: const Icon(Icons.usb),
-              label: const Text('From USB'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final messenger = ScaffoldMessenger.of(context);
-                if (widget.transferManager == null) {
-                  messenger.showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-                  return;
-                }
-                final docsToTransfer = _selectedDocs.isNotEmpty
-                    ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-                    : widget.documents;
-                messenger.showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
-                final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
-                messenger.showSnackBar(SnackBar(content: Text(result.message)));
-              },
-              icon: const Icon(Icons.download),
-              label: const Text('Export to USB'),
-            ),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _showQrTransferDialog(context);
-              },
-              icon: const Icon(Icons.qr_code),
-              label: const Text('QR Code'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showQrTransferDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('QR Code Transfer'),
+      if (!nav.mounted) return;
+      await showDialog<void>(
+        context: nav.context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('WiFi Transfer'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.qr_code, size: 80, color: Colors.grey[400]),
-                      const SizedBox(height: 12),
-                      Text(
-                        'TXN-${DateTime.now().millisecondsSinceEpoch}',
-                        style: const TextStyle(fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Scan this QR code on another device to transfer files',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              Text('Network: ${netInfo['hostname'] ?? '—'}'),
+              const SizedBox(height: 4),
+              Text('Password: ${netInfo['ssid'] ?? 'DocuCenter'} / DocuCenter123',
+                  style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              const Text('Download link (open on phone):',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              SelectableText(link, style: const TextStyle(fontSize: 12, color: Color(0xFF2563EB))),
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
           ],
-        );
-      },
-    );
+        ),
+      );
+
+      if (!mounted) return;
+      final docsToSend = _selectedDocs.isNotEmpty
+          ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+          : widget.documents;
+      final result = await widget.transferManager!.transferDocuments(
+          TransferMethod.wifiHotspot, docsToSend);
+      messenger.showSnackBar(SnackBar(content: Text(result.message)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('WiFi transfer error: $e')));
+    } finally {
+      setState(() => _isWifiTransferring = false);
+    }
+  }
+
+  // ── Print selected ───────────────────────────────────────────────────────
+  void _printSelected() {
+    final selected = _selectedDocs.isNotEmpty
+        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+        : [];
+    if (selected.isEmpty) return;
+    widget.onSelectForPrint(selected as List<StorageDocument>);
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasSelection = _selectedDocs.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Backend offline banner
+        if (!widget.backendAvailable)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              border: Border.all(color: Colors.red),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.red, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Backend server is not running. Start the server with "npm run dev" in the backend folder.',
+                    style: TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // ── Header row ──────────────────────────────────────────────────
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Icon(Icons.folder_open, size: 32, color: Color(0xFF2563EB)),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -351,161 +255,305 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   Text(
                     'System Storage',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: const Color(0xFF003D99),
-                      fontWeight: FontWeight.bold,
-                    ),
+                          color: const Color(0xFF003D99),
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                   Text(
                     widget.printingMode
                         ? 'Select documents to print'
-                        : 'View and manage your saved documents',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: const Color(0xFF4B5563)),
+                        : 'Manage your saved documents',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: const Color(0xFF4B5563)),
                   ),
                 ],
               ),
             ),
+            // Action buttons — upper right
             if (!widget.printingMode)
-              Flexible(
-                fit: FlexFit.tight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _refreshDocuments,
-                          icon: _isLoading
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.refresh),
-                          label: const Text('Refresh'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isLoading ? Colors.grey : const Color(0xFF2563EB),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: () => _showUploadOptions(context),
-                          icon: const Icon(Icons.cloud_upload),
-                          label: const Text('Upload'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                        ),
-                      ],
+              Wrap(
+                spacing: 8,
+                children: [
+                  // Refresh
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _refreshDocuments,
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh, size: 16),
+                    label: const Text('Refresh'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB)),
+                  ),
+                  // Upload File (from PC)
+                  ElevatedButton.icon(
+                    onPressed: _isUploading ? null : _uploadFromFile,
+                    icon: _isUploading
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.upload_file, size: 16),
+                    label: const Text('Upload File'),
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  ),
+                  // Export to USB
+                  ElevatedButton.icon(
+                    onPressed: _isExporting ? null : _exportToUsb,
+                    icon: _isExporting
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.usb, size: 16),
+                    label: Text(hasSelection
+                        ? 'Export to USB (${_selectedDocs.length})'
+                        : 'Export to USB'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepOrange),
+                  ),
+                  // Print Selected
+                  if (hasSelection)
+                    ElevatedButton.icon(
+                      onPressed: _printSelected,
+                      icon: const Icon(Icons.print, size: 16),
+                      label: Text('Print Selected (${_selectedDocs.length})'),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED)),
                     ),
-                    const SizedBox(height: 12),
-                    Card(
-                      color: Colors.grey[50],
-                      elevation: 0,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Direct Transfer Interface', style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: _isBluetoothScanning ? null : _scanBluetoothDevices,
-                                  icon: const Icon(Icons.search),
-                                  label: Text(_isBluetoothScanning ? 'Scanning...' : 'Scan Bluetooth'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _connectedBluetoothDevice == null || _bluetoothDevices.isEmpty
-                                      ? null
-                                      : () => _connectBluetoothDevice(_connectedBluetoothDevice ?? _bluetoothDevices.first),
-                                  icon: const Icon(Icons.bluetooth),
-                                  label: const Text('Connect Bluetooth'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _initWifiHotspot,
-                                  icon: const Icon(Icons.wifi),
-                                  label: const Text('Init WiFi Hotspot'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _isWifiActive ? _startWifiTransfer : null,
-                                  icon: const Icon(Icons.wifi_tethering),
-                                  label: const Text('Start WiFi Transfer'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text('Bluetooth devices found: ${_bluetoothDevices.length}'),
-                            if (_bluetoothDevices.isNotEmpty)
-                              Wrap(
-                                spacing: 8,
-                                children: _bluetoothDevices.map((device) {
-                                  final selected = _connectedBluetoothDevice?.address == device.address;
-                                  return ChoiceChip(
-                                    label: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
-                                    selected: selected,
-                                    onSelected: (isSelected) {
-                                      if (isSelected) {
-                                        _connectBluetoothDevice(device);
-                                      }
-                                    },
-                                  );
-                                }).toList(),
-                              ),
-                            if (_connectedBluetoothDevice != null)
-                              Text('Connected BT: ${_connectedBluetoothDevice!.name.isNotEmpty ? _connectedBluetoothDevice!.name : 'Unknown Device'}'),
-                            Text('WiFi status: $_wifiStatusMessage'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             if (widget.printingMode)
-              Padding(
-                padding: const EdgeInsets.only(left: 8.0),
-                child: ElevatedButton.icon(
-                  onPressed: _selectedDocs.isNotEmpty
-                      ? () {
-                          final selected = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
-                          widget.onSelectForPrint(selected);
-                        }
-                      : null,
-                  icon: const Icon(Icons.check),
-                  label: const Text('Confirm Selection'),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
-                ),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _selectedDocs.isNotEmpty
+                        ? () {
+                            final selected = widget.documents
+                                .where((d) => _selectedDocs.contains(d.id))
+                                .toList();
+                            widget.onSelectForPrint(selected);
+                          }
+                        : null,
+                    icon: const Icon(Icons.check),
+                    label: const Text('Confirm Selection'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: widget.onCancelPrintMode,
+                    child: const Text('Cancel'),
+                  ),
+                ],
               ),
           ],
         ),
-        const SizedBox(height: 24),
+
+        const SizedBox(height: 20),
+
+        // ── Direct Transfer section (Bluetooth / WiFi) ───────────────────
+        if (!widget.printingMode)
+          Card(
+            color: Colors.grey[50],
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 20),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.share, size: 18, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      Text('Direct Transfer',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
+                      Text(
+                        hasSelection
+                            ? '${_selectedDocs.length} selected'
+                            : 'all documents',
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFF6B7280)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Bluetooth row
+                  Row(
+                    children: [
+                      const Icon(Icons.bluetooth,
+                          size: 16, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed:
+                            _isBluetoothScanning ? null : _scanBluetoothDevices,
+                        icon: const Icon(Icons.search, size: 14),
+                        label: Text(_isBluetoothScanning
+                            ? 'Scanning...'
+                            : 'Scan Devices'),
+                        style: ElevatedButton.styleFrom(
+                            visualDensity: VisualDensity.compact),
+                      ),
+                      if (_bluetoothDevices.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: _bluetoothDevices.map((device) {
+                                final selected =
+                                    _connectedBluetoothDevice?.address ==
+                                        device.address;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: ActionChip(
+                                    avatar: Icon(
+                                      selected
+                                          ? Icons.bluetooth_connected
+                                          : Icons.bluetooth,
+                                      size: 14,
+                                      color: selected
+                                          ? Colors.blue
+                                          : Colors.grey,
+                                    ),
+                                    label: Text(
+                                      device.name.isNotEmpty
+                                          ? device.name
+                                          : 'Unknown',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    onPressed: () =>
+                                        _connectAndSendBluetooth(device),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // WiFi row
+                  Row(
+                    children: [
+                      const Icon(Icons.wifi, size: 16, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed:
+                            _isWifiTransferring ? null : _startWifiTransfer,
+                        icon: _isWifiTransferring
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.wifi_tethering, size: 14),
+                        label: const Text('Start WiFi Transfer'),
+                        style: ElevatedButton.styleFrom(
+                            visualDensity: VisualDensity.compact),
+                      ),
+                      if (_wifiStatusMessage.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _wifiStatusMessage,
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFF4B5563)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // ── Loading indicator ────────────────────────────────────────────
         if (_isLoading)
           Container(
+            margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
               color: Colors.blue[50],
               border: Border.all(color: const Color(0xFF2563EB)),
               borderRadius: BorderRadius.circular(8),
             ),
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             child: const Row(
               children: [
                 SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF2563EB)),
                 ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Refreshing storage documents...',
-                    style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.w500),
-                  ),
-                ),
+                SizedBox(width: 10),
+                Text('Refreshing...',
+                    style: TextStyle(
+                        color: Color(0xFF2563EB),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13)),
               ],
             ),
           ),
-        if (_isLoading) const SizedBox(height: 16),
+
+        // ── Select-all bar (when docs exist) ────────────────────────────
+        if (widget.documents.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Checkbox(
+                  tristate: true,
+                  value: _selectedDocs.length == widget.documents.length
+                      ? true
+                      : _selectedDocs.isEmpty
+                          ? false
+                          : null,
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedDocs
+                            .addAll(widget.documents.map((d) => d.id));
+                      } else {
+                        _selectedDocs.clear();
+                      }
+                    });
+                  },
+                ),
+                const Text('Select all',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                if (hasSelection) ...[
+                  const SizedBox(width: 12),
+                  Text('${_selectedDocs.length} selected',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF2563EB),
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => setState(() => _selectedDocs.clear()),
+                    child: const Text('Clear',
+                        style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+        // ── Document list ────────────────────────────────────────────────
         if (widget.documents.isEmpty)
           Center(
             child: Card(
@@ -513,14 +561,19 @@ class _StorageInterfaceState extends State<StorageInterface> {
                 padding: const EdgeInsets.all(48),
                 child: Column(
                   children: [
-                    const Icon(Icons.folder_open, size: 64, color: Color(0xFF9CA3AF)),
+                    const Icon(Icons.folder_open,
+                        size: 64, color: Color(0xFF9CA3AF)),
                     const SizedBox(height: 16),
                     Text(
                       'No Documents in Storage',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: const Color(0xFF4B5563)),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: const Color(0xFF4B5563)),
                     ),
                     const SizedBox(height: 8),
-                    const Text('Upload files or use the scanning service to digitize your documents'),
+                    const Text(
+                        'Upload files or use the scanning service to add documents'),
                   ],
                 ),
               ),
@@ -530,60 +583,63 @@ class _StorageInterfaceState extends State<StorageInterface> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: widget.documents.map((doc) {
+              final isSelected = _selectedDocs.contains(doc.id);
               return Card(
-                margin: const EdgeInsets.only(bottom: 16),
+                margin: const EdgeInsets.only(bottom: 10),
+                color: isSelected ? const Color(0xFFEFF6FF) : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: isSelected
+                      ? const BorderSide(color: Color(0xFF2563EB), width: 1.5)
+                      : BorderSide.none,
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   child: Row(
                     children: [
-                      if (widget.printingMode)
-                        Checkbox(
-                          value: _selectedDocs.contains(doc.id),
-                          onChanged: (val) {
-                            setState(() {
-                              if (val == true) {
-                                _selectedDocs.add(doc.id);
-                              } else {
-                                _selectedDocs.remove(doc.id);
-                              }
-                            });
-                          },
-                        ),
-                      const Icon(Icons.description, color: Color(0xFF2563EB)),
-                      const SizedBox(width: 16),
+                      // Checkbox always visible
+                      Checkbox(
+                        value: isSelected,
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              _selectedDocs.add(doc.id);
+                            } else {
+                              _selectedDocs.remove(doc.id);
+                            }
+                          });
+                        },
+                      ),
+                      const Icon(Icons.description,
+                          color: Color(0xFF2563EB), size: 20),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               doc.originalName,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
                               '${doc.format} • ${doc.pages} pages • ${doc.size} • ${doc.date}',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Color(0xFF6B7280)),
                             ),
                           ],
                         ),
                       ),
-                      if (!widget.printingMode)
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () => widget.onPrint(doc),
-                              icon: const Icon(Icons.print, size: 16),
-                              label: const Text('Print'),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: () => widget.onDelete(doc.id),
-                              icon: const Icon(Icons.delete, size: 16),
-                              label: const Text('Delete'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                            ),
-                          ],
-                        ),
+                      // Delete per-document
+                      IconButton(
+                        onPressed: () => widget.onDelete(doc.id),
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: Colors.red),
+                        tooltip: 'Delete',
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ],
                   ),
                 ),

@@ -42,6 +42,8 @@ class _ServicesPageState extends State<ServicesPage> {
     });
   }
 
+  bool get _backendAvailable => StorageService.backendAvailable;
+
   void _handleServiceChange(String service) {
     setState(() {
       _activeService = service;
@@ -242,6 +244,7 @@ class _ServicesPageState extends State<ServicesPage> {
           },
           onUpload: _loadDocuments,
           transferManager: _transferManager,
+          backendAvailable: _backendAvailable,
         );
       default:
         return const SizedBox.shrink();

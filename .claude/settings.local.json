@@ -25,7 +25,32 @@
       "Bash(node -e \"const p=require\\(''pdf-to-printer''\\); p.getDefaultPrinter\\(\\).then\\(r=>console.log\\(JSON.stringify\\(r,null,2\\)\\)\\).catch\\(e=>console.error\\(e.message\\)\\)\")",
       "Bash(node -e \":*)",
       "Bash(node -e \"require\\(''better-sqlite3''\\); console.log\\(''ok''\\)\")",
-      "Bash(\"D:\\\\Projects-Shem\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat\" analyze:*)"
+      "Bash(\"D:\\\\Projects-Shem\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat\" analyze:*)",
+      "Bash(grep -n \"router\\\\.get\\\\|router\\\\.post\\\\|app\\\\.get\\\\|app\\\\.post\" /d/Projects-Shem/Thesis/2026/docucenter_kiosk/backend/src/routes/*.ts)",
+      "Read(//d D:/Projects-Shem/Thesis/2026/**)",
+      "Bash(cmd /c \"cd /d D:\\\\Projects-Shem\\\\Thesis\\\\2026\\\\docucenter_kiosk && flutter analyze\")",
+      "Bash(cmd /c \"cd /d D:\\\\Projects-Shem\\\\Thesis\\\\2026\\\\docucenter_kiosk && flutter analyze 2>&1\")",
+      "Bash(powershell -Command \"Set-Location 'D:\\\\Projects-Shem\\\\Thesis\\\\2026\\\\docucenter_kiosk'; flutter analyze\")",
+      "Bash(powershell -Command \"Get-Command flutter -ErrorAction SilentlyContinue; where.exe flutter 2>&1\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\Users\\\\Shaloh' -Recurse -Filter 'flutter.bat' -ErrorAction SilentlyContinue | Select-Object -First 3 FullName\")",
+      "Bash(powershell -Command \"Get-ChildItem 'C:\\\\' -Recurse -Filter 'flutter.bat' -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 5 FullName\")",
+      "Bash(powershell -Command \"Get-Item 'C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat' -ErrorAction SilentlyContinue | Select FullName; Get-Item 'C:\\\\flutter\\\\bin\\\\flutter.bat' -ErrorAction SilentlyContinue | Select FullName; Get-Item 'D:\\\\flutter\\\\bin\\\\flutter.bat' -ErrorAction SilentlyContinue | Select FullName\")",
+      "Read(//c/src/flutter/**)",
+      "Bash(flutter --version)",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat analyze\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat analyze 2>&1\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat analyze > C:\\\\Temp\\\\flutter_analyze.txt 2>&1 && type C:\\\\Temp\\\\flutter_analyze.txt\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Shaloh\\\\OneDrive\\\\Desktop\\\\Projects\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat analyze > C:\\\\Temp\\\\flutter_analyze.txt 2>&1\")",
+      "Read(//c/Temp/**)",
+      "Bash(mkdir -p /d/temp)",
+      "Bash(echo \"exit: $?\")",
+      "Read(//d/temp/**)",
+      "Bash(\"C:/Users/Shaloh/OneDrive/Desktop/Projects/Flutter/flutter/bin/flutter.bat\" analyze:*)",
+      "Bash(tee /d/temp/flutter_analyze.txt)",
+      "Bash(/d/Projects-Shem/Flutter/flutter/bin/flutter.bat analyze:*)",
+      "Bash(grep -v \"transfer_service\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\storage_page\\\\|lib\\\\\\\\\\\\\\\\payment\\\\|lib\\\\\\\\\\\\\\\\config\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\scanning\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\photocopy\")",
+      "Bash(grep -v \"transfer_service\\\\|lib\\\\\\\\\\\\\\\\payment_service\\\\|lib\\\\\\\\\\\\\\\\config\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\photocopy\")",
+      "Read(//d/Projects-Shem/Thesis/2026/**)"
     ]
   }
 }

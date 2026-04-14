@@ -546,75 +546,19 @@ class WindowsBluetoothTransferService extends TransferService {
     return address;
   }
 
-  Future<String?> _fetchGattDeviceName(String address) async {
-    try {
-      debugPrint('Fetching GATT name for $address');
-      final services = await WinBle.discoverServices(address);
-      debugPrint('Services for $address: $services');
-      final gattService = services.firstWhere(
-        (s) => s.toLowerCase().contains('1800'),
-        orElse: () => '',
-      );
-      debugPrint('GATT service for $address: $gattService');
-      if (gattService.isEmpty) return null;
-
-      final characteristics = await WinBle.discoverCharacteristics(
-        address: address,
-        serviceId: gattService,
-      );
-      debugPrint('Characteristics for $address: $characteristics');
-
-      final propertyChars = characteristics.where((c) => c.uuid.toLowerCase().contains('2a00')).toList();
-      debugPrint('Name chars for $address: $propertyChars');
-      if (propertyChars.isEmpty) return null;
-      final nameChar = propertyChars.first;
-
-      final data = await WinBle.read(
-        address: address,
-        serviceId: gattService,
-        characteristicId: nameChar.uuid,
-      );
-      debugPrint('Data for $address: $data');
-      if (data == null || data.isEmpty) return null;
-      final name = String.fromCharCodes(data).trim();
-      debugPrint('Decoded name for $address: "$name"');
-      return name;
-    } catch (e) {
-      debugPrint('Exception fetching GATT name for $address: $e');
-      return null;
-    }
-  }
-
   /// Connect to a specific device. Returns true on success.
+  /// Note: Classic Bluetooth devices (phones, TVs) are connected via
+  /// the Windows rundll32 Send File dialog — no BLE/GATT needed here.
   Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
-    // Windows Bluetooth is only supported on Windows
     if (!Platform.isWindows) {
       throw Exception('Windows Bluetooth not supported on this platform');
     }
 
     try {
       status = TransferStatus.initializing;
-
       _deviceAddress = deviceAddress;
-
-      // For classic Bluetooth, skip BLE connection
-      // await WinBle.connect(deviceAddress);
-
-      // Try to fetch GATT device name if the scanned name is missing.
-      final gattName = await _fetchGattDeviceName(deviceAddress);
-      if (gattName != null && gattName.isNotEmpty && gattName != 'N/A') {
-        // Update name if needed
-      }
-
-      // Listen for connection status (dummy for classic)
-      // _connectionSubscription = WinBle.connectionStreamOf(deviceAddress).listen((bool isConnected) {
-      //   if (!isConnected) {
-      //     _deviceAddress = null;
-      //     status = TransferStatus.idle;
-      //   }
-      // });
-
       status = TransferStatus.idle;
+      debugPrint('Bluetooth device selected: $deviceAddress (${deviceName ?? 'unknown'})');
       return true;
     } catch (e) {
       debugPrint('Bluetooth connect failed: $e');
@@ -652,9 +596,12 @@ class WindowsBluetoothTransferService extends TransferService {
 /// Windows WiFi Hotspot Transfer Service
 class WindowsWiFiHotspotTransferService extends TransferService {
   static const int defaultPort = 8888;
+  static const String _ssid = 'DocuCenter';
+  static const String _passphrase = 'DocuCenter123';
   String? _hotspotName;
-  String _hotspotKey = 'WebDoc1234';
+  String _hotspotKey = _passphrase;
   bool _hostedNetworkSupported = false;
+  bool _mobileHotspotActive = false;
   late int _port;
   double _progress = 0.0;
   HttpServer? _httpServer;
@@ -672,9 +619,75 @@ class WindowsWiFiHotspotTransferService extends TransferService {
     }
   }
 
+  /// Start Windows Mobile Hotspot via WinRT PowerShell.
+  /// Works on modern adapters where netsh hostednetwork is unsupported.
+  Future<bool> _startWindowsMobileHotspot() async {
+    try {
+      const script = r'''
+[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]
+[void][Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking,ContentType=WindowsRuntime]
+$profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
+if ($profile -eq $null) { Write-Error "No internet profile found"; exit 1 }
+$mgr = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
+$cfg = New-Object Windows.Networking.NetworkOperators.NetworkOperatorTetheringAccessPointConfiguration
+$cfg.Ssid = "DocuCenter"
+$cfg.Passphrase = "DocuCenter123"
+$mgr.ConfigureAccessPointAsync($cfg).AsTask().Wait()
+$result = $mgr.StartTetheringAsync().AsTask().Result
+Write-Output "OK"
+''';
+      final proc = await Process.run(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+      );
+      final ok = proc.stdout.toString().trim() == 'OK';
+      if (!ok) {
+        debugPrint('Mobile hotspot PowerShell output: ${proc.stdout} ${proc.stderr}');
+      }
+      return ok;
+    } catch (e) {
+      debugPrint('Mobile hotspot start failed: $e');
+      return false;
+    }
+  }
+
+  /// Stop Windows Mobile Hotspot.
+  Future<void> _stopWindowsMobileHotspot() async {
+    try {
+      const script = r'''
+[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]
+[void][Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking,ContentType=WindowsRuntime]
+$profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
+if ($profile -ne $null) {
+  $mgr = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
+  $mgr.StopTetheringAsync().AsTask().Wait()
+}
+''';
+      await Process.run('powershell', ['-NoProfile', '-NonInteractive', '-Command', script]);
+    } catch (e) {
+      debugPrint('Mobile hotspot stop failed: $e');
+    }
+  }
+
+  /// Get the IP address assigned to the Mobile Hotspot virtual adapter.
+  Future<String?> _getMobileHotspotIP() async {
+    try {
+      final result = await Process.run('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        r"Get-NetIPAddress -AddressFamily IPv4 | Where-Object { (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue).InterfaceDescription -like 'Microsoft Wi-Fi Direct Virtual Adapter*' } | Select-Object -ExpandProperty IPAddress -First 1",
+      ]);
+      final ip = result.stdout.toString().trim();
+      return ip.isNotEmpty ? ip : null;
+    } catch (e) {
+      debugPrint('Could not get mobile hotspot IP: $e');
+      return null;
+    }
+  }
+
   @override
   Future<void> initialize() async {
-    // Windows WiFi hotspot is only supported on Windows
     if (!Platform.isWindows) {
       status = TransferStatus.failed;
       throw Exception('Windows WiFi hotspot not supported on this platform');
@@ -682,23 +695,34 @@ class WindowsWiFiHotspotTransferService extends TransferService {
 
     status = TransferStatus.initializing;
     _port = defaultPort;
-    _hotspotName = 'WebDocHotspot';
-    _hotspotKey = 'WebDoc1234';
+    _hotspotName = _ssid;
+    _hotspotKey = _passphrase;
+    _mobileHotspotActive = false;
 
+    // 1. Try legacy hosted network (older adapters)
     _hostedNetworkSupported = await _isHostedNetworkSupported();
-    if (!_hostedNetworkSupported) {
-      status = TransferStatus.failed;
-      debugPrint('Windows hosted network not supported on this adapter');
+    if (_hostedNetworkSupported) {
+      final started = await _startWindowsHostedNetwork();
+      if (started) {
+        debugPrint('WiFi hosted network started (SSID: $_ssid)');
+        status = TransferStatus.idle;
+        return;
+      }
+      debugPrint('netsh hostednetwork start failed despite being reported as supported');
+    }
+
+    // 2. Try Windows Mobile Hotspot (modern adapters — Windows 10/11)
+    debugPrint('Trying Windows Mobile Hotspot (WinRT)...');
+    final mobileOk = await _startWindowsMobileHotspot();
+    if (mobileOk) {
+      _mobileHotspotActive = true;
+      debugPrint('Windows Mobile Hotspot started (SSID: $_ssid, pass: $_passphrase)');
+      status = TransferStatus.idle;
       return;
     }
 
-    final started = await _startWindowsHostedNetwork();
-    if (!started) {
-      status = TransferStatus.failed;
-      debugPrint('netsh start hostednetwork failed. Need admin & adapter support.');
-      return;
-    }
-
+    // 3. Fall back to existing LAN — phone must be on same network
+    debugPrint('No hotspot available — using existing LAN IP. Phone must be on the same network.');
     status = TransferStatus.idle;
   }
 
@@ -763,44 +787,18 @@ class WindowsWiFiHotspotTransferService extends TransferService {
       );
     }
 
-    if (!_hostedNetworkSupported) {
-      return TransferResult(
-        success: false,
-        message: 'WiFi hotspot not supported by your WiFi adapter or OS',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
-    // ensure hotspot is running before transfer
-    final started = await _startWindowsHostedNetwork();
-    if (!started) {
-      return TransferResult(
-        success: false,
-        message: 'Failed to start Windows WiFi hotspot; please run app as Administrator and ensure hosted network is supported.',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
       _fileCache.clear();
 
-      // Ensure hotspot is running before file transfer begins
-      final started = await _startWindowsHostedNetwork();
-      if (!started) {
-        status = TransferStatus.failed;
-        return TransferResult(
-          success: false,
-          message: 'Failed to start Windows WiFi hotspot. Make sure your WiFi adapter supports hosted network and you are running with sufficient privileges.',
-          transferredDocumentIds: [],
-          timestamp: DateTime.now(),
-        );
+      // Try to start hosted network only if the adapter supports it
+      if (_hostedNetworkSupported) {
+        final started = await _startWindowsHostedNetwork();
+        if (!started) {
+          debugPrint('Hosted network start failed — using existing LAN IP');
+        }
       }
-
-      // In a real app, a system-level hotspot may require elevated rights.
 
       for (int i = 0; i < documents.length; i++) {
         final doc = documents[i];
@@ -865,7 +863,6 @@ class WindowsWiFiHotspotTransferService extends TransferService {
   }
 
   Future<Map<String, String>> getNetworkInfo() async {
-    // Windows WiFi hotspot is only supported on Windows
     if (!Platform.isWindows) {
       return {
         'ip': '',
@@ -874,11 +871,38 @@ class WindowsWiFiHotspotTransferService extends TransferService {
       };
     }
 
-    // For Windows, attempt to detect the hotspot IP on the shared network interface
-    final ip = await NetworkInfo().getWifiIP();
-    final hostname = _hotspotName ?? 'WebDocHotspot';
+    String? ip;
+    String hostname;
+
+    if (_hostedNetworkSupported) {
+      // Hotspot active — use the hotspot IP (Windows default: 192.168.137.1)
+      ip = await NetworkInfo().getWifiIP() ?? '192.168.137.1';
+      hostname = _hotspotName ?? 'WebDocHotspot';
+    } else {
+      // No hotspot — find the machine's current LAN IPv4 address
+      try {
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLinkLocal: false,
+        );
+        for (final iface in interfaces) {
+          for (final addr in iface.addresses) {
+            if (!addr.isLoopback) {
+              ip = addr.address;
+              break;
+            }
+          }
+          if (ip != null) break;
+        }
+      } catch (e) {
+        debugPrint('Could not determine LAN IP: $e');
+      }
+      ip ??= '127.0.0.1';
+      hostname = Platform.localHostname;
+    }
+
     return {
-      'ip': ip ?? '192.168.137.1',
+      'ip': ip,
       'hostname': hostname,
       'port': _port.toString(),
     };
@@ -1167,7 +1191,11 @@ class TransferManager {
       final service = serviceEntry.$2;
       try {
         await service.initialize();
-        debugPrint('$name transfer service initialized successfully');
+        if (service.status == TransferStatus.failed) {
+          debugPrint('$name transfer service unavailable on this hardware');
+        } else {
+          debugPrint('$name transfer service initialized successfully');
+        }
       } catch (e) {
         debugPrint('Failed to initialize $name transfer service: $e');
         // Continue with other services

@@ -5,7 +5,6 @@ import 'pages/payment_page.dart';
 import 'dart:io';
 
 void main() {
-  debugPrint('Main called - Platform.isWindows: ${Platform.isWindows}');
   runApp(const MainApp());
 }
 

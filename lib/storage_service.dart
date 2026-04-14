@@ -53,6 +53,9 @@ class StorageDocument {
 class StorageService {
   static String get _baseUrl => BackendConfig.storageApiUrl;
 
+  /// True when the backend responded successfully on the last getDocuments call.
+  static bool backendAvailable = true;
+
   /// Get MIME type based on file extension
   static String getMimeType(String fileName) {
     final extension = fileName.split('.').last.toLowerCase();
@@ -115,24 +118,36 @@ class StorageService {
     }
   }
 
-  /// Get all stored documents
+  /// Get all stored documents.
+  /// Sets [backendAvailable] to false when the server is not reachable.
   static Future<List<StorageDocument>> getDocuments() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/documents'));
-      
+      final response = await http
+          .get(Uri.parse('$_baseUrl/documents'))
+          .timeout(const Duration(seconds: 8));
+
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         if (json['success'] == true && json['documents'] != null) {
+          backendAvailable = true;
           final List<dynamic> documentsJson = json['documents'];
           return documentsJson
               .map((doc) => StorageDocument.fromJson(doc as Map<String, dynamic>))
               .toList();
         }
       }
-      
+
+      backendAvailable = true; // server responded, just unexpected body
       debugPrint('Get documents failed: ${response.statusCode}');
       return [];
+    } on http.ClientException catch (e) {
+      // Connection refused, DNS failure, or similar network error
+      backendAvailable = false;
+      debugPrint('Backend not reachable — is the server running on port 5000? ($e)');
+      return [];
     } catch (e) {
+      // TimeoutException or other
+      backendAvailable = false;
       debugPrint('Error getting documents: $e');
       return [];
     }
