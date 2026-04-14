@@ -2,7 +2,7 @@
 
 ## Overview
 
-Your Flutter application is now **fully integrated** with the Node.js/Express backend for GCash payment processing. The integration includes:
+Your Flutter application is now **fully integrated** with the Node.js/Express backend for PAYMONGO payment processing. The integration includes:
 
 - ✅ Complete HTTP client for backend communication
 - ✅ Real-time QR code generation and display
@@ -21,7 +21,7 @@ Your Flutter application is now **fully integrated** with the Node.js/Express ba
 Complete payment service layer for backend communication.
 
 **Features:**
-- `GCashPaymentService` - Main API client
+- `PAYMONGOPaymentService` - Main API client
 - `PaymentTransaction` - Model for transactions
 - `PaymentStatus` - Model for payment status
 - `PaymentPollingManager` - Automatic status polling
@@ -30,7 +30,7 @@ Complete payment service layer for backend communication.
 
 **Usage:**
 ```dart
-final service = GCashPaymentService();
+final service = PAYMONGOPaymentService();
 final transaction = await service.createPayment(amount: 50.0);
 final status = await service.checkPaymentStatus(transaction.transactionId);
 ```
@@ -136,13 +136,13 @@ User ────────┐
 │  - Printing Service            │
 │  - Scanning Service            │
 │  - Payment Service             │
-│  - GCash Integration           │
+│  - PAYMONGO Integration           │
 └────────────┬───────────────────┘
              │ HTTPS
              │ (Merchant API)
              ▼
 ┌────────────────────────────────┐
-│  GCash Payment Gateway         │
+│  PAYMONGO Payment Gateway         │
 │  (Production)                  │
 └────────────────────────────────┘
 ```
@@ -159,16 +159,16 @@ User ────────┐
        └─> PaymentInterface Displayed
 
 2. CreatePayment Request
-   └─> POST /api/gcash/create-payment
+   └─> POST /api/PAYMONGO/create-payment
        └─> Backend Creates Transaction
            └─> Transaction ID + QR Code Returned
 
 3. Display QR Code
    └─> Generated from transaction data
-       └─> User scans with GCash app
+       └─> User scans with PAYMONGO app
 
 4. Automatic Polling
-   └─> GET /api/gcash/check-payment/:id
+   └─> GET /api/PAYMONGO/check-payment/:id
        └─> Every 3 seconds (configurable)
            └─> Status: PENDING → PROCESSING → SUCCESS
 
@@ -216,10 +216,10 @@ Edit `lib/config.dart`:
 
 ```dart
 // Development
-static const String baseUrl = 'http://localhost:5000/api/gcash';
+static const String baseUrl = 'http://localhost:5000/api/PAYMONGO';
 
 // Production
-static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
+static const String baseUrl = 'https://api.yourdomain.com/api/PAYMONGO';
 ```
 
 ### Payment Settings
@@ -362,8 +362,8 @@ qr_flutter: ^4.0.0
 
 ## Production Deployment
 
-### 1. Get GCash Credentials
-- Contact GCash Merchant Support
+### 1. Get PAYMONGO Credentials
+- Contact PAYMONGO Merchant Support
 - Apply for merchant account
 - Get Merchant ID, API Key, Secret
 
@@ -371,13 +371,13 @@ qr_flutter: ^4.0.0
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env with your GCash credentials
+# Edit .env with your PAYMONGO credentials
 ```
 
 ### 3. Update Flutter Config
 ```dart
 // lib/config.dart
-static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
+static const String baseUrl = 'https://api.yourdomain.com/api/PAYMONGO';
 ```
 
 ### 4. Disable Development Tools
@@ -468,7 +468,7 @@ Your Flutter app now has:
 
 1. **Test locally** - Run backend and Flutter app
 2. **Test payment flow** - Use simulation buttons
-3. **Get GCash credentials** - For real transactions
+3. **Get PAYMONGO credentials** - For real transactions
 4. **Deploy to production** - When ready
 
 ### Files to Review:
@@ -483,3 +483,4 @@ Your Flutter app now has:
 **Integration Status: ✅ COMPLETE**
 
 **Last Updated:** February 2026
+

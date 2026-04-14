@@ -4,7 +4,7 @@
 /// including backend API endpoints, timeouts, and other settings.
 library;
 
-const String FLUTTER_APP_VERSION = '1.0.0';
+const String flutterAppVersion = '1.0.0';
 
 // =============================================================================
 // Backend Configuration
@@ -20,7 +20,7 @@ class BackendConfig {
   /// Root server URL (no trailing slash)
   static const String serverUrl = 'http://localhost:5000';
 
-  static const String baseUrl = '$serverUrl/api/gcash';
+  static const String baseUrl = '$serverUrl/api/paymongo';
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
   
@@ -110,3 +110,4 @@ class SuccessMessages {
   static const String paymentSuccessful = 'Payment successful!';
   static const String paymentCancelled = 'Payment cancelled.';
 }
+

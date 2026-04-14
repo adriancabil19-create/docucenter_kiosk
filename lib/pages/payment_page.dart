@@ -1,33 +1,39 @@
+﻿import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'dart:async';
+
 import '../payment_service.dart';
 import '../config.dart';
 
 // ============================================================================
-// GCash Payment Page — top-level page shown when user navigates to 'payment'
+// PAYMONGO Payment Page — top-level page shown when user navigates to 'payment'
 // ============================================================================
 
-class GCashPaymentPage extends StatefulWidget {
+class PAYMONGOPaymentPage extends StatefulWidget {
   final Function(String) onNavigate;
 
-  const GCashPaymentPage({
+  const PAYMONGOPaymentPage({
     super.key,
     required this.onNavigate,
   });
 
   @override
-  State<GCashPaymentPage> createState() => GCashPaymentPageState();
+  State<PAYMONGOPaymentPage> createState() => PAYMONGOPaymentPageState();
 }
 
-class GCashPaymentPageState extends State<GCashPaymentPage> {
+class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   // Static cross-page state — set before navigating to 'payment'
   static double pendingAmount = 50.0;
   static String printContent = '';
-  static List<String> printFiles = [];
+  static List<dynamic> printFiles =
+      []; // Can be List<String> or List<Uint8List>
   static String paperSize = 'A4';
   static String colorMode = 'bw';
   static String quality = 'standard';
+
   /// Receipt content that should be printed after payment succeeds
   /// (e.g., photocopying receipt). Cleared after printing.
   static String pendingReceiptContent = '';
@@ -55,11 +61,11 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
               ),
               const SizedBox(width: 16),
               Text(
-                'GCash Payment',
+                'PAYMONGO Payment',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFF003D99),
-                  fontWeight: FontWeight.bold,
-                ),
+                      color: const Color(0xFF003D99),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ],
           ),
@@ -74,23 +80,37 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                   // Attempt to print the files
                   if (printFiles.isNotEmpty) {
                     try {
-                      final printSuccess = await PrintService.printFromStorage(
-                        printFiles,
-                        paperSize: paperSize,
-                        colorMode: colorMode,
-                        quality: quality,
-                      );
+                      bool printSuccess;
+                      if (printFiles.first is Uint8List) {
+                        // Scanned images
+                        printSuccess = await PrintService.printScannedImages(
+                          List<Uint8List>.from(printFiles),
+                          paperSize: paperSize,
+                          colorMode: colorMode,
+                          quality: quality,
+                        );
+                      } else {
+                        // Stored files
+                        printSuccess = await PrintService.printFromStorage(
+                          List<String>.from(printFiles),
+                          paperSize: paperSize,
+                          colorMode: colorMode,
+                          quality: quality,
+                        );
+                      }
                       if (printSuccess) {
                         messenger.showSnackBar(
                           const SnackBar(
-                            content: Text('Payment successful! Printing started...'),
+                            content:
+                                Text('Payment successful! Printing started...'),
                             backgroundColor: Colors.green,
                           ),
                         );
                       } else {
                         messenger.showSnackBar(
                           const SnackBar(
-                            content: Text('Payment successful but printing failed'),
+                            content:
+                                Text('Payment successful but printing failed'),
                             backgroundColor: Colors.orange,
                           ),
                         );
@@ -98,7 +118,8 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                     } catch (e) {
                       messenger.showSnackBar(
                         SnackBar(
-                          content: Text('Payment successful but printing error: $e'),
+                          content:
+                              Text('Payment successful but printing error: $e'),
                           backgroundColor: Colors.orange,
                         ),
                       );
@@ -106,7 +127,8 @@ class GCashPaymentPageState extends State<GCashPaymentPage> {
                   } else {
                     messenger.showSnackBar(
                       const SnackBar(
-                        content: Text('Payment successful! Returning to services...'),
+                        content: Text(
+                            'Payment successful! Returning to services...'),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -178,7 +200,7 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
   bool _isLoading = true;
   late bool _showDevTools;
 
-  final GCashPaymentService _paymentService = GCashPaymentService();
+  final PAYMONGOPaymentService _paymentService = PAYMONGOPaymentService();
   Timer? _pollingTimer;
   Timer? _countdownTimer;
   PaymentPollingManager? _pollingManager;
@@ -221,8 +243,9 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
 
       final demoTransaction = PaymentTransaction(
         transactionId: 'DEMO-${DateTime.now().millisecondsSinceEpoch}',
-        referenceNumber: 'REF-${DateTime.now().millisecondsSinceEpoch.toString().substring(0, 8)}',
-        qrCode: 'DEMO-QR-CODE',
+        referenceNumber:
+            'REF-${DateTime.now().millisecondsSinceEpoch.toString().substring(0, 8)}',
+        qrCode: 'code_8T7GbSP9ztU2tQUJ5WQyJ5Cn',
         expiresIn: 300,
         amount: widget.amount,
         status: 'PENDING',
@@ -287,60 +310,60 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     _pollingTimer?.cancel();
     if (mounted) setState(() => _paymentStatus = 'success');
 
-    // Capture context references before any awaits
-    final messenger = mounted ? ScaffoldMessenger.of(context) : null;
-
     // 1. Print payment receipt
     await _printReceipt();
 
     // 2. Print any pending service receipt (e.g., photocopying) AFTER payment
-    final pending = GCashPaymentPageState.pendingReceiptContent;
+    final pending = PAYMONGOPaymentPageState.pendingReceiptContent;
     if (pending.isNotEmpty) {
       try {
-        await PrintService.printReceipt(pending);
+        await PrintService.printReceipt(
+          pending,
+          paperSize: PAYMONGOPaymentPageState.paperSize,
+        );
       } catch (e) {
         debugPrint('Error printing pending receipt: $e');
       } finally {
-        GCashPaymentPageState.pendingReceiptContent = '';
+        PAYMONGOPaymentPageState.pendingReceiptContent = '';
       }
     }
 
-    // 3. Print files from storage if selected
-    bool printSuccess = true;
-    bool hadFiles = false;
-    try {
-      final filenames = GCashPaymentPageState.printFiles;
-      hadFiles = filenames.isNotEmpty;
-      if (hadFiles) {
-        printSuccess = await PrintService.printFromStorage(
-          filenames,
-          paperSize: GCashPaymentPageState.paperSize,
-          colorMode: GCashPaymentPageState.colorMode,
-          quality: GCashPaymentPageState.quality,
-        );
-      }
-    } catch (e) {
-      debugPrint('Error printing files from storage: $e');
-      printSuccess = false;
-    } finally {
-      // Clear static state so the next job starts clean
-      GCashPaymentPageState.printFiles = [];
-    }
+    // 3. Print files from storage if selected (handled in onPaymentComplete)
+    // bool printSuccess = true;
+    // bool hadFiles = false;
+    // try {
+    //   final filenames = PAYMONGOPaymentPageState.printFiles;
+    //   hadFiles = filenames.isNotEmpty;
+    //   if (hadFiles) {
+    //     printSuccess = await PrintService.printFromStorage(
+    //       filenames,
+    //       paperSize: PAYMONGOPaymentPageState.paperSize,
+    //       colorMode: PAYMONGOPaymentPageState.colorMode,
+    //       quality: PAYMONGOPaymentPageState.quality,
+    //     );
+    //   }
+    // } catch (e) {
+    //   debugPrint('Error printing files from storage: $e');
+    //   printSuccess = false;
+    // } finally {
+    //   // Clear static state so the next job starts clean
+    //   PAYMONGOPaymentPageState.printFiles = [];
+    // }
 
-    // Notify user of print outcome
-    if (hadFiles && messenger != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            printSuccess
-                ? 'Files sent to printer successfully.'
-                : 'Payment received, but printing failed. Check PrintSimulation/ folder or printer connection.',
-          ),
-          backgroundColor: printSuccess ? Colors.green : Colors.orange,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
+    // Notify user of print outcome (handled in onPaymentComplete)
+    // if (hadFiles && messenger != null) {
+    //   messenger.showSnackBar(
+    //     SnackBar(
+    //       content: Text(
+    //         printSuccess
+    //             ? 'Files sent to printer successfully.'
+    //             : 'Payment received, but printing failed. Check PrintSimulation/ folder or printer connection.',
+    //       ),
+    //       backgroundColor: printSuccess ? Colors.green : Colors.orange,
+    //       duration: const Duration(seconds: 4),
+    //     ),
+    //   );
+    // }
 
     // 4. Navigate back — await all prints first, then delay
     await Future.delayed(const Duration(seconds: 2));
@@ -364,14 +387,17 @@ Amount: PHP ${widget.amount.toStringAsFixed(2)}
 Status: [PAID]
 
 ----------------------------------------
-${GCashPaymentPageState.printContent.isNotEmpty ? GCashPaymentPageState.printContent : 'Standard Receipt'}
+${PAYMONGOPaymentPageState.printContent.isNotEmpty ? PAYMONGOPaymentPageState.printContent : 'Standard Receipt'}
 
 ----------------------------------------
 Thank you for using our service!
 Date: ${DateTime.now().toString().split('.')[0]}
 ''';
 
-      await PrintService.printReceipt(receiptContent);
+      await PrintService.printReceipt(
+        receiptContent,
+        paperSize: PAYMONGOPaymentPageState.paperSize,
+      );
     } catch (e) {
       debugPrint('Print receipt error: $e');
     }
@@ -393,7 +419,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
 
   void _handleTimeout() {
     if (_transaction != null && _paymentStatus != 'success') {
-      _paymentService.cancelPayment(_transaction!.transactionId, reason: 'Payment timeout');
+      _paymentService.cancelPayment(_transaction!.transactionId,
+          reason: 'Payment timeout');
     }
     setState(() {
       _paymentStatus = 'expired';
@@ -407,7 +434,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
     try {
       _countdownTimer?.cancel();
       _pollingTimer?.cancel();
-      await _paymentService.cancelPayment(_transaction!.transactionId, reason: 'User cancelled');
+      await _paymentService.cancelPayment(_transaction!.transactionId,
+          reason: 'User cancelled');
       setState(() => _paymentStatus = 'cancelled');
       widget.onPaymentComplete(false);
     } catch (e) {
@@ -421,6 +449,18 @@ Date: ${DateTime.now().toString().split('.')[0]}
     return '$mins:${secs.toString().padLeft(2, '0')}';
   }
 
+  Uint8List? _decodeQRCodeImage(String qrCode) {
+    final match =
+        RegExp(r'data:image/[a-zA-Z]+;base64,(.+)').firstMatch(qrCode);
+    if (match == null) return null;
+
+    try {
+      return base64Decode(match.group(1)!);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _simulateSuccess() async {
     if (_transaction == null) return;
     // Stop polling FIRST to prevent double-trigger from the polling loop
@@ -429,7 +469,9 @@ Date: ${DateTime.now().toString().split('.')[0]}
 
     // Notify backend (best-effort — silently ignored if backend is unavailable)
     // Do NOT send filenames here; all printing is handled by _handlePaymentSuccess
-    _paymentService.simulatePaymentSuccess(_transaction!.transactionId).ignore();
+    _paymentService
+        .simulatePaymentSuccess(_transaction!.transactionId)
+        .ignore();
 
     // Trigger the full success flow locally
     await _handlePaymentSuccess();
@@ -461,7 +503,9 @@ Date: ${DateTime.now().toString().split('.')[0]}
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(printed ? 'Cancellation receipt printed.' : 'Print unavailable (demo mode)'),
+            content: Text(printed
+                ? 'Cancellation receipt printed.'
+                : 'Print unavailable (demo mode)'),
             backgroundColor: printed ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 3),
           ),
@@ -476,7 +520,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
 
   Future<void> _testPrintDirect() async {
     try {
-      final paperSize = GCashPaymentPageState.paperSize;
+      final paperSize = PAYMONGOPaymentPageState.paperSize;
       final success = await PrintService.printTestPage(paperSize: paperSize);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -491,7 +535,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Print test error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+            content: Text('Print test error: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -517,13 +562,14 @@ Date: ${DateTime.now().toString().split('.')[0]}
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'GCash Payment',
+                  'PAYMONGO Payment',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFF003D99),
-                    fontWeight: FontWeight.bold,
-                  ),
+                        color: const Color(0xFF003D99),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
-                const Text('Scan the QR code with your GCash app to complete payment'),
+                const Text(
+                    'Scan the QR code with your PAYMONGO app to complete payment'),
               ],
             ),
           ],
@@ -542,11 +588,13 @@ Date: ${DateTime.now().toString().split('.')[0]}
                       height: 50,
                       child: CircularProgressIndicator(
                         strokeWidth: 4,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text('Generating payment link...', style: Theme.of(context).textTheme.bodyMedium),
+                    Text('Generating payment link...',
+                        style: Theme.of(context).textTheme.bodyMedium),
                   ],
                 ),
               ),
@@ -560,14 +608,17 @@ Date: ${DateTime.now().toString().split('.')[0]}
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 80, color: Colors.red),
+                    const Icon(Icons.error_outline,
+                        size: 80, color: Colors.red),
                     const SizedBox(height: 16),
                     Text(
-                      _paymentStatus == 'cancelled' ? 'Payment Cancelled' : 'Payment Failed',
+                      _paymentStatus == 'cancelled'
+                          ? 'Payment Cancelled'
+                          : 'Payment Failed',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -591,19 +642,22 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       width: 80,
                       height: 80,
-                      decoration: BoxDecoration(color: Colors.green[100], shape: BoxShape.circle),
-                      child: const Icon(Icons.check, size: 50, color: Colors.green),
+                      decoration: BoxDecoration(
+                          color: Colors.green[100], shape: BoxShape.circle),
+                      child: const Icon(Icons.check,
+                          size: 50, color: Colors.green),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       'Payment Successful!',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                      ),
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                     const SizedBox(height: 8),
-                    Text('Your service is being processed', style: Theme.of(context).textTheme.bodyMedium),
+                    Text('Your service is being processed',
+                        style: Theme.of(context).textTheme.bodyMedium),
                   ],
                 ),
               ),
@@ -621,22 +675,32 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _timeLeft < 60 ? Colors.red[50] : const Color(0xFFF0F9FF),
+                        color: _timeLeft < 60
+                            ? Colors.red[50]
+                            : const Color(0xFFF0F9FF),
                         border: Border.all(
-                          color: _timeLeft < 60 ? Colors.red : const Color(0xFF60A5FA),
+                          color: _timeLeft < 60
+                              ? Colors.red
+                              : const Color(0xFF60A5FA),
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
                         children: [
-                          Text('Time Remaining', style: Theme.of(context).textTheme.bodyMedium),
+                          Text('Time Remaining',
+                              style: Theme.of(context).textTheme.bodyMedium),
                           const SizedBox(height: 8),
                           Text(
                             _formatTime(_timeLeft),
-                            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                              color: _timeLeft < 60 ? Colors.red : const Color(0xFF2563EB),
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineLarge
+                                ?.copyWith(
+                                  color: _timeLeft < 60
+                                      ? Colors.red
+                                      : const Color(0xFF2563EB),
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                         ],
                       ),
@@ -653,14 +717,18 @@ Date: ${DateTime.now().toString().split('.')[0]}
                       ),
                       child: Column(
                         children: [
-                          Text('Amount to Pay', style: Theme.of(context).textTheme.bodyMedium),
+                          Text('Amount to Pay',
+                              style: Theme.of(context).textTheme.bodyMedium),
                           const SizedBox(height: 8),
                           Text(
                             '₱${_transaction!.amount.toStringAsFixed(2)}',
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: const Color(0xFF2563EB),
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF2563EB),
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                         ],
                       ),
@@ -671,39 +739,118 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFD5D7E0), width: 2),
+                        border: Border.all(
+                            color: const Color(0xFFD5D7E0), width: 2),
                         borderRadius: BorderRadius.circular(8),
                         color: Colors.white,
                       ),
                       child: Column(
                         children: [
-                          Text('Scan with GCash', style: Theme.of(context).textTheme.labelMedium),
+                          Text('Scan with PAYMONGO',
+                              style: Theme.of(context).textTheme.labelMedium),
                           const SizedBox(height: 12),
-                          Builder(builder: (ctx) {
-                            final qrData = GCashPaymentService().decodeQRCode(_transaction!.qrCode);
-                            return Container(
-                              width: 280,
-                              height: 280,
-                              color: Colors.white,
-                              child: QrImageView(
-                                data: qrData,
-                                version: QrVersions.auto,
-                                size: 280,
-                                backgroundColor: Colors.white,
-                                errorCorrectionLevel: QrErrorCorrectLevel.M,
-                                errorStateBuilder: (ctx2, _) => const Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.qr_code_2, size: 80, color: Colors.black54),
-                                      SizedBox(height: 8),
-                                      Text('QR unavailable', textAlign: TextAlign.center),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
+                          Container(
+                            width: 280,
+                            height: 280,
+                            color: Colors.white,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Builder(builder: (context) {
+                                  final qrCode = _transaction!.qrCode;
+                                  final qrImageBytes =
+                                      _decodeQRCodeImage(qrCode);
+
+                                  if (qrImageBytes != null) {
+                                    return Image.memory(
+                                      qrImageBytes,
+                                      width: 280,
+                                      height: 280,
+                                      fit: BoxFit.contain,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const Center(
+                                        child: Text('Invalid QR image',
+                                            textAlign: TextAlign.center),
+                                      ),
+                                    );
+                                  }
+
+                                  return QrImageView(
+                                    data: qrCode,
+                                    version: QrVersions.auto,
+                                    size: 280,
+                                    backgroundColor: Colors.white,
+                                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                                    errorStateBuilder: (ctx2, _) =>
+                                        const Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.qr_code_2,
+                                              size: 80, color: Colors.black54),
+                                          SizedBox(height: 8),
+                                          Text('QR unavailable',
+                                              textAlign: TextAlign.center),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }),
+                                Builder(builder: (context) {
+                                  final qrCode = _transaction!.qrCode;
+                                  final qrImageBytes =
+                                      _decodeQRCodeImage(qrCode);
+
+                                  if (qrImageBytes == null) {
+                                    return Container(
+                                      width: 72,
+                                      height: 72,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.12),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'QR',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF003D99),
+                                              ),
+                                            ),
+                                            SizedBox(height: 2),
+                                            Text(
+                                              'Ph',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFFEE2B2B),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return const SizedBox.shrink();
+                                }),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -719,14 +866,16 @@ Date: ${DateTime.now().toString().split('.')[0]}
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Reference Number', style: Theme.of(context).textTheme.labelSmall),
+                          Text('Reference Number',
+                              style: Theme.of(context).textTheme.labelSmall),
                           const SizedBox(height: 4),
                           Text(
                             _transaction!.referenceNumber,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.w500,
+                                    ),
                           ),
                         ],
                       ),
@@ -734,7 +883,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     const SizedBox(height: 16),
 
                     // Demo Mode notice
-                    if (_errorMessage != null && _errorMessage!.contains('Demo Mode'))
+                    if (_errorMessage != null &&
+                        _errorMessage!.contains('Demo Mode'))
                       Container(
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 16),
@@ -745,12 +895,16 @@ Date: ${DateTime.now().toString().split('.')[0]}
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.info, color: Colors.orange[700], size: 20),
+                            Icon(Icons.info,
+                                color: Colors.orange[700], size: 20),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 _errorMessage!,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange[900]),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.orange[900]),
                               ),
                             ),
                           ],
@@ -769,16 +923,22 @@ Date: ${DateTime.now().toString().split('.')[0]}
                         children: [
                           Text(
                             'How to Pay:',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 12),
-                          _buildStep('1', 'Open your GCash app', context),
+                          _buildStep('1', 'Open your PAYMONGO app', context),
                           const SizedBox(height: 8),
-                          _buildStep('2', 'Tap the scan/camera button', context),
+                          _buildStep(
+                              '2', 'Tap the scan/camera button', context),
                           const SizedBox(height: 8),
-                          _buildStep('3', 'Point at the QR code above', context),
+                          _buildStep(
+                              '3', 'Point at the QR code above', context),
                           const SizedBox(height: 8),
-                          _buildStep('4', 'Enter your MPIN to confirm', context),
+                          _buildStep(
+                              '4', 'Enter your MPIN to confirm', context),
                         ],
                       ),
                     ),
@@ -796,12 +956,16 @@ Date: ${DateTime.now().toString().split('.')[0]}
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.info, color: Colors.amber[700], size: 20),
+                            Icon(Icons.info,
+                                color: Colors.amber[700], size: 20),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 'Status: ${_paymentStatus.toUpperCase()}',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.amber[900]),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.amber[900]),
                               ),
                             ),
                           ],
@@ -834,7 +998,10 @@ Date: ${DateTime.now().toString().split('.')[0]}
                             const SizedBox(height: 12),
                             Text(
                               'Development Testing',
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey[600]),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: Colors.grey[600]),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -846,7 +1013,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
                                       backgroundColor: Colors.green[400],
                                       foregroundColor: Colors.white,
                                     ),
-                                    child: const Text('Simulate Success', style: TextStyle(fontSize: 12)),
+                                    child: const Text('Simulate Success',
+                                        style: TextStyle(fontSize: 12)),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -857,7 +1025,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
                                       backgroundColor: Colors.red[400],
                                       foregroundColor: Colors.white,
                                     ),
-                                    child: const Text('Simulate Failure', style: TextStyle(fontSize: 12)),
+                                    child: const Text('Simulate Failure',
+                                        style: TextStyle(fontSize: 12)),
                                   ),
                                 ),
                               ],
@@ -870,7 +1039,8 @@ Date: ${DateTime.now().toString().split('.')[0]}
                                 foregroundColor: Colors.white,
                               ),
                               icon: const Icon(Icons.print, size: 16),
-                              label: const Text('Test Printer', style: TextStyle(fontSize: 12)),
+                              label: const Text('Test Printer',
+                                  style: TextStyle(fontSize: 12)),
                             ),
                           ],
                         ),
@@ -890,11 +1060,15 @@ Date: ${DateTime.now().toString().split('.')[0]}
         Container(
           width: 28,
           height: 28,
-          decoration: const BoxDecoration(color: Color(0xFF2563EB), shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+              color: Color(0xFF2563EB), shape: BoxShape.circle),
           child: Center(
             child: Text(
               number,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12),
             ),
           ),
         ),

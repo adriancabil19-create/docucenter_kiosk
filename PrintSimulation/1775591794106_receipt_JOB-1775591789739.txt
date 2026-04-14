@@ -1,0 +1,24 @@
+========================================
+         PAYMENT RECEIPT
+   2026-04-08 03:56:29
+========================================
+
+Transaction ID: TXN-1775591787909-DD6BB8E36EB31264
+Reference #: REF-1775591787910-E23F740B
+
+Amount: PHP 2.00
+Status: [PAID]
+
+----------------------------------------
+PHOTOCOPYING JOB
+-----------------
+Copies: 1
+Color Mode: Color
+Paper Size: Letter
+Copy Quality: Standard
+Collate: Yes
+Total Cost: PHP 2.00
+
+----------------------------------------
+Thank you for using our service!
+Date: 2026-04-08 03:56:29

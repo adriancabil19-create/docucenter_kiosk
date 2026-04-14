@@ -1,0 +1,23 @@
+At line:1 char:250
++ ... oolType','NTwain.Data.PixelType','NTwain.Data.FileFormat')) { $type=$ ...
++                                                                 ~
+Missing closing '}' in statement block or type definition.
+At line:1 char:3
++ & { $path='C:\Users\Chad\.nuget\packages\ntwain\3.1.0\lib\net40-clien ...
++   ~
+Missing closing '}' in statement block or type definition.
+At line:1 char:317
++ ... type=$asm.GetType($typeName); Write-Output $typeName = -ne $null) } }
++                                                                     ~
+Unexpected token ')' in expression or statement.
+At line:1 char:319
++ ... type=$asm.GetType($typeName); Write-Output $typeName = -ne $null) } }
++                                                                       ~
+Unexpected token '}' in expression or statement.
+At line:1 char:321
++ ... type=$asm.GetType($typeName); Write-Output $typeName = -ne $null) } }
++                                                                         ~
+Unexpected token '}' in expression or statement.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingEndCurlyBrace
+ 

@@ -1,0 +1,14 @@
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.csproj.AssemblyReference.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.GeneratedMSBuildEditorConfig.editorconfig
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.AssemblyInfoInputs.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.AssemblyInfo.cs
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.csproj.CoreCompileInputs.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerService.sourcelink.json
+C:\docucenter_kiosk\windows\twain_service\bin\Release\net48\Newtonsoft.Json.dll
+C:\docucenter_kiosk\windows\twain_service\bin\Release\net48\NTwain.dll
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainSca.EEBAA37F.Up2Date
+C:\docucenter_kiosk\windows\twain_service\bin\Release\net48\TwainScannerBridge.exe.config
+C:\docucenter_kiosk\windows\twain_service\bin\Release\net48\TwainScannerBridge.exe
+C:\docucenter_kiosk\windows\twain_service\bin\Release\net48\TwainScannerBridge.pdb
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerBridge.exe
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net48\TwainScannerBridge.pdb

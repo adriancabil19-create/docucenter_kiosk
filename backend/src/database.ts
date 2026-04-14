@@ -2,7 +2,7 @@
  * SQLite persistence layer for DOCUCENTER Kiosk.
  *
  * Tables:
- *   transactions  — every GCash payment transaction (created, completed, failed)
+ *   transactions  — every PAYMONGO payment transaction (created, completed, failed)
  *   print_jobs    — every print/copy job submitted
  *
  * Uses better-sqlite3 (synchronous API) — safe for single-process Node/Express.
@@ -214,3 +214,4 @@ export const getRecentTransactions = (limit = 20): TransactionRow[] => {
     LIMIT ?
   `).all(limit) as TransactionRow[];
 };
+

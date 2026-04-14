@@ -1,13 +1,13 @@
-# Web Doc Backend - GCash Payment Integration
+# Web Doc Backend - PAYMONGO Payment Integration
 
-Complete Node.js + Express backend for the Web Doc Kiosk payment system with GCash integration.
+Complete Node.js + Express backend for the Web Doc Kiosk payment system with PAYMONGO integration.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 14+ or higher
 - npm or yarn
-- GCash Merchant Account credentials
+- PAYMONGO Merchant Account credentials
 
 ### Installation
 
@@ -21,14 +21,14 @@ cp .env.example .env
 
 ### Configuration
 
-Edit `.env` with your GCash credentials:
+Edit `.env` with your PAYMONGO credentials:
 
 ```env
-# GCash Configuration
-GCASH_MERCHANT_ID=your_merchant_id
-GCASH_API_KEY=your_api_key
-GCASH_SECRET_KEY=your_secret_key
-GCASH_WEBHOOK_SECRET=your_webhook_secret
+# PAYMONGO Configuration
+PAYMONGO_MERCHANT_ID=your_merchant_id
+PAYMONGO_API_KEY=your_api_key
+PAYMONGO_SECRET_KEY=your_secret_key
+PAYMONGO_WEBHOOK_SECRET=your_webhook_secret
 
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
@@ -58,7 +58,7 @@ npm start
 ## 📡 API Endpoints
 
 ### 1. Create Payment
-**POST** `/api/gcash/create-payment`
+**POST** `/api/PAYMONGO/create-payment`
 
 Request:
 ```json
@@ -85,7 +85,7 @@ Response:
 ```
 
 ### 2. Check Payment Status
-**GET** `/api/gcash/check-payment/:transactionId`
+**GET** `/api/PAYMONGO/check-payment/:transactionId`
 
 Response:
 ```json
@@ -103,7 +103,7 @@ Response:
 ```
 
 ### 3. Cancel Payment
-**POST** `/api/gcash/cancel-payment/:transactionId`
+**POST** `/api/PAYMONGO/cancel-payment/:transactionId`
 
 Request:
 ```json
@@ -124,7 +124,7 @@ Response:
 ```
 
 ### 4. Webhook Handler
-**POST** `/api/gcash/webhook`
+**POST** `/api/PAYMONGO/webhook`
 
 Headers:
 ```
@@ -144,7 +144,7 @@ Payload:
 ```
 
 ### 5. Health Check
-**GET** `/api/gcash/health`
+**GET** `/api/PAYMONGO/health`
 
 Response:
 ```json
@@ -154,7 +154,7 @@ Response:
     "status": "healthy",
     "timestamp": "2026-02-08T10:00:00Z",
     "uptime": 3600,
-    "gcashApi": "connected"
+    "PAYMONGOApi": "connected"
   },
   "message": "Server is healthy"
 }
@@ -165,12 +165,12 @@ Response:
 ## 🧪 Testing & Simulation Endpoints
 
 ### Simulate Payment Success
-**POST** `/api/gcash/simulate/success/:transactionId`
+**POST** `/api/PAYMONGO/simulate/success/:transactionId`
 
 *Development mode only*
 
 ### Simulate Payment Failure
-**POST** `/api/gcash/simulate/failure/:transactionId`
+**POST** `/api/PAYMONGO/simulate/failure/:transactionId`
 
 Body:
 ```json
@@ -189,11 +189,11 @@ Body:
 backend/
 ├── src/
 │   ├── controllers/
-│   │   └── gcash.ts          # Request handlers
+│   │   └── PAYMONGO.ts          # Request handlers
 │   ├── services/
-│   │   └── gcash.ts          # Business logic & GCash API
+│   │   └── PAYMONGO.ts          # Business logic & PAYMONGO API
 │   ├── routes/
-│   │   └── gcash.ts          # Route definitions
+│   │   └── PAYMONGO.ts          # Route definitions
 │   ├── middleware/
 │   │   └── index.ts          # Express middleware
 │   ├── types/
@@ -239,15 +239,15 @@ backend/
 ```
 Frontend (React)
     ↓
-POST /api/gcash/create-payment
+POST /api/PAYMONGO/create-payment
     ↓
-GCash Service (In-Memory Storage)
+PAYMONGO Service (In-Memory Storage)
     ↓
 Return Transaction ID + QR Code
     ↓
-Frontend polls GET /api/gcash/check-payment/:id
+Frontend polls GET /api/PAYMONGO/check-payment/:id
     ↓
-GCash Webhook → POST /api/gcash/webhook
+PAYMONGO Webhook → POST /api/PAYMONGO/webhook
     ↓
 Transaction Status Updated
     ↓
@@ -301,10 +301,10 @@ All endpoints return standard error responses:
 | `NODE_ENV` | Environment (development/production) | No |
 | `PORT` | Server port | No (default: 5000) |
 | `FRONTEND_URL` | Frontend origin for CORS | Yes |
-| `GCASH_MERCHANT_ID` | GCash merchant ID | Yes |
-| `GCASH_API_KEY` | GCash API key | Yes |
-| `GCASH_SECRET_KEY` | GCash secret key | Yes |
-| `GCASH_WEBHOOK_SECRET` | Webhook secret for verification | Yes |
+| `PAYMONGO_MERCHANT_ID` | PAYMONGO merchant ID | Yes |
+| `PAYMONGO_API_KEY` | PAYMONGO API key | Yes |
+| `PAYMONGO_SECRET_KEY` | PAYMONGO secret key | Yes |
+| `PAYMONGO_WEBHOOK_SECRET` | Webhook secret for verification | Yes |
 | `PAYMENT_TIMEOUT_SECONDS` | Payment expiration | No (default: 300) |
 | `LOG_LEVEL` | Logging level (error/warn/info/debug) | No (default: info) |
 
@@ -354,8 +354,8 @@ heroku login
 heroku create web-doc-backend
 
 # Set environment variables
-heroku config:set GCASH_MERCHANT_ID=xxx
-heroku config:set GCASH_API_KEY=xxx
+heroku config:set PAYMONGO_MERCHANT_ID=xxx
+heroku config:set PAYMONGO_API_KEY=xxx
 # ... set other variables
 
 # Deploy
@@ -409,7 +409,7 @@ Set `LOG_LEVEL` environment variable:
 
 ```typescript
 // React component example
-const response = await fetch('http://localhost:5000/api/gcash/create-payment', {
+const response = await fetch('http://localhost:5000/api/PAYMONGO/create-payment', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -443,7 +443,7 @@ PORT=3001 npm run dev
 Ensure `FRONTEND_URL` matches your frontend origin exactly.
 
 ### Webhook Verification Fails
-1. Check `GCASH_WEBHOOK_SECRET` is correct
+1. Check `PAYMONGO_WEBHOOK_SECRET` is correct
 2. Verify payload is not modified
 3. Check request headers for signature
 
@@ -454,7 +454,7 @@ Wait 15 minutes or adjust `RATE_LIMIT_WINDOW_MS` in `.env`
 
 ## 📞 Support & Documentation
 
-- **GCash Merchant API**: https://developer.gcash.com
+- **PAYMONGO Merchant API**: https://developer.PAYMONGO.com
 - **Express.js Docs**: https://expressjs.com
 - **TypeScript Guide**: https://www.typescriptlang.org/docs/
 
@@ -469,3 +469,4 @@ MIT License - See LICENSE file
 **Version**: 1.0.0  
 **Last Updated**: February 8, 2026  
 **Status**: Production Ready (Demo Mode Active)
+

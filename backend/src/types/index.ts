@@ -1,4 +1,4 @@
-// GCash Payment Types
+// PAYMONGO Payment Types
 
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
 
@@ -17,7 +17,7 @@ export interface PaymentTransaction {
   documentCount?: number;
 }
 
-export interface GCashPaymentRequest {
+export interface PayMongoPaymentRequest {
   amount: number;
   currency?: string;
   serviceType?: string;
@@ -26,7 +26,7 @@ export interface GCashPaymentRequest {
   metadata?: Record<string, any>;
 }
 
-export interface GCashPaymentResponse {
+export interface PayMongoPaymentResponse {
   success: boolean;
   data: {
     transactionId: string;
@@ -38,7 +38,7 @@ export interface GCashPaymentResponse {
   message: string;
 }
 
-export interface GCashStatusResponse {
+export interface PayMongoStatusResponse {
   data: {
     status: PaymentStatus;
     transactionId: string;
@@ -50,7 +50,7 @@ export interface GCashStatusResponse {
   message: string;
 }
 
-export interface GCashWebhookPayload {
+export interface PayMongoWebhookPayload {
   eventType: string;
   transactionId: string;
   referenceNumber: string;
@@ -61,7 +61,7 @@ export interface GCashWebhookPayload {
 }
 
 export interface WebhookVerificationRequest {
-  payload: GCashWebhookPayload;
+  payload: PayMongoWebhookPayload;
   signature: string;
 }
 
@@ -81,6 +81,7 @@ export interface HealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
   timestamp: string;
   uptime: number;
-  gcashApi: 'connected' | 'disconnected';
+  PAYMONGOApi: 'connected' | 'disconnected';
   message: string;
 }
+

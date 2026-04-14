@@ -1,4 +1,4 @@
-# 🚀 Quick Start - GCash Backend
+# 🚀 Quick Start - PAYMONGO Backend
 
 Your complete Node.js + Express backend is ready!
 
@@ -26,9 +26,9 @@ npm run dev
 
 ### Core Files
 - **src/index.ts** - Express server initialization
-- **src/services/gcash.ts** - GCash API integration
-- **src/controllers/gcash.ts** - Request handlers
-- **src/routes/gcash.ts** - API endpoints
+- **src/services/PAYMONGO.ts** - PAYMONGO API integration
+- **src/controllers/PAYMONGO.ts** - Request handlers
+- **src/routes/PAYMONGO.ts** - API endpoints
 - **src/middleware/index.ts** - Express middleware
 - **src/types/index.ts** - TypeScript interfaces
 - **src/utils/** - Configuration, helpers, logging
@@ -54,11 +54,11 @@ npm run dev
 ## 🔌 API Endpoints
 
 ```
-POST   /api/gcash/create-payment          Create payment
-GET    /api/gcash/check-payment/:id       Check status
-POST   /api/gcash/cancel-payment/:id      Cancel payment
-POST   /api/gcash/webhook                 Handle webhook
-GET    /api/gcash/health                  Health check
+POST   /api/PAYMONGO/create-payment          Create payment
+GET    /api/PAYMONGO/check-payment/:id       Check status
+POST   /api/PAYMONGO/cancel-payment/:id      Cancel payment
+POST   /api/PAYMONGO/webhook                 Handle webhook
+GET    /api/PAYMONGO/health                  Health check
 POST   /api/qr/verify                     Verify QR payload (Aiven/Postgres)
 GET    /api/qr/health                     QR service health
 ```
@@ -69,7 +69,7 @@ GET    /api/qr/health                     QR service health
 
 ### Test Payment Creation
 ```bash
-curl -X POST http://localhost:5000/api/gcash/create-payment \
+curl -X POST http://localhost:5000/api/PAYMONGO/create-payment \
   -H "Content-Type: application/json" \
   -d '{"amount": 50, "serviceType": "print"}'
 ```
@@ -82,10 +82,10 @@ curl http://localhost:5000/health
 ### Development Testing
 ```bash
 # Simulate successful payment
-curl -X POST http://localhost:5000/api/gcash/simulate/success/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/success/TXN-xxx
 
 # Simulate failed payment
-curl -X POST http://localhost:5000/api/gcash/simulate/failure/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/failure/TXN-xxx
 ```
 
 ---
@@ -109,10 +109,10 @@ npm run lint       # Lint code
 Set these in `.env`:
 
 ```env
-GCASH_MERCHANT_ID=your_merchant_id
-GCASH_API_KEY=your_api_key
-GCASH_SECRET_KEY=your_secret_key
-GCASH_WEBHOOK_SECRET=your_webhook_secret
+PAYMONGO_MERCHANT_ID=your_merchant_id
+PAYMONGO_API_KEY=your_api_key
+PAYMONGO_SECRET_KEY=your_secret_key
+PAYMONGO_WEBHOOK_SECRET=your_webhook_secret
 FRONTEND_URL=http://localhost:3000
 ```
 
@@ -131,7 +131,7 @@ The backend will query a table named `qr_verifications` with columns `qr_code te
 
 If `AIVEN_DATABASE_URL` is not set the server uses a development fallback (accepts non-empty QR strings).
 
-Get credentials from [GCash Developer Portal](https://developer.gcash.com)
+Get credentials from [PAYMONGO Developer Portal](https://developer.PAYMONGO.com)
 
 ---
 
@@ -145,7 +145,7 @@ docker-compose up
 ### Heroku
 ```bash
 heroku create your-app-name
-heroku config:set GCASH_MERCHANT_ID=xxx
+heroku config:set PAYMONGO_MERCHANT_ID=xxx
 git push heroku main
 ```
 
@@ -194,7 +194,7 @@ PORT=3001 npm run dev
 - Make sure `ENABLE_CORS=true`
 
 **Webhook signature fails**
-- Double-check `GCASH_WEBHOOK_SECRET`
+- Double-check `PAYMONGO_WEBHOOK_SECRET`
 - Verify payload integrity
 
 ---
@@ -211,7 +211,7 @@ PORT=3001 npm run dev
 
 ## ✨ Features
 
-✅ GCash payment integration  
+✅ PAYMONGO payment integration  
 ✅ QR code generation  
 ✅ Webhook handling  
 ✅ HMAC-SHA256 signature verification  
@@ -230,7 +230,7 @@ For help:
 1. Check the documentation files
 2. Review error logs: `npm run dev | grep ERROR`
 3. Test with provided cURL examples
-4. Check environment variables: `echo $GCASH_MERCHANT_ID`
+4. Check environment variables: `echo $PAYMONGO_MERCHANT_ID`
 
 ---
 
@@ -243,3 +243,4 @@ Status: ✅ Production Ready
 ---
 
 Need help? Read the [full documentation](./README.md)
+

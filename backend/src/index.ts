@@ -5,7 +5,8 @@ import cors from 'cors';
 
 import { config, validateConfig } from './utils/config';
 import { logger } from './utils/logger';
-import gcashRoutes from './routes/gcash';
+import paymongoRoutes from './routes/paymongo';
+import qrphRoutes from './routes/qrph.routes';
 import qrRoutes from './routes/qr';
 import printRoutes from './routes/print';
 import storageRoutes from './routes/storage';
@@ -22,6 +23,9 @@ import {
 
 // Initialize Express app
 const app: Express = express();
+
+// Trust proxy for ngrok and rate limiting
+app.set('trust proxy', 1);
 
 // Validate configuration
 validateConfig();
@@ -51,8 +55,13 @@ if (config.corsEnabled) {
 }
 
 // Body parsing middleware
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+app.use(bodyParser.json({
+  limit: '100mb',
+  verify: (req: any, _res: any, buf: Buffer) => {
+    req.rawBody = buf.toString();
+  },
+}));
+app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 
 // Security headers
 app.use(securityHeadersMiddleware);
@@ -77,7 +86,8 @@ app.get('/health', (_req: any, res: any) => {
 });
 
 // API routes
-app.use('/api/gcash', gcashRoutes);
+app.use('/api/paymongo', paymongoRoutes);
+app.use('/', qrphRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/storage', storageRoutes);
@@ -119,7 +129,7 @@ const server = app.listen(PORT, () => {
     helmetEnabled: config.helmetEnabled,
   });
 
-  logger.info(`GCash Payment Integration API`, {
+  logger.info(`PAYMONGO Payment Integration API`, {
     baseUrl: `http://localhost:${PORT}`,
     healthCheck: `http://localhost:${PORT}/health`,
     apiStatus: `http://localhost:${PORT}/api/status`,
@@ -158,3 +168,4 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 export default app;
+

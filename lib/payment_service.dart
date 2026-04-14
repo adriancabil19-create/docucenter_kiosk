@@ -159,17 +159,17 @@ class TimeoutException implements Exception {
 }
 
 // ============================================================================
-// GCash Payment Service
+// PAYMONGO Payment Service
 // ============================================================================
 
-class GCashPaymentService {
-  static final GCashPaymentService _instance = GCashPaymentService._internal();
+class PAYMONGOPaymentService {
+  static final PAYMONGOPaymentService _instance = PAYMONGOPaymentService._internal();
 
-  factory GCashPaymentService() {
+  factory PAYMONGOPaymentService() {
     return _instance;
   }
 
-  GCashPaymentService._internal();
+  PAYMONGOPaymentService._internal();
 
   // =========================================================================
   // Public Methods
@@ -402,12 +402,14 @@ class PrintService {
   }
 
   /// Print receipt content
-  static Future<bool> printReceipt(String receiptContent) async {
+  static Future<bool> printReceipt(String receiptContent, {String? paperSize}) async {
     try {
+      final body = {'content': receiptContent};
+      if (paperSize != null) body['paperSize'] = paperSize;
       final response = await http.post(
         Uri.parse('${BackendConfig.printApiUrl}/receipt'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'content': receiptContent}),
+        body: jsonEncode(body),
       ).timeout(TIMEOUT_DURATION);
 
       if (response.statusCode == 200) {
@@ -478,6 +480,39 @@ class PrintService {
     }
   }
 
+  /// Upload scanned images and print them
+  static Future<bool> printScannedImages(List<Uint8List> images, {String? paperSize, String? colorMode, String? quality}) async {
+    try {
+      // First upload the images
+      final uploadResponse = await http.post(
+        Uri.parse('${BackendConfig.printApiUrl}/upload-scanned'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'images': images.map((img) => base64Encode(img)).toList(),
+        }),
+      ).timeout(TIMEOUT_DURATION);
+
+      if (uploadResponse.statusCode != 200) {
+        debugPrint('Failed to upload scanned images');
+        return false;
+      }
+
+      final uploadData = jsonDecode(uploadResponse.body);
+      if (!(uploadData['success'] ?? false)) {
+        debugPrint('Upload failed: ${uploadData['error']}');
+        return false;
+      }
+
+      final List<String> filenames = List<String>.from(uploadData['filenames']);
+
+      // Now print the uploaded files
+      return await printFromStorage(filenames, paperSize: paperSize, colorMode: colorMode, quality: quality);
+    } catch (e) {
+      debugPrint('Error printing scanned images: $e');
+      return false;
+    }
+  }
+
   /// Print a test page to verify printer is working
   static Future<bool> printTestPage({String paperSize = 'A4'}) async {
     try {
@@ -527,7 +562,7 @@ class PrintService {
 // ============================================================================
 
 class PaymentPollingManager {
-  final GCashPaymentService _service;
+  final PAYMONGOPaymentService _service;
   final String transactionId;
   final Duration pollingInterval;
   final Duration maxDuration;
@@ -542,7 +577,7 @@ class PaymentPollingManager {
     this.onError,
     this.pollingInterval = POLLING_INTERVAL,
     this.maxDuration = const Duration(minutes: 5),
-  }) : _service = GCashPaymentService();
+  }) : _service = PAYMONGOPaymentService();
 
   void stopPolling() => _cancelled = true;
 
@@ -586,3 +621,4 @@ class PaymentPollingManager {
     return jsonDecode(response.body);
   }
 }
+

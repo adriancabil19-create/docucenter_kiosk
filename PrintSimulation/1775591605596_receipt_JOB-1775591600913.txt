@@ -1,0 +1,28 @@
+========================================
+         PHOTOCOPYING RECEIPT
+   2026-04-08 03:53:06
+========================================
+
+Service: Photocopying
+Copies Requested: 1
+Paper Size: Letter
+Color Mode: Color
+Copy Quality: Standard
+Collate: Yes (1-2-3, 1-2-3)
+Brightness: Normal
+Contrast: Normal
+
+----------------------------------------
+Cost Breakdown:
+Cost per Copy: PHP 2.00
+Total Copies: 1
+Total Cost: PHP 2.00
+
+----------------------------------------
+Date: 2026-04-08 03:53:06
+Status: [COPY JOB SUBMITTED]
+
+Document will be copied automatically.
+
+----------------------------------------
+Thank you for using our service!

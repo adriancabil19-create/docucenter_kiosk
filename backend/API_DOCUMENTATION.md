@@ -1,4 +1,4 @@
-# API Documentation - GCash Payment Integration
+# API Documentation - PAYMONGO Payment Integration
 
 Complete API reference for the Web Doc Backend payment system.
 
@@ -22,13 +22,13 @@ The API uses the following authentication methods:
 
 | Method | Endpoint | Purpose | Auth |
 |--------|----------|---------|------|
-| POST | `/api/gcash/create-payment` | Create new payment | No |
-| GET | `/api/gcash/check-payment/:id` | Check payment status | No |
-| POST | `/api/gcash/cancel-payment/:id` | Cancel payment | No |
-| POST | `/api/gcash/webhook` | Receive GCash webhooks | Signature |
-| GET | `/api/gcash/health` | Server health check | No |
-| POST | `/api/gcash/simulate/success/:id` | Test success (dev only) | No |
-| POST | `/api/gcash/simulate/failure/:id` | Test failure (dev only) | No |
+| POST | `/api/PAYMONGO/create-payment` | Create new payment | No |
+| GET | `/api/PAYMONGO/check-payment/:id` | Check payment status | No |
+| POST | `/api/PAYMONGO/cancel-payment/:id` | Cancel payment | No |
+| POST | `/api/PAYMONGO/webhook` | Receive PAYMONGO webhooks | Signature |
+| GET | `/api/PAYMONGO/health` | Server health check | No |
+| POST | `/api/PAYMONGO/simulate/success/:id` | Test success (dev only) | No |
+| POST | `/api/PAYMONGO/simulate/failure/:id` | Test failure (dev only) | No |
 
 ---
 
@@ -63,11 +63,11 @@ All responses follow this structure:
 
 ### 1. Create Payment
 
-Creates a new GCash payment transaction and returns QR code for user to scan.
+Creates a new PAYMONGO payment transaction and returns QR code for user to scan.
 
 **Request**
 ```http
-POST /api/gcash/create-payment HTTP/1.1
+POST /api/PAYMONGO/create-payment HTTP/1.1
 Content-Type: application/json
 
 {
@@ -121,7 +121,7 @@ Content-Type: application/json
 
 **Example cURL**
 ```bash
-curl -X POST http://localhost:5000/api/gcash/create-payment \
+curl -X POST http://localhost:5000/api/PAYMONGO/create-payment \
   -H "Content-Type: application/json" \
   -d '{
     "amount": 50.00,
@@ -138,7 +138,7 @@ Poll this endpoint to check payment status after QR display.
 
 **Request**
 ```http
-GET /api/gcash/check-payment/TXN-1707386400000-ABC123 HTTP/1.1
+GET /api/PAYMONGO/check-payment/TXN-1707386400000-ABC123 HTTP/1.1
 ```
 
 **Parameters**
@@ -181,7 +181,7 @@ GET /api/gcash/check-payment/TXN-1707386400000-ABC123 HTTP/1.1
 **Polling Strategy**
 ```javascript
 const pollInterval = setInterval(async () => {
-  const response = await fetch(`/api/gcash/check-payment/${transactionId}`);
+  const response = await fetch(`/api/PAYMONGO/check-payment/${transactionId}`);
   const { data } = await response.json();
   
   if (data.status === 'SUCCESS') {
@@ -202,7 +202,7 @@ Cancel a pending or processing payment.
 
 **Request**
 ```http
-POST /api/gcash/cancel-payment/TXN-1707386400000-ABC123 HTTP/1.1
+POST /api/PAYMONGO/cancel-payment/TXN-1707386400000-ABC123 HTTP/1.1
 Content-Type: application/json
 
 {
@@ -241,11 +241,11 @@ Only `PENDING` and `PROCESSING` payments can be cancelled.
 
 ### 4. Webhook Handler
 
-Receives payment status updates from GCash API.
+Receives payment status updates from PAYMONGO API.
 
-**Request** (from GCash)
+**Request** (from PAYMONGO)
 ```http
-POST /api/gcash/webhook HTTP/1.1
+POST /api/PAYMONGO/webhook HTTP/1.1
 Content-Type: application/json
 X-Webhook-Signature: abcdef123456...
 
@@ -272,7 +272,7 @@ X-Webhook-Signature: abcdef123456...
 const crypto = require('crypto');
 
 const signature = crypto
-  .createHmac('sha256', process.env.GCASH_WEBHOOK_SECRET)
+  .createHmac('sha256', process.env.PAYMONGO_WEBHOOK_SECRET)
   .update(payloadString)
   .digest('hex');
 
@@ -317,11 +317,11 @@ const isValid = signature === receivedSignature;
 
 ### 5. Health Check
 
-Check server and GCash API connectivity.
+Check server and PAYMONGO API connectivity.
 
 **Request**
 ```http
-GET /api/gcash/health HTTP/1.1
+GET /api/PAYMONGO/health HTTP/1.1
 ```
 
 **Response**
@@ -332,7 +332,7 @@ GET /api/gcash/health HTTP/1.1
     "status": "healthy",
     "timestamp": "2026-02-08T10:30:00Z",
     "uptime": 3600,
-    "gcashApi": "connected"
+    "PAYMONGOApi": "connected"
   },
   "message": "Server is healthy"
 }
@@ -358,7 +358,7 @@ For testing - mark payment as successful.
 
 **Request**
 ```http
-POST /api/gcash/simulate/success/TXN-1707386400000-ABC123 HTTP/1.1
+POST /api/PAYMONGO/simulate/success/TXN-1707386400000-ABC123 HTTP/1.1
 ```
 
 **Response**
@@ -384,7 +384,7 @@ For testing - mark payment as failed.
 
 **Request**
 ```http
-POST /api/gcash/simulate/failure/TXN-1707386400000-ABC123 HTTP/1.1
+POST /api/PAYMONGO/simulate/failure/TXN-1707386400000-ABC123 HTTP/1.1
 Content-Type: application/json
 
 {
@@ -421,7 +421,7 @@ Content-Type: application/json
 | `INVALID_SIGNATURE` | 401 | Webhook signature verification failed | Verify secret key |
 | `RATE_LIMIT_EXCEEDED` | 429 | Too many requests | Wait 15 minutes |
 | `INTERNAL_ERROR` | 500 | Server error | Retry or contact support |
-| `GCASH_API_ERROR` | 503 | GCash service unavailable | Retry later |
+| `PAYMONGO_API_ERROR` | 503 | PAYMONGO service unavailable | Retry later |
 
 ---
 
@@ -471,7 +471,7 @@ All timestamps are in **ISO 8601 UTC format**:
 
 ```javascript
 // 1. Create payment
-const createResponse = await fetch('/api/gcash/create-payment', {
+const createResponse = await fetch('/api/PAYMONGO/create-payment', {
   method: 'POST',
   body: JSON.stringify({
     amount: 50,
@@ -487,7 +487,7 @@ displayQRCode(payment.qrCode);
 let paymentConfirmed = false;
 const checkInterval = setInterval(async () => {
   const statusResponse = await fetch(
-    `/api/gcash/check-payment/${payment.transactionId}`
+    `/api/PAYMONGO/check-payment/${payment.transactionId}`
   );
   const { data: status } = await statusResponse.json();
   
@@ -501,7 +501,7 @@ const checkInterval = setInterval(async () => {
 // 4. Handle cancellation
 async function cancelPayment() {
   await fetch(
-    `/api/gcash/cancel-payment/${payment.transactionId}`,
+    `/api/PAYMONGO/cancel-payment/${payment.transactionId}`,
     { method: 'POST' }
   );
 }
@@ -513,21 +513,21 @@ async function cancelPayment() {
 
 ```bash
 # Create payment
-curl -X POST http://localhost:5000/api/gcash/create-payment \
+curl -X POST http://localhost:5000/api/PAYMONGO/create-payment \
   -H "Content-Type: application/json" \
   -d '{"amount": 50, "serviceType": "print"}'
 
 # Check status
-curl http://localhost:5000/api/gcash/check-payment/TXN-xxx
+curl http://localhost:5000/api/PAYMONGO/check-payment/TXN-xxx
 
 # Cancel payment
-curl -X POST http://localhost:5000/api/gcash/cancel-payment/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/cancel-payment/TXN-xxx
 
 # Health check
-curl http://localhost:5000/api/gcash/health
+curl http://localhost:5000/api/PAYMONGO/health
 
 # Simulate success (dev only)
-curl -X POST http://localhost:5000/api/gcash/simulate/success/TXN-xxx
+curl -X POST http://localhost:5000/api/PAYMONGO/simulate/success/TXN-xxx
 ```
 
 ---
@@ -537,10 +537,11 @@ curl -X POST http://localhost:5000/api/gcash/simulate/success/TXN-xxx
 For issues or questions:
 1. Check logs: `npm run dev | grep ERROR`
 2. Verify `.env` configuration
-3. Check GCash API documentation
+3. Check PAYMONGO API documentation
 4. Review error messages and codes
 
 ---
 
 **Document Version**: 1.0.0  
 **Last Updated**: February 8, 2026
+

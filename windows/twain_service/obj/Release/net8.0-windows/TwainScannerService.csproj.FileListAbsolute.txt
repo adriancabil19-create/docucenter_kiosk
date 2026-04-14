@@ -1,0 +1,6 @@
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.csproj.AssemblyReference.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.GeneratedMSBuildEditorConfig.editorconfig
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.AssemblyInfoInputs.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.AssemblyInfo.cs
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.csproj.CoreCompileInputs.cache
+C:\docucenter_kiosk\windows\twain_service\obj\Release\net8.0-windows\TwainScannerService.sourcelink.json

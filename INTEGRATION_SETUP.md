@@ -16,7 +16,7 @@ A comprehensive service for communicating with the backend API.
 - ✅ Development simulation endpoints
 
 **Main Classes:**
-- `GCashPaymentService` - API communication
+- `PAYMONGOPaymentService` - API communication
 - `PaymentTransaction` - Transaction data model
 - `PaymentStatus` - Status tracking model
 - `PaymentPollingManager` - Automated polling
@@ -83,7 +83,7 @@ Edit `lib/config.dart` if needed (change backend URL for different environments)
 
 ```dart
 class BackendConfig {
-  static const String baseUrl = 'http://localhost:5000/api/gcash';
+  static const String baseUrl = 'http://localhost:5000/api/PAYMONGO';
 }
 ```
 
@@ -113,11 +113,11 @@ User Interface
     ↓
 PaymentInterface Widget (services.dart)
     ↓
-GCashPaymentService (payment_service.dart)
+PAYMONGOPaymentService (payment_service.dart)
     ↓
 HTTP REST API (Backend on port 5000)
     ↓
-GCash Merchant API
+PAYMONGO Merchant API
 ```
 
 ### Component Interaction
@@ -137,7 +137,7 @@ GCash Merchant API
     ├─────────────────┤
     │ Express Server  │
     │ Port 5000       │
-    │ /api/gcash/*    │
+    │ /api/PAYMONGO/*    │
     └─────────────────┘
 ```
 
@@ -161,7 +161,7 @@ Comprehensive error handling with user-friendly messages.
 Built-in test tools to simulate payment success/failure without actual payment.
 
 ### 📊 Real QR Codes
-Actual QR codes generated and displayed for GCash scanning.
+Actual QR codes generated and displayed for PAYMONGO scanning.
 
 ### 🎯 Status Tracking
 Real-time status tracking showing:
@@ -180,10 +180,10 @@ Edit `lib/config.dart`:
 
 ```dart
 // Development
-static const String baseUrl = 'http://localhost:5000/api/gcash';
+static const String baseUrl = 'http://localhost:5000/api/PAYMONGO';
 
 // Production
-static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
+static const String baseUrl = 'https://api.yourdomain.com/api/PAYMONGO';
 ```
 
 ### Polling Interval
@@ -241,7 +241,7 @@ web_doc/
 
 - [ ] Backend runs with `npm run dev`
 - [ ] Flutter app starts with `flutter run`
-- [ ] Can see "GCash Payment" section when printing
+- [ ] Can see "PAYMONGO Payment" section when printing
 - [ ] Payment interface shows QR code
 - [ ] "Simulate Success" button works
 - [ ] "Simulate Failure" button works
@@ -258,12 +258,12 @@ The Flutter app uses these backend endpoints:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/api/gcash/create-payment` | Create new payment |
-| GET | `/api/gcash/check-payment/:id` | Check payment status |
-| POST | `/api/gcash/cancel-payment/:id` | Cancel payment |
-| GET | `/api/gcash/health` | Health check |
-| POST | `/api/gcash/simulate/success/:id` | Dev: Simulate success |
-| POST | `/api/gcash/simulate/failure/:id` | Dev: Simulate failure |
+| POST | `/api/PAYMONGO/create-payment` | Create new payment |
+| GET | `/api/PAYMONGO/check-payment/:id` | Check payment status |
+| POST | `/api/PAYMONGO/cancel-payment/:id` | Cancel payment |
+| GET | `/api/PAYMONGO/health` | Health check |
+| POST | `/api/PAYMONGO/simulate/success/:id` | Dev: Simulate success |
+| POST | `/api/PAYMONGO/simulate/failure/:id` | Dev: Simulate failure |
 
 See `backend/API_DOCUMENTATION.md` for full details.
 
@@ -295,7 +295,7 @@ flutter build web --release
 **Update Configuration:**
 ```dart
 // Change in lib/config.dart
-static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
+static const String baseUrl = 'https://api.yourdomain.com/api/PAYMONGO';
 ```
 
 ---
@@ -323,8 +323,8 @@ static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
 
 ## Next Steps
 
-1. **Get Real GCash Credentials**
-   - Apply with GCash Merchant
+1. **Get Real PAYMONGO Credentials**
+   - Apply with PAYMONGO Merchant
    - Add credentials to backend `.env`
    - Test with real transactions
 
@@ -360,10 +360,10 @@ static const String baseUrl = 'https://api.yourdomain.com/api/gcash';
 
 ✅ **Integration Complete!**
 
-Your Flutter app is now fully integrated with the Node.js/Express backend for GCash payment processing. The payment interface automatically:
+Your Flutter app is now fully integrated with the Node.js/Express backend for PAYMONGO payment processing. The payment interface automatically:
 
 - Creates transactions with the backend
-- Displays actual QR codes for GCash scanning
+- Displays actual QR codes for PAYMONGO scanning
 - Polls for real payment status updates
 - Handles timeouts and errors gracefully
 - Provides development tools for testing
@@ -374,3 +374,4 @@ Ready to:
 3. Monitor and scale as needed
 
 For detailed information, see `FLUTTER_INTEGRATION_GUIDE.md`.
+

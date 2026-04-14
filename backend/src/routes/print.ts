@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   printText,
   printReceipt,
@@ -12,6 +14,47 @@ import { logger } from '../utils/logger';
 import { insertPrintJob } from '../database';
 
 const router = Router();
+
+/**
+ * POST /api/upload-scanned
+ * Upload scanned images from Flutter app
+ */
+router.post('/upload-scanned', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { images } = req.body;
+
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      res.status(400).json({ success: false, error: 'Missing required field: images' });
+      return;
+    }
+
+    const filenames: string[] = [];
+    const uploadsDir = path.join(__dirname, '../../uploads');
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    for (let i = 0; i < images.length; i++) {
+      const imageData = images[i];
+      const filename = `scanned_${Date.now()}_${i}.png`;
+      const filepath = path.join(uploadsDir, filename);
+
+      // Decode base64 and save as file
+      const buffer = Buffer.from(imageData, 'base64');
+      fs.writeFileSync(filepath, buffer);
+      filenames.push(filename);
+    }
+
+    logger.info('Scanned images uploaded', { count: filenames.length });
+    res.json({ success: true, filenames });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Upload scanned images error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 /**
  * POST /api/print

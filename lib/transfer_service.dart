@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ffi';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fb;
@@ -313,6 +312,7 @@ class BluetoothTransferService extends TransferService {
     _progress = 0.0;
   }
 
+  @override
   Future<List<LocalBluetoothDevice>> discoverDevices() async {
     // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
     if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
@@ -338,6 +338,7 @@ class BluetoothTransferService extends TransferService {
   }
 
   /// Connect to a specific device. Returns true on success.
+  @override
   Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
     // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
     if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
@@ -380,6 +381,7 @@ class BluetoothTransferService extends TransferService {
   }
 
   /// Connect to the default system Bluetooth device (first available)
+  @override
   Future<bool> connectToDefaultDevice() async {
     final devices = await discoverDevices();
     if (devices.isEmpty) return false;
@@ -491,6 +493,7 @@ class WindowsBluetoothTransferService extends TransferService {
     _progress = 0.0;
   }
 
+  @override
   Future<List<LocalBluetoothDevice>> discoverDevices() async {
     // Windows Bluetooth is only supported on Windows
     if (!Platform.isWindows) {
@@ -546,9 +549,47 @@ class WindowsBluetoothTransferService extends TransferService {
     return address;
   }
 
+  Future<String?> _fetchGattDeviceName(String address) async {
+    try {
+      debugPrint('Fetching GATT name for $address');
+      final services = await WinBle.discoverServices(address);
+      debugPrint('Services for $address: $services');
+      final gattService = services.firstWhere(
+        (s) => s.toLowerCase().contains('1800'),
+        orElse: () => '',
+      );
+      debugPrint('GATT service for $address: $gattService');
+      if (gattService.isEmpty) return null;
+
+      final characteristics = await WinBle.discoverCharacteristics(
+        address: address,
+        serviceId: gattService,
+      );
+      debugPrint('Characteristics for $address: $characteristics');
+
+      final propertyChars = characteristics.where((c) => c.uuid.toLowerCase().contains('2a00')).toList();
+      debugPrint('Name chars for $address: $propertyChars');
+      if (propertyChars.isEmpty) return null;
+      final nameChar = propertyChars.first;
+
+      final data = await WinBle.read(
+        address: address,
+        serviceId: gattService,
+        characteristicId: nameChar.uuid,
+      );
+      debugPrint('Data for $address: $data');
+      if (data.isEmpty) return null;
+      final name = String.fromCharCodes(data).trim();
+      debugPrint('Decoded name for $address: "$name"');
+      return name;
+    } catch (e) {
+      debugPrint('Exception fetching GATT name for $address: $e');
+      return null;
+    }
+  }
+
   /// Connect to a specific device. Returns true on success.
-  /// Note: Classic Bluetooth devices (phones, TVs) are connected via
-  /// the Windows rundll32 Send File dialog — no BLE/GATT needed here.
+  @override
   Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
     if (!Platform.isWindows) {
       throw Exception('Windows Bluetooth not supported on this platform');
@@ -568,6 +609,7 @@ class WindowsBluetoothTransferService extends TransferService {
   }
 
   /// Connect to the default system Bluetooth device (first available)
+  @override
   Future<bool> connectToDefaultDevice() async {
     final devices = await discoverDevices();
     if (devices.isEmpty) return false;
@@ -862,6 +904,7 @@ if ($profile -ne $null) {
     _hotspotProcess = null;
   }
 
+  @override
   Future<Map<String, String>> getNetworkInfo() async {
     if (!Platform.isWindows) {
       return {
@@ -908,6 +951,7 @@ if ($profile -ne $null) {
     };
   }
 
+  @override
   Future<String> generateTransferLink(List<StorageDocument> documents) async {
     final info = await getNetworkInfo();
     return 'http://${info['ip']}:${info['port']}/files';
@@ -1010,7 +1054,7 @@ class WiFiHotspotTransferService extends TransferService {
         }
       });
 
-      final runMsg = 'WiFi hotspot HTTP server started on ${networkInfo['ip']}:${_port}, available files: ${_fileCache.keys.join(', ')}';
+      final runMsg = 'WiFi hotspot HTTP server started on ${networkInfo['ip']}:$_port, available files: ${_fileCache.keys.join(', ')}';
       status = TransferStatus.completed;
       return TransferResult(
         success: _fileCache.isNotEmpty,
@@ -1041,6 +1085,7 @@ class WiFiHotspotTransferService extends TransferService {
     _fileCache.clear();
   }
 
+  @override
   Future<Map<String, String>> getNetworkInfo() async {
     // WiFi hotspot is only supported on Android
     if (!Platform.isAndroid) {
@@ -1060,6 +1105,7 @@ class WiFiHotspotTransferService extends TransferService {
     };
   }
 
+  @override
   Future<String> generateTransferLink(List<StorageDocument> documents) async {
     final info = await getNetworkInfo();
     return 'http://${info['ip']}:${info['port']}/files';

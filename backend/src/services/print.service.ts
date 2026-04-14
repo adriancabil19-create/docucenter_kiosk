@@ -10,7 +10,7 @@ import { PDFDocument as PDFLibDocument } from 'pdf-lib';
 interface PrintOptions {
   type?: string;
   printerName?: string;
-  paperSize?: string; // 'A4' | 'Folio' | 'Letter' | 'Legal'
+  paperSize?: string; // 'A4' | 'Folio' | 'Letter'
 }
 
 interface PrintResult {
@@ -27,7 +27,7 @@ interface PrintResult {
 
 /**
  * Normalise paper size string to a value PDFKit accepts (uppercase).
- * PDFKit supports: A4, FOLIO, LETTER, LEGAL, TABLOID, EXECUTIVE, etc.
+ * PDFKit supports: A4, FOLIO, LETTER, TABLOID, EXECUTIVE, etc.
  */
 const toPdfKitSize = (size?: string): string => {
   if (!size) return 'A4';
@@ -37,7 +37,6 @@ const toPdfKitSize = (size?: string): string => {
     FOLIO: 'FOLIO',
     A4: 'A4',
     LETTER: 'LETTER',
-    LEGAL: 'LEGAL',
     TABLOID: 'TABLOID',
   };
   return map[s] ?? 'A4';
@@ -58,7 +57,6 @@ const paperSizesMm: Record<string, { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
   FOLIO: { width: 216, height: 330 },
   LETTER: { width: 216, height: 279 },
-  LEGAL: { width: 216, height: 356 },
 };
 
 /**
@@ -82,8 +80,21 @@ const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paper
     const targetWidthPt = targetSize.width * 72 / 25.4;
     const targetHeightPt = targetSize.height * 72 / 25.4;
 
-    const scaleX = targetWidthPt / width;
-    const scaleY = targetHeightPt / height;
+    // Check if original page is landscape (width > height)
+    const isOriginalLandscape = width > height;
+
+    // Determine target dimensions based on original orientation
+    let finalWidthPt = targetWidthPt;
+    let finalHeightPt = targetHeightPt;
+
+    if (isOriginalLandscape) {
+      // For landscape originals, use landscape page size
+      finalWidthPt = targetHeightPt;
+      finalHeightPt = targetWidthPt;
+    }
+
+    const scaleX = finalWidthPt / width;
+    const scaleY = finalHeightPt / height;
     const scale = Math.min(scaleX, scaleY); // Fit to page
 
     page.scaleContent(scale, scale);
@@ -91,16 +102,43 @@ const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paper
     // Center the content
     const newWidth = width * scale;
     const newHeight = height * scale;
-    const offsetX = (targetWidthPt - newWidth) / 2;
-    const offsetY = (targetHeightPt - newHeight) / 2;
+    const offsetX = (finalWidthPt - newWidth) / 2;
+    const offsetY = (finalHeightPt - newHeight) / 2;
     page.translateContent(offsetX, offsetY);
 
-    // Set page size
-    page.setSize(targetWidthPt, targetHeightPt);
+    // Set page size respecting original orientation
+    page.setSize(finalWidthPt, finalHeightPt);
   }
 
   const resizedBytes = await pdfDoc.save();
   fs.writeFileSync(outputPath, resizedBytes);
+};
+
+const convertImageToPdf = async (
+  imagePath: string,
+  pdfPath: string,
+  paperSize: string
+): Promise<void> => {
+  const doc = new PDFDocument({
+    size: toPdfKitSize(paperSize),
+    margin: 0,
+  });
+  const stream = fs.createWriteStream(pdfPath);
+  doc.pipe(stream);
+
+  const imageBuffer = fs.readFileSync(imagePath);
+  // Fit the image to the page while preserving aspect ratio.
+  doc.image(imageBuffer, 0, 0, {
+    fit: [doc.page.width, doc.page.height],
+    align: 'center',
+    valign: 'center',
+  });
+
+  doc.end();
+  await new Promise<void>((resolve, reject) => {
+    stream.on('finish', () => resolve());
+    stream.on('error', reject);
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -446,6 +484,23 @@ export const printFilesFromStorage = async (
           if (simPath) simulatedPaths.push(simPath);
         } finally {
           try { fs.unlinkSync(tempResizedPdf); } catch {}
+        }
+      } else if (['.jpg', '.jpeg', '.png', '.bmp', '.gif'].includes(ext)) {
+        // Image files: convert to PDF with the requested paper size before printing.
+        const tempPdf = path.join(os.tmpdir(), `image_print_${jobID}_${path.basename(filename, ext)}.pdf`);
+        try {
+          await convertImageToPdf(filePath, tempPdf, paperSize || 'A4');
+          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality);
+          printSuccess = result.success;
+          if (!result.success) {
+            logger.error('Image PDF print failed', { filename, error: result.error });
+          }
+          const simPath = copyToSimulation(filePath, filename);
+          if (simPath) simulatedPaths.push(simPath);
+        } catch (imageErr) {
+          logger.error('Image conversion or print failed', { filename, error: String(imageErr) });
+        } finally {
+          try { fs.unlinkSync(tempPdf); } catch {}
         }
       } else {
         // Non-PDF: read as text, render to PDF, print

@@ -1,7 +1,7 @@
 /**
- * GCash Payment Client Example
+ * PAYMONGO Payment Client Example
  * 
- * This example demonstrates how to integrate the GCash Payment API
+ * This example demonstrates how to integrate the PAYMONGO Payment API
  * from your React frontend application.
  * 
  * Features:
@@ -33,15 +33,15 @@ interface PaymentStatusData {
 }
 
 // Configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api/gcash';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api/PAYMONGO';
 const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
 const PAYMENT_TIMEOUT_SECONDS = 300; // 5 minutes
 
 /**
- * Hook: useGCashPayment
+ * Hook: usePAYMONGOPayment
  * Manages payment creation, status checking, and cancellation
  */
-export const useGCashPayment = () => {
+export const usePAYMONGOPayment = () => {
   const [transaction, setTransaction] = useState<PaymentTransaction | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('PENDING');
   const [timeLeft, setTimeLeft] = useState<number>(PAYMENT_TIMEOUT_SECONDS);
@@ -192,7 +192,7 @@ export const PaymentInterface = ({
     checkPaymentStatus,
     cancelPayment,
     resetPayment,
-  } = useGCashPayment();
+  } = usePAYMONGOPayment();
 
   // Poll payment status
   useEffect(() => {
@@ -262,7 +262,7 @@ export const PaymentInterface = ({
     <div className="max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg">
       {/* Header */}
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">GCash Payment</h2>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">PAYMONGO Payment</h2>
         <div className="text-4xl font-bold text-blue-600">₱{amount.toFixed(2)}</div>
       </div>
 
@@ -297,7 +297,7 @@ export const PaymentInterface = ({
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">
                 1
               </span>
-              <span>Open GCash app on your phone</span>
+              <span>Open PAYMONGO app on your phone</span>
             </li>
             <li className="flex gap-2">
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">
@@ -476,3 +476,4 @@ export const PaymentExample = () => {
     />
   );
 };
+

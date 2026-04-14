@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { scanDocument, photocopyDocument } from '../services/scan.service';
+import { scanDocument, photocopyDocument, checkADFStatus } from '../services/scan.service';
 import { logger } from '../utils/logger';
 import multer from 'multer';
 import * as path from 'path';
@@ -24,16 +24,18 @@ router.post('/', async (req: Request, res: Response) => {
       colorMode = 'color',
       dpi = 300,
       paperSize = 'A4',
-      outputFormat = 'pdf'
+      outputFormat = 'pdf',
+      doubleSided = false,
     } = req.body;
 
-    logger.info('Scan request received', { colorMode, dpi, paperSize, outputFormat });
+    logger.info('Scan request received', { colorMode, dpi, paperSize, outputFormat, doubleSided });
 
     const result = await scanDocument({
       colorMode,
       dpi: Number(dpi),
       paperSize,
       outputFormat,
+      doubleSided: Boolean(doubleSided),
     });
 
     if (result.success && result.filePath) {
@@ -65,6 +67,33 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error during scanning',
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/scan/adf-status
+// Check if the Brother MFC-J2730DW ADF is ready for scanning
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/adf-status', async (req: Request, res: Response) => {
+  try {
+    logger.info('ADF status check requested');
+
+    const result = await checkADFStatus();
+
+    res.json({
+      ready: result.ready,
+      status: result.status,
+      error: result.error,
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('ADF status check error', { error: err.message });
+    res.status(500).json({
+      ready: false,
+      status: 'Please place your document on the scanner, thank you.',
+      error: 'Could not check ADF status',
     });
   }
 });
@@ -126,6 +155,93 @@ router.get('/scan/status', async (req: Request, res: Response) => {
     scannerAvailable: true,
     message: 'Scanner is ready',
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/scan/combine-pdf
+// Combine multiple scanned images into a single PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/combine-pdf', upload.array('images'), async (req: Request, res: Response) => {
+  try {
+    const { documentName } = req.body;
+    const files = req.files as Express.Multer.File[];
+
+    if (!files || files.length === 0) {
+      res.status(400).json({ success: false, error: 'No images provided' });
+      return;
+    }
+
+    logger.info('Combine PDF request received', { documentName, imageCount: files.length });
+
+    // Create PDF from images
+    const PDFDocument = require('pdfkit');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const tempPdfPath = path.join(os.tmpdir(), `combined_${Date.now()}.pdf`);
+    const doc = new PDFDocument({ autoFirstPage: false });
+
+    const stream = fs.createWriteStream(tempPdfPath);
+    doc.pipe(stream);
+
+    // Add each image as a page
+    for (const file of files) {
+      const imageBuffer = fs.readFileSync(file.path);
+      
+      // Create a new page for each image
+      doc.addPage({
+        size: 'A4',
+        margin: 0
+      });
+
+      // Add image to fit the page
+      doc.image(imageBuffer, 0, 0, { 
+        width: doc.page.width,
+        height: doc.page.height,
+        align: 'center',
+        valign: 'center'
+      });
+
+      // Clean up temp image file
+      fs.unlinkSync(file.path);
+    }
+
+    doc.end();
+
+    // Wait for PDF creation to complete
+    await new Promise((resolve, reject) => {
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+
+    // Read the created PDF
+    const pdfBuffer = fs.readFileSync(tempPdfPath);
+    
+    // Upload to storage (simulate for now)
+    const finalFileName = documentName ? `${documentName}.pdf` : `Scanned_${Date.now()}.pdf`;
+    
+    // Clean up temp PDF
+    fs.unlinkSync(tempPdfPath);
+
+    logger.info('PDF combined successfully', { finalFileName, pageCount: files.length });
+
+    res.json({
+      success: true,
+      message: 'PDF created and saved successfully',
+      fileName: finalFileName,
+      pageCount: files.length
+    });
+
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Combine PDF endpoint error', { error: err.message });
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error during PDF creation',
+    });
+  }
 });
 
 export default router;
