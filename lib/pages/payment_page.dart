@@ -34,9 +34,59 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   static String colorMode = 'bw';
   static String quality = 'standard';
 
-  /// Receipt content that should be printed after payment succeeds
-  /// (e.g., photocopying receipt). Cleared after printing.
+  /// Receipt content from the requested service that should be displayed
+  /// after payment succeeds (e.g., photocopying receipt). Cleared on return.
   static String pendingReceiptContent = '';
+
+  bool _showReceiptScreen = false;
+  String _receiptDisplayText = '';
+  int _receiptSecondsLeft = 15;
+  Timer? _receiptTimer;
+
+  void _clearPaymentState() {
+    PAYMONGOPaymentPageState.printFiles = [];
+    PAYMONGOPaymentPageState.paperSize = 'A4';
+    PAYMONGOPaymentPageState.colorMode = 'bw';
+    PAYMONGOPaymentPageState.quality = 'standard';
+    PAYMONGOPaymentPageState.pendingReceiptContent = '';
+    PAYMONGOPaymentPageState.printContent = '';
+  }
+
+  void _cancelReceiptTimer() {
+    _receiptTimer?.cancel();
+    _receiptTimer = null;
+  }
+
+  void _returnToHome() {
+    _cancelReceiptTimer();
+    _clearPaymentState();
+    if (mounted) {
+      setState(() {
+        _showReceiptScreen = false;
+      });
+      widget.onNavigate('services');
+    }
+  }
+
+  void _startReceiptTimer() {
+    _cancelReceiptTimer();
+    setState(() {
+      _receiptSecondsLeft = 15;
+    });
+    _receiptTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _receiptSecondsLeft--;
+      });
+      if (_receiptSecondsLeft <= 0) {
+        timer.cancel();
+        _returnToHome();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,101 +121,211 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            child: PaymentInterface(
-              amount: pendingAmount,
-              onPaymentComplete: (success) async {
-                final messenger = ScaffoldMessenger.of(context);
-                if (success) {
-                  // Attempt to print the files
-                  if (printFiles.isNotEmpty) {
-                    try {
-                      bool printSuccess;
-                      if (printFiles.first is Uint8List) {
-                        // Scanned images
-                        printSuccess = await PrintService.printScannedImages(
-                          List<Uint8List>.from(printFiles),
-                          paperSize: paperSize,
-                          colorMode: colorMode,
-                          quality: quality,
-                        );
+          child: _showReceiptScreen
+              ? GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _returnToHome,
+                  child: Container(
+                    color: const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(color: Colors.grey[300]!),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.04),
+                                        blurRadius: 24,
+                                        offset: const Offset(0, 12),
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.all(28),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        width: 72,
+                                        height: 5,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF2563EB),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 18),
+                                      Text(
+                                        'Receipt',
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Digital proof of payment',
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Colors.grey[600],
+                                              letterSpacing: 0.2,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 28),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 24, horizontal: 20),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0F172A).withOpacity(0.03),
+                                          borderRadius: BorderRadius.circular(18),
+                                          border: Border.all(
+                                            color: const Color(0xFF2563EB).withOpacity(0.12),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _receiptDisplayText,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontFamily: 'Courier',
+                                            fontSize: 14,
+                                            height: 1.65,
+                                            letterSpacing: 0.4,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 28),
+                                      Text(
+                                        'Tap anywhere to return to the home screen.',
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Colors.grey[600],
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE0F2FE),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                'Returning to home in $_receiptSecondsLeft seconds...',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  child: PaymentInterface(
+                    amount: pendingAmount,
+                    onPaymentComplete: (success, receiptText) async {
+                      if (success) {
+                        if (printFiles.isNotEmpty) {
+                          try {
+                            bool printSuccess;
+                            if (printFiles.first is Uint8List) {
+                              printSuccess = await PrintService.printScannedImages(
+                                List<Uint8List>.from(printFiles),
+                                paperSize: paperSize,
+                                colorMode: colorMode,
+                                quality: quality,
+                              );
+                            } else {
+                              printSuccess = await PrintService.printFromStorage(
+                                List<String>.from(printFiles),
+                                paperSize: paperSize,
+                                colorMode: colorMode,
+                                quality: quality,
+                              );
+                            }
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(printSuccess
+                                    ? 'Payment successful! Printing started...'
+                                    : 'Payment successful but printing failed'),
+                                backgroundColor:
+                                    printSuccess ? Colors.green : Colors.orange,
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Payment successful but printing error: $e'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Payment successful!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+
+                        setState(() {
+                          _receiptDisplayText = receiptText ??
+                              'Payment successful. Thank you for using our service.';
+                          _showReceiptScreen = true;
+                        });
+                        _startReceiptTimer();
                       } else {
-                        // Stored files
-                        printSuccess = await PrintService.printFromStorage(
-                          List<String>.from(printFiles),
-                          paperSize: paperSize,
-                          colorMode: colorMode,
-                          quality: quality,
-                        );
-                      }
-                      if (printSuccess) {
-                        messenger.showSnackBar(
+                        ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content:
-                                Text('Payment successful! Printing started...'),
-                            backgroundColor: Colors.green,
+                            content: Text('Payment failed. Please try again.'),
+                            backgroundColor: Colors.red,
                           ),
                         );
-                      } else {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content:
-                                Text('Payment successful but printing failed'),
-                            backgroundColor: Colors.orange,
-                          ),
-                        );
                       }
-                    } catch (e) {
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content:
-                              Text('Payment successful but printing error: $e'),
+                    },
+                    onTimeout: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Payment timeout. Returning to services...'),
                           backgroundColor: Colors.orange,
                         ),
                       );
-                    }
-                  } else {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                            'Payment successful! Returning to services...'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                  Future.delayed(const Duration(seconds: 2), () {
-                    if (mounted) {
-                      // Clear the static state
-                      printFiles = [];
-                      paperSize = 'A4';
-                      colorMode = 'bw';
-                      quality = 'standard';
-                      pendingReceiptContent = '';
-                      widget.onNavigate('services');
-                    }
-                  });
-                } else {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Payment failed. Please try again.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-              onTimeout: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Payment timeout. Returning to services...'),
-                    backgroundColor: Colors.orange,
+                      Future.delayed(const Duration(seconds: 2), () {
+                        if (mounted) widget.onNavigate('services');
+                      });
+                    },
                   ),
-                );
-                Future.delayed(const Duration(seconds: 2), () {
-                  if (mounted) widget.onNavigate('services');
-                });
-              },
-            ),
-          ),
+                ),
         ),
       ],
     );
@@ -178,7 +338,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
 
 class PaymentInterface extends StatefulWidget {
   final double amount;
-  final Function(bool) onPaymentComplete;
+  final Future<void> Function(bool success, String? receiptText) onPaymentComplete;
   final Function() onTimeout;
 
   const PaymentInterface({
@@ -310,97 +470,35 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     _pollingTimer?.cancel();
     if (mounted) setState(() => _paymentStatus = 'success');
 
-    // 1. Print payment receipt
-    await _printReceipt();
+    final receiptText = _buildReceiptDisplayText();
 
-    // 2. Print any pending service receipt (e.g., photocopying) AFTER payment
-    final pending = PAYMONGOPaymentPageState.pendingReceiptContent;
-    if (pending.isNotEmpty) {
-      try {
-        await PrintService.printReceipt(
-          pending,
-          paperSize: PAYMONGOPaymentPageState.paperSize,
-        );
-      } catch (e) {
-        debugPrint('Error printing pending receipt: $e');
-      } finally {
-        PAYMONGOPaymentPageState.pendingReceiptContent = '';
-      }
-    }
-
-    // 3. Print files from storage if selected (handled in onPaymentComplete)
-    // bool printSuccess = true;
-    // bool hadFiles = false;
-    // try {
-    //   final filenames = PAYMONGOPaymentPageState.printFiles;
-    //   hadFiles = filenames.isNotEmpty;
-    //   if (hadFiles) {
-    //     printSuccess = await PrintService.printFromStorage(
-    //       filenames,
-    //       paperSize: PAYMONGOPaymentPageState.paperSize,
-    //       colorMode: PAYMONGOPaymentPageState.colorMode,
-    //       quality: PAYMONGOPaymentPageState.quality,
-    //     );
-    //   }
-    // } catch (e) {
-    //   debugPrint('Error printing files from storage: $e');
-    //   printSuccess = false;
-    // } finally {
-    //   // Clear static state so the next job starts clean
-    //   PAYMONGOPaymentPageState.printFiles = [];
-    // }
-
-    // Notify user of print outcome (handled in onPaymentComplete)
-    // if (hadFiles && messenger != null) {
-    //   messenger.showSnackBar(
-    //     SnackBar(
-    //       content: Text(
-    //         printSuccess
-    //             ? 'Files sent to printer successfully.'
-    //             : 'Payment received, but printing failed. Check PrintSimulation/ folder or printer connection.',
-    //       ),
-    //       backgroundColor: printSuccess ? Colors.green : Colors.orange,
-    //       duration: const Duration(seconds: 4),
-    //     ),
-    //   );
-    // }
-
-    // 4. Navigate back — await all prints first, then delay
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) widget.onPaymentComplete(true);
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted) await widget.onPaymentComplete(true, receiptText);
   }
 
-  Future<void> _printReceipt() async {
-    try {
-      if (_transaction == null) return;
-
-      final receiptContent = '''
+  String _buildReceiptDisplayText() {
+    final paymentReceipt = '''
 ========================================
          PAYMENT RECEIPT
    ${DateTime.now().toString().split('.')[0]}
 ========================================
 
-Transaction ID: ${_transaction!.transactionId}
-Reference #: ${_transaction!.referenceNumber}
+Transaction ID: ${_transaction?.transactionId ?? 'N/A'}
+Reference #: ${_transaction?.referenceNumber ?? 'N/A'}
 
 Amount: PHP ${widget.amount.toStringAsFixed(2)}
 Status: [PAID]
 
 ----------------------------------------
 ${PAYMONGOPaymentPageState.printContent.isNotEmpty ? PAYMONGOPaymentPageState.printContent : 'Standard Receipt'}
-
-----------------------------------------
-Thank you for using our service!
-Date: ${DateTime.now().toString().split('.')[0]}
 ''';
 
-      await PrintService.printReceipt(
-        receiptContent,
-        paperSize: PAYMONGOPaymentPageState.paperSize,
-      );
-    } catch (e) {
-      debugPrint('Print receipt error: $e');
-    }
+    final pending = PAYMONGOPaymentPageState.pendingReceiptContent;
+    return pending.isNotEmpty
+        ? '''$paymentReceipt
+----------------------------------------
+$pending'''
+        : paymentReceipt;
   }
 
   void _handlePaymentFailure(String reason) {
@@ -413,7 +511,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
       });
     }
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) widget.onPaymentComplete(false);
+      if (mounted) widget.onPaymentComplete(false, null);
     });
   }
 
@@ -437,7 +535,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
       await _paymentService.cancelPayment(_transaction!.transactionId,
           reason: 'User cancelled');
       setState(() => _paymentStatus = 'cancelled');
-      widget.onPaymentComplete(false);
+      widget.onPaymentComplete(false, null);
     } catch (e) {
       setState(() => _errorMessage = 'Failed to cancel payment: $e');
     }
