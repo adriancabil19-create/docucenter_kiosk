@@ -1,5 +1,6 @@
 {
   "terminal.integrated.env.windows": {
     "PATH": "${env:PATH};D:\\Projects\\flutter\\bin"
-  }
+  },
+  "cmake.sourceDirectory": "C:/Projects/Thesis/2026/docucenter_kiosk/linux"
 }

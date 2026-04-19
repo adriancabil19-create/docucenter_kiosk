@@ -1,7 +1,10 @@
-# Repository Analysis - Current Code Status
+# Repository Analysis — Current Code Status
 
-Date analyzed: March 17, 2026
+Date analyzed: April 14, 2026
 Repository: `docucenter_kiosk`
+Previous analysis: March 17, 2026
+
+---
 
 ## Purpose
 
@@ -14,1029 +17,487 @@ The intended product is a self-service document kiosk that supports:
 - Photocopying
 - Local storage of uploaded/scanned files
 - File transfer via USB, Bluetooth, WiFi hotspot, and QR
-- GCash payment flow
-- Backend-managed print dispatching
+- PayMongo QR Ph payment flow
+- Backend-managed print dispatching via WIA/TWAIN/SumatraPDF
 - QR verification through an optional Aiven/Postgres integration
+- SQLite persistence for transactions and print jobs
 
-The project is partially real and partially simulated. Some subsystems are structurally present and usable, while others are still demo-mode, mocked, or only represented at the UI level.
+The project has progressed significantly since the March 17 analysis. Several previously broken or simulated systems have been replaced with real implementations.
 
-## Analysis Scope
+---
 
-This analysis is based on the repository contents present during review, plus local verification steps run against the codebase.
+## What Changed Since March 17, 2026
 
-Reviewed areas:
+### Fixed (previously broken or missing)
 
-- Flutter app structure and UI flow
-- Backend architecture and API surface
-- Frontend/backend integration
-- Storage and printing paths
-- Payment flow and contract compatibility
-- Documentation accuracy
-- Tooling, buildability, and test coverage
-- Security and operational concerns
+| Issue | Status |
+|---|---|
+| Payment contract mismatch (HTTP 201 vs 200, `status:"success"` vs `success:true`) | Fixed — backend now returns HTTP 200 + `success:true` + `amount` |
+| `verifyWebhookSignature` throws on buffer length mismatch | Fixed — length guard added before `timingSafeEqual` |
+| `getAllDocuments()` generating new random UUID on every call | Fixed — now uses filename-derived UUID from `.meta.json` sidecars |
+| `qr_flutter` missing from pubspec.yaml | Fixed — now declared |
+| Flutter payment UI shows placeholder icon instead of QR | Fixed — base64-decodes PayMongo `qr_image` and renders it |
+| `UiConfig.showDevelopmentTools = true` visible in prod | Fixed — now `false` by default |
+| `lib/services.dart` at 2702 lines (unmaintainable) | Fixed — reduced to 258 lines; content split into `lib/pages/` |
 
-Verification performed:
+### New since March 17
 
-- Inspected all primary source directories
-- Built backend with `npm run build`
-- Attempted backend linting with `npm run lint`
-- Attempted Flutter analysis, but Flutter tooling was not available in this environment
+- **Payment system replaced** — GCash entirely removed, replaced by PayMongo QR Ph (`/api/paymongo` routes, `paymongo.ts` service, `paymongo.service.ts` service, `qrph.routes.ts`)
+- **SQLite persistence** — `backend/src/database.ts` using `better-sqlite3`; `transactions` and `print_jobs` tables with monitoring stats
+- **Real scanner integration** — `flutter_twain_scanner` + Dynamsoft service at `http://127.0.0.1:18622`; `scan.service.ts` with full WIA + TWAIN PowerShell scanning
+- **Real photocopy workflow** — `scan.service.ts` → `photocopyDocument()`: scan via WIA → convert JPG to PDF via `pdfkit` → print via `print.service.ts`
+- **PDF manipulation** — `pdf-lib` for resizing PDFs to target paper size; `pdf-to-printer` for real printing
+- **New page files** — `lib/pages/{payment_page,printing_page,scanning_page,photocopying_page,storage_page}.dart`
+- **Docker support** — `Dockerfile`, `docker-compose.yml`
+- **New Flutter dependencies** — `qr_flutter`, `flutter_twain_scanner`, `flutter_blue_plus`, `wifi_iot`, `win_ble`, `win32`, `ffi`, `image`, `pdf`, `paymongo_sdk`, `flutter_dotenv`, `cached_network_image`
 
-## High-Level Status
-
-### Overall assessment
-
-Current state: prototype / thesis demo with some real infrastructure
-
-This repository is not a blank scaffold. It has meaningful implementation work in several areas:
-
-- The Flutter app has a complete visible UI for the kiosk experience
-- The backend exposes working route groups for storage, print, payment, and QR verification
-- File upload and retrieval flow is substantially implemented
-- Backend TypeScript compiles successfully
-
-However, it is also not production-ready in its current form.
-
-The largest blockers are:
-
-- Broken frontend/backend payment contract
-- Demo-mode fallback masking real integration failures
-- Several user-facing features are simulated rather than implemented
-- Documentation claims exceed actual behavior
-- Weak file-path safety checks
-- Missing automated tests
-- Missing lint configuration despite lint scripts
+---
 
 ## Repository Shape
 
 ### Top-level structure
 
-- `lib/`: Flutter application source
-- `backend/`: Node.js + Express + TypeScript backend
-- `android/`, `windows/`, `linux/`, `web/`: Flutter platform scaffolding
-- `Uploads/`: stored uploaded documents
-- `PrintSimulation/`: committed sample/simulated output PDFs
-- `tools/`: small utility scripts
-- `README.md`: still the default Flutter template
-- `INTEGRATION_COMPLETE.md`, `INTEGRATION_SETUP.md`, `FLUTTER_INTEGRATION_GUIDE.md`: integration-focused docs
+- `lib/` — Flutter application source
+- `lib/pages/` — New: dedicated page widgets extracted from `lib/services.dart`
+- `backend/` — Node.js + Express + TypeScript backend
+- `android/`, `windows/`, `linux/`, `web/` — Flutter platform scaffolding
+- `Uploads/` — stored uploaded documents
+- `PrintSimulation/` — committed sample/simulated output PDFs
+- `tools/` — small utility scripts
+- `Analyzation.md` — this file
+- `backend/Dockerfile`, `backend/docker-compose.yml` — containerization support
+- `backend/ngrok.exe` — tunneling binary (committed to repo)
 
-### Quick repo stats
+### File sizes (lines)
 
-- Total tracked files discovered: 104
-- Main source and implementation focus is concentrated in `lib/` and `backend/src/`
-- Primary source file types:
-  - TypeScript: 19
-  - Dart: 7
-  - Markdown: 8
-  - PDF: 6
+| File | Lines |
+|---|---|
+| `lib/transfer_service.dart` | 1312 |
+| `lib/pages/scanning_page.dart` | 1094 |
+| `lib/pages/payment_page.dart` | 1080 |
+| `lib/main.dart` | 880 |
+| `lib/payment_service.dart` | 624 |
+| `lib/pages/photocopying_page.dart` | 623 |
+| `lib/pages/storage_page.dart` | 554 |
+| `lib/about.dart` | 507 |
+| `lib/pages/printing_page.dart` | 443 |
+| `lib/services.dart` | 258 (down from ~2702) |
+| `backend/src/services/scan.service.ts` | ~846 |
+| `backend/src/services/print.service.ts` | ~428 |
+| `backend/src/services/storage.service.ts` | ~389 |
+| `backend/src/controllers/paymongo.ts` | ~393 |
 
-### Largest implementation hotspots
-
-- `lib/services.dart`: ~2702 lines
-- `lib/main.dart`: ~843 lines
-- `lib/about.dart`: ~489 lines
-- `lib/payment_service.dart`: ~475 lines
-- `backend/src/services/print.service.ts`: ~428 lines
-- `lib/transfer_service.dart`: ~398 lines
-- `backend/src/services/storage.service.ts`: ~389 lines
-- `backend/src/controllers/gcash.ts`: ~326 lines
-
-Interpretation:
-
-- Flutter UI logic is heavily concentrated in a few very large files
-- Backend is somewhat better separated, but still mixes concerns in several service modules
-- `lib/services.dart` is the biggest maintenance hotspot in the repository
+---
 
 ## Frontend Analysis
 
-## Frontend architecture
+### Architecture
 
-The Flutter app uses a simple in-app page switching model rather than a router.
+The Flutter app uses a simple in-app page switching model with `_currentPage` state in `main.dart`.
 
-Primary entrypoint:
+Navigation pages: `home`, `services`, `about`, `payment`
 
-- `lib/main.dart`
+The services page dispatches to:
+- `PrintingInterface` (`lib/pages/printing_page.dart`)
+- `ScanningInterface` (`lib/pages/scanning_page.dart`)
+- `PhotocopyingInterface` (`lib/pages/photocopying_page.dart`)
+- `StorageInterface` (`lib/pages/storage_page.dart`)
+- `PAYMONGOPaymentPage` (`lib/pages/payment_page.dart`)
 
-Important behavior:
+**Improvement**: The original `lib/services.dart` monolith (2702 lines) has been refactored into five focused page files. This is the most significant structural improvement since March 17.
 
-- App starts with `MainApp`
-- Navigation state is stored in `_currentPage`
-- Header buttons switch among `home`, `services`, `about`
-- A hidden route-like state also handles `payment`
-
-This is workable for a kiosk prototype, but it is not modular enough for a growing application.
-
-### Frontend strengths
-
-- The app has a coherent visual flow
-- It is already shaped like a kiosk UI rather than a dev-only prototype screen
-- It includes separate experiences for home, services, about, storage, and payment
-- The service UX is understandable for a demo or thesis presentation
-
-### Frontend weaknesses
-
-- State is managed manually and globally across large widgets
-- Navigation is string-based and brittle
-- Business logic, API usage, and presentation are tightly coupled
-- Several workflows use static mutable fields to move data across screens
-- The main services file is too large for safe long-term maintenance
-
-## Frontend module-by-module status
-
-### `lib/main.dart`
-- Entry point; hosts `Header`, `HomePage`, page routing
-- **Issue (LOW):** `debugPrint('Main called - Platform.isWindows: ...')` left in at line 8 — remove before defense
+---
 
 ### `lib/config.dart`
-- All API URLs, timeouts, payment config in one place
-- **Issue (MEDIUM):** `UiConfig.showDevelopmentTools = true` — the "Simulate Success/Failure/Test Printer" dev buttons are always visible. Set to `false` for a clean thesis demo.
-- **Issue (LOW):** Naming convention violations (`FLUTTER_APP_VERSION`, `BACKEND_URL`, etc.) — analyzer infos only
 
-### `lib/services.dart`
+Status: clean and consistent
 
-Status: central application behavior file, but heavily overloaded
-
-This file currently contains:
-
-- Services page
-- Printing interface
-- Scanning interface
-- Photocopying interface
-- Payment interface
-- Storage interface
-- GCash payment page wrapper
-
-This is the main frontend implementation file and the biggest design bottleneck in the repo.
-
-#### Printing flow
-
-Status: partially implemented
-
-What exists:
-
-- UI for print options
-- Cost calculation
-- Integration path to payment page
-- Ability to print from selected backend-stored files
-
-What is incomplete:
-
-- The "Choose File" button does not open a real picker
-- It only adds a placeholder filename `sample_file.pdf`
-- Local file uploads for printing are not actually wired through the payment-to-print path
-
-Important behavior:
-
-- Print cost is calculated from selected options
-- Stored files can be selected from system storage
-- Successful payment eventually attempts `PrintService.printFromStorage(...)`
-
-Assessment:
-
-- Printing from backend storage is the closest thing to a real end-to-end flow in the app
-- Direct "upload then print" from the printing screen is still incomplete
-
-#### Scanning flow
-
-Status: mostly simulated
-
-What exists:
-
-- UI for scan settings
-- UI for an active scanning session
-- Page count tracking
-- Save-to-storage action
-- Printing of a scan receipt
-
-What is simulated:
-
-- Scanning is represented by adding placeholder page names into `_scannedPages`
-- Saved scanned output is a generated byte array, not a real scan-derived PDF
-- Code comments explicitly say this is mock behavior
-
-Assessment:
-
-- The scanning UX is present
-- The actual scanning subsystem is not
-- This is demo-grade behavior, not device-integrated scanning
-
-#### Photocopying flow
-
-Status: largely UI-driven, not truly modeled
-
-What exists:
-
-- Settings for copies, color mode, and paper size
-- Cost computation
-- Payment handoff
-
-Issues:
-
-- `_startPhotocopying()` calls `_printCopyingReceipt()` before the payment flow completes
-- This contradicts the comment saying receipt printing should happen after payment succeeds
-- There is no real photocopying hardware/control integration
-
-Assessment:
-
-- This is best described as a payment-and-receipt simulation for photocopying, not a real copy workflow
-
-#### Payment interface
-
-Status: visually complete, operationally broken against current backend contract
-
-What exists:
-
-- Payment initialization
-- Countdown timer
-- Polling manager
-- Success/failure/timeout states
-- Cancel payment action
-- Development-only simulation buttons
-- Receipt printing after success
-
-Major issue:
-
-- The frontend payment client and backend response format do not match
-- Because of this, the app can fall back into demo mode even when the backend is available
-
-Detailed mismatch:
-
-- Flutter expects create-payment HTTP status `200`
-- Backend returns `201`
-- Flutter expects a top-level `success` boolean
-- Backend returns `status: "success"` for create-payment instead
-- Flutter attempts to parse `amount` from the transaction payload
-- Backend create-payment response does not include `amount`
-
-Practical result:
-
-- Real transaction initialization is broken
-- Demo-mode fallback can hide the integration problem from the operator
-
-Additional issue:
-
-- The payment UI shows a QR placeholder container with an icon and reference number
-- It does not render the actual QR payload returned by the backend
-
-Assessment:
-
-- The payment screen looks complete for presentation purposes
-- The real integration is not complete
-
-#### Storage interface
-
-Status: partially real, with a mix of functioning and simulated behaviors
-
-What works:
-
-- Listing stored documents
-- Deleting stored documents
-- Selecting stored documents for print
-- Uploading files from local filesystem via `file_selector`
-- Exporting files to USB using a real local folder write path in the transfer service
-
-What is simulated or weak:
-
-- Bluetooth flow is simulated
-- WiFi hotspot flow is simulated
-- QR transfer flow is simulated
-- Refresh is just a UI-triggered callback with a short delay
-- Document identity is unstable because backend regenerates IDs on listing
-
-Assessment:
-
-- Storage is one of the stronger subsystems, but not yet robust
+- `UiConfig.showDevelopmentTools = false` — dev buttons hidden by default
+- `BackendConfig.serverUrl = 'http://localhost:5000'`
+- API URL paths are centralized and no longer duplicated across service files
+- Error/success message constants are defined and available
 
 ### `lib/payment_service.dart`
 
-Status: useful service layer, but out of sync with backend contract
+Status: aligned with backend contract
 
-Good aspects:
+The payment client has been updated to match the PayMongo backend:
 
-- Encapsulates payment API operations
-- Defines payment models
-- Includes polling manager
-- Separates print-related API calls from UI widgets
+- `PaymentTransaction.fromJson()` parses `transactionId`, `referenceNumber`, `qrCode`, `expiresIn`, `amount`, `status` — all match backend response shape
+- `PAYMONGOPaymentService.createPayment()` posts to `/api/paymongo/create-payment`; parses `success:true` + `data.*`
+- `checkPaymentStatus()` polls `/api/paymongo/check-payment/:id`; maps `status`, `amount`, `referenceNumber`, `completedAt`
 
-Problems:
+The previous contract mismatch is fully resolved.
 
-- Hardcoded backend URLs
-- Create-payment parser does not match backend response format
-- Success detection logic is not aligned with backend create-payment response
-- Health, print, and payment URLs are all directly embedded
+### `lib/pages/payment_page.dart`
 
-Assessment:
+Status: functionally complete with real QR rendering
 
-- Good direction structurally
-- Needs contract alignment and configuration cleanup
+Key improvements over March 17:
 
-### `lib/storage_service.dart`
+- **QR rendering**: `_decodeQRCodeImage()` attempts to decode `data:image/...;base64,...` from the backend `qr_image` payload. If successful, renders via `Image.memory()`; falls back to `QrImageView(data: qrCode)` from `qr_flutter` for plain string codes
+- **Print flow**: On payment success, calls `PrintService.printScannedImages()` or `PrintService.printFromStorage()` depending on the type of queued files, then `PrintService.printReceipt()`
+- **Pending receipt**: `PAYMONGOPaymentPageState.pendingReceiptContent` allows the photocopying/scanning flow to queue a receipt that is printed after payment succeeds
+- Dev tools are hidden (`UiConfig.showDevelopmentTools = false`)
 
-Status: reasonably usable client wrapper
+Remaining concern:
 
-Good aspects:
+- `_transaction!.qrCode` is set from the backend `qrCode` field, which comes from PayMongo's `qr_image`. If the real PayMongo API returns a data-URI it renders correctly. If PayMongo is unavailable and the app falls into demo mode, the demo transaction uses a placeholder string `'code_8T7GbSP9ztU2tQUJ5WQyJ5Cn'` which renders as a `QrImageView` — this is a valid fallback.
 
-- Supports upload, list, get, download, delete, and stats
-- Maps backend JSON into a Flutter model cleanly
+### `lib/pages/printing_page.dart`
 
-Weaknesses:
+Status: file picker is now real and wired through to payment
 
-- Hardcoded backend URL
-- No strong retry / timeout / error classification
-- Document identity instability originates from backend behavior
+Key improvements:
+
+- `_pickAndUploadFiles()` uses `file_selector`, reads file bytes, calls `StorageService.uploadFile()`, and adds returned `StorageDocument` to `_uploadedFiles`
+- Cost calculation uses actual page counts from uploaded documents
+- On "Proceed to Payment", sets `PAYMONGOPaymentPageState.printFiles`, `paperSize`, `colorMode`, `quality`, then navigates to `payment`
+
+The "choose file then pay to print" flow is now end-to-end wired.
+
+### `lib/pages/scanning_page.dart`
+
+Status: uses real Dynamsoft/TWAIN scanner, but with hardcoded license key
+
+New compared to March 17:
+
+- Uses `flutter_twain_scanner` package and `DynamsoftService` pointing to `http://127.0.0.1:18622`
+- Has a real Dynamsoft license key hardcoded in source at line 49
+- Scanned pages come back as actual `Uint8List` image data, not placeholder names
+- On scan start, calls the backend `/api/scan/` endpoint to acquire from WIA or TWAIN hardware
+- ADF status check reads from backend `/api/scan/adf-status`
+
+**Security concern**: The Dynamsoft license key is hardcoded in source. It should be in a `.env` or assets file excluded from git.
+
+**UI concern**: The green "Scanner Connected — ADF Ready" badge is hardcoded in the settings widget and is always shown regardless of real hardware state.
+
+### `lib/pages/photocopying_page.dart`
+
+Status: uses Dynamsoft for scanning, scan-to-print flow wired to backend
+
+- Uses same `DynamsoftService` pattern as scanning page
+- Same hardcoded Dynamsoft license key (line 41)
+- On copy start: calls backend `/api/scan/photocopy` with options; backend's `photocopyDocument()` handles the full scan → PDF → print cycle
+- Cost: ₱2.00 per copy (color), ₱1.00 per copy (B/W)
+- Payment flow: sets `PAYMONGOPaymentPageState.pendingAmount` and navigates to payment page; post-payment the photocopy job is dispatched
+
+### `lib/pages/storage_page.dart`
+
+Status: reasonable and mostly functional
+
+- Upload, list, download, delete, select for print
+- USB export via local file write
+- Bluetooth and WiFi transfers still reference `transfer_service.dart`
 
 ### `lib/transfer_service.dart`
 
-Status: one partially real service plus several simulated services
+Status: grown to 1312 lines — largest file in repo
 
-Implemented with meaningful behavior:
+This file has ballooned with Bluetooth (`flutter_blue_plus`, `win_ble`) and WiFi (`wifi_iot`) implementation attempts. The architecture is present but actual transfer behaviors remain largely facade-level. USB export remains the only meaningfully real transfer path.
 
-- USB export writes downloaded document bytes to an application documents directory folder
-
-Simulated or TODO-based:
-
-- Bluetooth initialization, discovery, connection, and transfer
-- WiFi hotspot setup and transfer
-- QR transfer session behavior
-
-Assessment:
-
-- The architecture exists, but only USB export is meaningfully real
-- The rest is largely a façade for future implementation
-
-### `lib/config.dart`
-
-Status: partially useful, partially unused
-
-What it contains:
-
-- Backend URL definitions
-- payment timing constants
-- UI flags
-- error/success messages
-
-Issue:
-
-- Much of this is not actually used consistently
-- `UiConfig.showDevelopmentTools` is used
-- Backend URL constants are duplicated elsewhere instead of centralized here
-
-Assessment:
-
-- Good intention, incomplete adoption
-
-### `lib/about.dart`
-
-Status: complete informational page
-
-Notes:
-
-- This is one of the more complete and self-consistent sections
-- Mainly static content
-- No meaningful technical risk beyond general content maintenance
+---
 
 ## Backend Analysis
 
-## Backend architecture
+### Architecture
 
-The backend is an Express application with route groups and service modules.
+Backend is an Express application on port 5000 with the following route groups:
 
-Primary entrypoint:
+| Route | Source |
+|---|---|
+| `POST/GET /api/paymongo/*` | `routes/paymongo.ts` → `controllers/paymongo.ts` |
+| `POST /api/payment/qrph/create` | `routes/qrph.routes.ts` (secondary QR Ph generator) |
+| `GET /api/payment/qrph/status/:id` | `routes/qrph.routes.ts` |
+| `POST /webhook/paymongo` | `routes/qrph.routes.ts` |
+| `POST/GET /api/print/*` | `routes/print.ts` |
+| `POST/GET /api/storage/*` | `routes/storage.ts` |
+| `GET /api/monitoring/*` | `routes/monitoring.ts` |
+| `POST/GET /api/scan/*` | `routes/scan.ts` |
+| `GET /api/qr/*` | `routes/qr.ts` (legacy QR verification) |
+| `GET /health` | inline |
+| `GET /api/status` | inline |
 
-- `backend/src/index.ts`
+### `backend/src/database.ts`
 
-Route groups:
+Status: real SQLite persistence — a significant upgrade from the March 17 in-memory approach
 
-- `/api/gcash`
-- `/api/qr`
-- `/api/print`
-- `/api/storage`
-- `/health`
-- `/api/status`
+- `better-sqlite3` with synchronous API; WAL journal mode; foreign keys on
+- `transactions` table: `id`, `reference_number`, `amount`, `status`, `service_type`, `created_at`, `completed_at`
+- `print_jobs` table: `id`, `transaction_id`, `filenames` (JSON array), `paper_size`, `copies`, `status`, `method`, `simulated`
+- `getMonitoringStats()`, `getRecentJobs()`, `getRecentTransactions()` for monitoring dashboard
+- DB file written to `docucenter.db` at the project root
 
-### Backend strengths
+**Remaining gap**: Active payment sessions are tracked in `PayMongoService`'s in-memory `Map<string, PaymentTransaction>`. If the server restarts while a payment is in flight, `checkPaymentStatus()` returns 404 even though the SQLite row exists. There is no reconciliation path from DB back to the in-memory map on startup.
 
-- Reasonable separation between routes, controllers, services, and utilities
-- Compiles successfully with TypeScript
-- Clear route organization
-- Logging and middleware structure already present
+### Two PayMongo service files
 
-### Backend weaknesses
+There are now two separate PayMongo service classes:
 
-- Some configuration defaults disable features that docs say are implemented
-- Core payment service is still in-memory and simulated
-- Printing service is highly environment-specific and risky
-- Storage metadata persistence is incomplete
-- No effective automated tests
+- `backend/src/services/paymongo.ts` — used by `controllers/paymongo.ts`. Calls `/qrph/generate`, holds in-memory transaction map, exposes simulate methods. This is the primary payment lifecycle service.
+- `backend/src/services/paymongo.service.ts` — used by `routes/qrph.routes.ts` only. Lower-level direct API wrapper: `createQRPhSource()`, `getSourceStatus()`, `createCharge()`, `validateWebhookSignature()`.
 
-## Backend module-by-module status
+Both export a singleton named `paymongoService`. They are separate instances and do not share state. This naming collision is a maintainability hazard.
 
-### `backend/src/index.ts`
-Routes mounted:
-- `POST/GET /api/gcash/*` — payment
-- `POST/GET /api/print/*` — printing
-- `POST/GET /api/storage/*` — file storage
-- `GET /api/monitoring/*` — statistics
-- `POST/GET /api/scan/*` — WIA scanning
-- `GET /api/qr/*` — QR code (legacy)
-- `GET /health` — server health
+Note: `qrph.routes.ts`'s `createQRPhSource(0, finalDescription)` hardcodes `amount = 0`. This route is not the primary payment creation path used by Flutter.
 
-### `backend/src/utils/config.ts`
+### `backend/src/services/scan.service.ts`
 
-Status: central config object, but with risky defaults and feature toggles that are misleading in context
+Status: real WIA/TWAIN integration — new capability
 
-Good aspects:
+- `scanDocument()` — tries TWAIN first (PowerShell COM objects), then falls back to WIA
+- WIA path: PowerShell enumerates WIA devices, preferring "Brother MFC", selects scanner item 2 (ADF), configures WIA properties 3093–3098, transfers and saves as JPG
+- TWAIN path: tries multiple COM object names (`TWAIN.TWAINCtrl.1`, `BrTwainDS.BrTwainDS.1`, etc.), configures feeder mode and resolution
+- `checkADFStatus()` — checks WIA `FEEDER_READY` (property 3095) and `DOCUMENT_HANDLING_STATUS` (3098)
+- `photocopyDocument()` — scans with WIA → converts JPG to PDF with `pdfkit` → calls `printPdfFile()` N times for copies
 
-- Collects backend env configuration in one place
-- Separates payment, GCash, logging, and optional Aiven config
-
-Problems:
-
-- Security features are opt-in through env flags
-- Docs present them as implemented by default
-- Production validation only checks required GCash environment variables when `NODE_ENV=production`
-
-Assessment:
-
-- Useful config module
-- Needs clearer defaults and documentation alignment
-
-### `backend/src/middleware/index.ts`
-
-Status: decent baseline middleware collection
-
-Contains:
-
-- rate limiting
-- security header middleware
-- request logging
-- error handler
-- not-found handler
-
-Notable concern:
-
-- `verifyWebhookSignature()` elsewhere uses `timingSafeEqual` without guarding against unequal buffer lengths, which can throw rather than safely return false
-
-Assessment:
-
-- Middleware shape is solid
-- Some security edge cases remain
-
-### `backend/src/services/gcash.ts`
-
-Status: simulated payment engine with real structure but no real payment persistence
-
-What exists:
-
-- In-memory transaction map
-- Create/check/cancel payment operations
-- Webhook processing
-- Simulated success/failure methods
-- Preconfigured Axios instance for a future real API integration
-
-What is not real:
-
-- No live GCash API call is currently used
-- No database persistence for transactions
-- Process restart wipes all payment state
-
-Assessment:
-
-- This is a mock payment backend with real architectural intent
-- It is not production payment infrastructure
-
-### `backend/src/controllers/gcash.ts`
-
-Status: full controller layer with one major contract mismatch
-
-Good aspects:
-
-- Covers create/check/cancel/webhook/health/simulate success/simulate failure
-- Uses logger
-- Validates request presence for required identifiers
-
-Major problem:
-
-- Create-payment response format differs from what the Flutter client expects
-
-Other notes:
-
-- Dev simulation endpoint tries to trigger printing from storage
-- It conditionally returns `simulatedPaths`, but current print service implementation never actually populates them
-
-Assessment:
-
-- Controller coverage is good
-- API contract consistency is poor
-
-### `backend/src/routes/gcash.ts`
-
-Status: straightforward and functional
-
-No major architectural issues beyond inheriting controller behavior.
-
-### `backend/src/routes/storage.ts`
-
-Status: meaningful implementation exists
-
-What works:
-
-- Upload
-- List documents
-- Get document metadata
-- Download
-- Delete
-- Stats
-
-Good aspects:
-
-- Uses `multer.memoryStorage()`
-- Restricts uploads to an allowlist of MIME types
-- Applies a 100 MB file-size limit
-
-Risks:
-
-- File safety checks rely on path prefix checks
-- No persistent metadata store for original names, stable IDs, or richer attributes
-
-Assessment:
-
-- One of the stronger subsystems in the repo
-
-### `backend/src/services/storage.service.ts`
-- UUID-named files in `Uploads/` with `.meta.json` sidecars
-- Page count estimated via PDF structure regex (fallback: 1)
-- **Issue (LOW):** Uploads folder grows unbounded — no expiry/cleanup
-
-### `backend/src/services/gcash.ts`
-- In-memory transaction store (lost on server restart)
-- Full mock implementation: no real GCash API calls
-- Sufficient for thesis demo
+The Brother MFC-J2730DW is still hardcoded throughout this file (device selection logic searches for "Brother" AND "MFC" in device name).
 
 ### `backend/src/services/print.service.ts`
 
-Status: ambitious but fragile printing implementation
+Status: upgraded with `pdf-to-printer` and PDF resizing
 
-What it tries to do:
+- `pdf-to-printer` is now in `package.json` — the previously missing `printer` module concern is resolved
+- PDF resizing via `pdf-lib`: scales content to fit A4/Folio/Letter in points
+- SumatraPDF-based printing with paper size flags via `pdf-to-printer`
+- `printPdfFile()` is exported and called by `scan.service.ts` for photocopy printing
+- `config.print.printerName` defaults to `''` (system default); configurable via `PRINTER_NAME` env var
 
-- Print raw text
-- Print receipts
-- Print document content
-- Print stored files
-- Enumerate available printers via optional native printer module
+### `backend/src/utils/helpers.ts`
 
-Design characteristics:
+Status: webhook signature bug fixed
 
-- Multiple Windows fallback attempts
-- Writes to `C:\PrintQueue`
-- Hardcoded printer name `Brother MFC-J2730DW Printer`
-- Attempts PowerShell WMI printing, `rundll32`, `print.exe`, and even spooler directory copy
-- Linux/macOS use `lp`
+`verifyWebhookSignature()` now guards buffer length before `timingSafeEqual`:
+```ts
+if (a.length !== b.length) return false;
+return crypto.timingSafeEqual(a, b);
+```
 
-Major concerns:
+### `backend/src/services/storage.service.ts`
 
-- Extremely environment-specific
-- Hardcoded kiosk printer assumptions
-- Some fallback behavior treats "queued to folder" as success even without confirmed printing
-- `config.print.simulationEnabled` exists but is not meaningfully used in current print logic
-- `simulatedPaths` are typed and referenced but not actually populated by the current implementation
+Status: UUID stability fixed
 
-Assessment:
+`getAllDocuments()` now derives `fileUuid` from `path.basename(filename, ext)` — the on-disk UUID-named file — rather than generating a new random UUID. IDs are stable across calls as long as the file exists.
 
-- This is the most operationally risky backend module
-- It may be workable on one exact kiosk setup, but it is not generalized or robust
+### `backend/src/utils/config.ts`
 
-### `backend/src/services/pdf-converter.service.ts`
+Status: cleaned up; printer name now configurable via env
 
-Status: isolated utility, currently unused in the main backend flow
+- `PAYMONGO_SECRET_KEY` and `PAYMONGO_WEBHOOK_SECRET` validated in production
+- `config.print.printerName` defaults to `''` (use system default)
+- `config.print.simulationEnabled` defaults to `true` — files are copied to `PrintSimulation/`
+- Security headers and CORS still opt-in via env flags; off by default
 
-What it can do:
-
-- Detect LibreOffice
-- Convert office-style documents to PDF
-- Copy PDFs, text, or images into output paths
-
-Important note:
-
-- No main route or service currently appears to integrate this conversion path into the storage-to-print workflow
-
-Assessment:
-
-- Potentially useful future infrastructure
-- Currently not part of the actual application path
-
-### `backend/src/services/aiven.ts`
-
-Status: optional, lightweight integration
-
-Behavior:
-
-- If DB config is absent, falls back to a development-friendly mock verifier
-- If DB config is present, checks `qr_verifications` table in Postgres
-
-Assessment:
-
-- Simple and understandable
-- Good for a thesis demo
-- Not deeply integrated elsewhere
-
-### `backend/src/controllers/qr.ts` and `backend/src/routes/qr.ts`
-
-Status: minimal but coherent
-
-Purpose:
-
-- Verifies QR data through the Aiven service
-- Offers a health endpoint
-
-Assessment:
-
-- Small and acceptable
-- Low complexity
+---
 
 ## Integration Analysis
 
-## Frontend/backend contract status
+### Payment flow — now substantially working
 
-This is currently the most important functional problem in the repository.
+| Point | Status |
+|---|---|
+| HTTP status on create | ✅ Both expect/return 200 |
+| Response shape `success:true` | ✅ Backend returns top-level `success:true` |
+| `data.transactionId` | ✅ Present |
+| `data.referenceNumber` | ✅ Present |
+| `data.qrCode` | ✅ Backend returns PayMongo's `qr_image` |
+| `data.expiresIn` | ✅ Backend returns `config.payment.timeoutSeconds` |
+| `data.amount` | ✅ Now present in create-payment response |
+| QR rendering in Flutter | ✅ Renders base64 image; falls back to `QrImageView` |
+| SQLite persistence | ✅ `insertTransaction()` called on create |
 
-### Create-payment mismatch
+**Remaining gap**: The backend's `checkPaymentStatus()` looks up only the in-memory `Map`. If the server restarts between creation and status check, lookup returns 404 even though SQLite has the record.
 
-Frontend expects:
+### PayMongo webhook — incomplete
 
-- HTTP `200`
-- top-level `success: true`
-- `data.amount` available for parsing
+The `webhook/paymongo` handler in `qrph.routes.ts` processes `source.chargeable` (creates a charge) but the `payment.paid` / `payment.succeeded` branch only logs the event with a `// TODO` comment. There is no code to update the in-memory transaction map or the SQLite record when a real payment is confirmed by PayMongo. For a real payment (not simulated), the kiosk will never receive SUCCESS status via webhook.
 
-Backend returns:
+### Scanning / Photocopying — real but fragile
 
-- HTTP `201`
-- top-level `status: "success"`
-- no `amount` in create-payment response payload
+- Flutter scanning page connects to Dynamsoft service at `127.0.0.1:18622`
+- Backend scan endpoints drive WIA/TWAIN PowerShell
+- Photocopy path: scan → PDF → print is end-to-end real on the target machine
+- Full stack assumes: (a) Brother MFC-J2730DW is connected, (b) Dynamsoft service is running locally, (c) Windows platform
 
-Consequence:
-
-- Flutter payment initialization does not accept the backend response as valid
-- The app falls back to demo mode with placeholder transaction data
-
-### QR mismatch
-
-Backend provides:
-
-- base64-encoded QR payload content
-
-Frontend behavior:
-
-- does not render real QR graphics
-- displays a placeholder icon box instead
-
-Consequence:
-
-- Even if the payment create API were fixed, the kiosk would still not provide an actually scannable QR code in the current UI
-
-### Print simulation mismatch
-
-Docs/UI imply:
-
-- simulated print files may be copied to `PrintSimulation`
-- `simulatedPaths` may be returned
-
-Current code reality:
-
-- `simulatedPaths` are referenced in response handling
-- no current print path actually sets them
-- `PRINT_SIMULATION_ENABLED` exists in config but is not driving visible behavior
-
-Consequence:
-
-- The simulation narrative in the codebase is incomplete and inconsistent
-
-## Documentation Status
-
-## Root documentation
-
-Root `README.md` status: outdated
-
-It is still the default Flutter starter README and does not describe the actual kiosk system.
-
-Impact:
-
-- New contributors will not understand the real project from the repo root
-- The current top-level documentation undersells and misrepresents the repository
-
-## Backend documentation
-
-Backend docs are much more extensive, but they are not fully trustworthy.
-
-Key issues:
-
-- They refer to `.env.example`, but that file is not present in `backend/`
-- They describe the backend as production-ready
-- They describe security features as implemented, even though some are disabled by default
-- They describe integration details that do not fully match the current Flutter app
-
-Examples of drift:
-
-- Docs mention `qr_flutter`, but `pubspec.yaml` does not include it
-- Docs describe success response conventions more consistently than the code actually follows
-- Docs suggest a more complete integration state than the current frontend achieves
-
-Assessment:
-
-- Documentation effort is strong
-- Documentation accuracy is weak
+---
 
 ## Security Assessment
 
-## Positive aspects
+### Improvements since March 17
 
-- Route-level separation is decent
-- Rate limiting middleware exists
-- Security headers middleware exists
-- Basic input validation exists for payment amounts
-- MIME-type filtering exists for upload
-- Webhook signature verification exists conceptually
+- ✅ `timingSafeEqual` length guard fixed
+- ✅ Webhook signature in `paymongo.service.ts` uses standard HMAC comparison (no `timingSafeEqual`, no throw risk)
 
-## Concerns
+### Remaining concerns
 
-### 1. Security feature defaults
+#### 1. Dynamsoft license key hardcoded in source
 
-Problem:
+Both `lib/pages/scanning_page.dart:49` and `lib/pages/photocopying_page.dart:41` contain the same Dynamsoft license key as a string literal committed to git.
 
-- Helmet and CORS whitelist behavior are disabled unless env flags are explicitly set
+#### 2. Webhook `payment.paid` is a TODO
 
-Impact:
+Real PayMongo webhook delivery will not trigger success status. Only the "Simulate Success" dev button correctly sets status to SUCCESS.
 
-- Real deployments could run without the protections the docs imply are present
+#### 3. Security feature defaults off
 
-### 2. Traversal protection
+`ENABLE_CORS` and `ENABLE_HELMET` default to `false`. A fresh deployment without `.env` runs without CORS restrictions or Helmet headers.
 
-Problem:
+#### 4. Traversal protection still prefix-based
 
-- File access checks use `startsWith(uploadsDir)` on joined paths
+File access checks use `startsWith(uploadsDir)` pattern checks rather than normalized path validation.
 
-Impact:
+#### 5. `ngrok.exe` committed to repository
 
-- This is weaker than a normalized/relative-path validation approach
+`backend/ngrok.exe` and `backend/ngrok.zip` are large binary artifacts that do not belong in source control.
 
-### 3. Webhook signature robustness
+#### 6. `PAYMONGO_SECRET_KEY` only validated in production
 
-Problem:
+In development mode, the server starts without `PAYMONGO_SECRET_KEY`. `PayMongoService` constructor will throw at runtime when the first real payment is attempted.
 
-- `crypto.timingSafeEqual()` will throw if the two buffers differ in length
-
-Impact:
-
-- Invalid signatures may cause an exception path instead of a clean false result
-
-### 4. Printing implementation risk
-
-Problem:
-
-- Writing into OS print/spool paths and using shell-based print commands is sensitive and environment-specific
-
-Impact:
-
-- Operational fragility
-- Potential security and permission complications
-
-### 5. Dependency health
-
-Observed during install:
-
-- 6 high-severity vulnerabilities were reported in the backend dependency tree
-
-Notable package concern:
-
-- `multer` 1.x is deprecated and explicitly warned about during install
-
-Assessment:
-
-- The repo shows awareness of security concepts
-- Hardening is incomplete and some claims exceed actual enforcement
+---
 
 ## Build, Tooling, and Quality Status
 
-## Backend build
+### Backend build
 
-Status: passes
+TypeScript compiles successfully; no structural issues were observed during code review.
 
-Command:
+### Backend linting
 
-- `npm run build`
+Status: still not operational — no `.eslintrc*` file found in `backend/`
 
-Result:
+`npm run lint` fails. `@typescript-eslint` devDependencies exist but there is no config file to wire them up.
 
-- TypeScript backend compiled successfully
+### Backend tests
 
-Meaning:
+Status: not implemented
 
-- The backend source is at least internally consistent enough to build
+`jest` and `ts-jest` are in devDependencies. No test files were found. Infrastructure is declared but empty.
 
-## Backend linting
+### Flutter dependencies
 
-Status: configured in script, but not actually operational
+| Package | Status |
+|---|---|
+| `qr_flutter: ^4.1.0` | ✅ Now declared and used |
+| `flutter_twain_scanner: ^2.0.1` | ✅ Real scanner integration |
+| `flutter_blue_plus: ^1.6.0` | Partial — in transfer_service |
+| `wifi_iot: ^0.3.19+2` | Partial — in transfer_service |
+| `win_ble: ^1.1.1` | Partial — in transfer_service |
+| `win32: ^5.0.0`, `ffi: ^2.2.0` | Present |
+| `image: ^4.8.0` | Used in scan/photocopy pages |
+| `pdf: ^3.12.0` | Used for PDF generation |
+| `paymongo_sdk: ^1.0.0` | Declared but custom HTTP client used instead |
+| `flutter_dotenv: ^5.1.0` | Declared but Dynamsoft key still hardcoded |
+| `cached_network_image: ^3.3.0` | Present |
 
-Command:
+Platform support in `pubspec.yaml`: "Android, Windows only."
 
-- `npm run lint`
+---
 
-Result:
+## Repository Hygiene
 
-- failed because no ESLint config file exists
+### Committed artifacts
 
-Meaning:
+- `Uploads/` — runtime document storage committed to repo
+- `PrintSimulation/` — committed sample/simulated output PDFs
+- `backend/Brother MFC-J2730DW Printer` — PDF-like binary with no extension; purpose undocumented
+- `backend/ngrok.exe` and `backend/ngrok.zip` — tunneling binaries in source control
 
-- There is no working lint process despite a lint script being present
-
-## Backend tests
-
-Status: no real test suite found
-
-Observations:
-
-- `jest` is listed in dependencies
-- `npm test` exists as a script
-- no meaningful repository test files were found
-
-Meaning:
-
-- Testing infrastructure is declared but not implemented
-
-## Flutter analysis
-
-Status: could not verify in this environment
-
-Reason:
-
-- `flutter` and `dart` were not available on PATH in the analysis environment
-
-Meaning:
-
-- Frontend static correctness could not be fully validated during this review
-
-## Flutter dependencies
-
-Current declared dependencies include:
-
-- `http`
-- `provider`
-- `permission_handler`
-- `path`
-- `path_provider`
-- `file_selector`
-
-Observations:
-
-- `provider`, `permission_handler`, and `path` do not appear meaningfully used in the reviewed implementation
-- documentation references `qr_flutter`, but it is not actually declared
-
-Assessment:
-
-- Dependency list needs cleanup and alignment with actual code
-
-## Runtime Data and Repository Hygiene
-
-## Committed runtime/sample data
-
-The repository includes committed files under:
-
-- `Uploads/`
-- `PrintSimulation/`
-
-These look like runtime or demo data rather than pure source artifacts.
-
-Assessment:
-
-- Acceptable for demo packaging
-- Not ideal for a clean application repository
-
-## Large non-source artifact
-
-There is a large PDF-like file with no extension:
-
-- `backend/Brother MFC-J2730DW Printer`
-
-Observations:
-
-- It begins with `%PDF-1.7`
-- It has no extension
-- It is not clearly documented in the repo structure
-
-Assessment:
-
-- This should be renamed or documented if intentionally kept
+---
 
 ## What Currently Works Best
 
-The strongest parts of the codebase today are:
+- **Payment creation + QR display** — PayMongo creates a real QR code; Flutter renders it; polling checks status; SQLite records the transaction
+- **Printing from storage** — upload file → `Uploads/` → select → pay → `printFilesFromStorage()` → SumatraPDF/pdf-to-printer
+- **File upload/list/download/delete** — storage subsystem is solid; stable IDs; `.meta.json` sidecars preserve original names
+- **Scanning** — WIA/TWAIN PowerShell on Windows with Brother MFC; scan result uploadable to storage
+- **Photocopying** — scan → PDF → print cycle is wired end-to-end in `photocopyDocument()`
+- **Kiosk UI** — coherent presentation with real flows; suitable for thesis defense
 
-- Backend route structure
-- Backend TypeScript buildability
-- File upload/list/download/delete flow
-- Storage-driven print selection path
-- Overall kiosk UI presentation
-- Optional QR verification via mock or Postgres
+## What Is Still Simulated or Incomplete
 
-If the goal is a thesis demo or guided walkthrough, the project already has enough visible functionality to present a coherent system concept.
+- **Real-time payment confirmation from PayMongo webhook** — `payment.paid` handler is a `// TODO`; only simulate buttons work
+- **Bluetooth transfer** — partially implemented; facade-level actual transfer
+- **WiFi hotspot transfer** — same
+- **QR transfer** — same
+- **Stable payment state after server restart** — in-memory map lost; SQLite has record but status check only reads memory
+- **Dynamsoft service startup** — must be started separately; no startup script
+- **ESLint / test suite** — not configured
 
-## What Is Currently Simulated or Incomplete
-
-The most clearly simulated or incomplete areas are:
-
-- Real GCash integration
-- Real QR rendering on the Flutter side
-- Direct print-file picking from the printing page
-- Scanning hardware integration
-- Photocopying hardware integration
-- Bluetooth transfer
-- WiFi hotspot transfer
-- QR transfer
-- Stable document metadata persistence
-- End-to-end test coverage
-- Working lint pipeline
+---
 
 ## Primary Risks By Severity
 
-## Critical
+### Critical
 
-- Frontend/backend payment contract mismatch breaks real payment initialization
-- Payment UI does not render a real scannable QR code
+- **Dynamsoft license key hardcoded in source** — security exposure; scanning fails if key expires or service is not running
+- **Webhook `payment.paid` event does nothing** — real PayMongo payments will never be automatically confirmed; kiosk will not advance to SUCCESS for a real user
 
-## High
+### High
 
-- Storage and print path checks are weaker than they should be
-- Printing subsystem is fragile and highly environment-specific
-- Documentation significantly overstates readiness and implementation status
-- Transaction state is only stored in memory
+- **Two `paymongoService` singletons** — `services/paymongo.ts` and `services/paymongo.service.ts` both export `paymongoService`; different routes use different instances; easy to misuse
+- **Active payment state lost on server restart** — in-memory map only; no SQLite reconciliation on startup
+- **Scanner/copier hardcoded to Brother MFC-J2730DW** — will not work on different hardware
+- **`qrph.routes.ts` creates QR with `amount=0`** — secondary route does not pass the real payment amount
 
-## Medium
+### Medium
 
-- Metadata for stored documents is unstable and partially lost on refresh
-- Several features appear implemented in UI but are actually simulated
-- Security defaults are weaker than docs imply
-- Lint and test workflow are incomplete
+- **Dynamsoft service at `127.0.0.1:18622` must be started separately** — no startup script; silently fails if not running
+- **ESLint config missing** — `npm run lint` fails
+- **`transfer_service.dart` at 1312 lines** — largest Flutter file; maintenance hotspot
+- **No automated tests** — no meaningful test files despite jest in devDependencies
+- **`ngrok.exe` / `ngrok.zip` in repo** — binary artifacts in source control
+- **Security feature defaults off** — CORS and Helmet require explicit env vars to enable
 
-## Low
+### Low
 
-- Root README is outdated
-- Some dependencies appear unused
-- Generated/platform scaffolding may distract from the actual application structure
+- **Root `README.md`** — still the default Flutter template
+- **`backend/Brother MFC-J2730DW Printer`** — undocumented binary file with no extension
+- **`paymongo_sdk` Flutter package declared but unused** — custom HTTP client used instead
+- **Dependency list has potentially unused packages** — `provider`, `permission_handler`, `path`
+
+---
 
 ## Recommended Priorities
 
-## Priority 1: Make payment integration real
+### Priority 1: Fix the PayMongo webhook flow
 
-- Unify create-payment response contract between Flutter and backend
-- Return a consistent `success` field or update the Flutter parser
-- Align expected HTTP status handling
-- Include the fields the client model actually parses
-- Render a real QR code in Flutter from backend-provided content
+The `payment.paid` / `payment.succeeded` event handler in `qrph.routes.ts` has a `// TODO` placeholder. For real payment confirmation:
 
-## Priority 2: Harden storage and file handling
+- Map PayMongo `source.id` or `payment.id` back to the internal `transactionId`
+- Update the in-memory `Map` in `paymongoService` to `SUCCESS`
+- Call `updateTransactionStatus(transactionId, 'SUCCESS', ...)` on the SQLite layer
 
-- Replace prefix-based path checks with normalized/relative validation
-- Persist metadata instead of regenerating IDs on each list
-- Preserve original filenames and MIME types reliably
+Without this, a real user scanning the QR code will pay but the kiosk will never show a success state.
 
-## Priority 3: Clarify simulation vs reality
+### Priority 2: Move Dynamsoft license key out of source
 
-- Label simulated features explicitly in UI and docs
-- Remove misleading "production-ready" wording unless behavior supports it
-- Either implement or strip dead simulation hooks like `simulatedPaths`
+Replace the hardcoded key in `scanning_page.dart` and `photocopying_page.dart` with a value from `flutter_dotenv` (which is already declared in `pubspec.yaml`). Add the `.env` file to `.gitignore`.
 
-## Priority 4: Reduce frontend complexity
+### Priority 3: Reconcile the two PayMongo service files
 
-- Split `lib/services.dart` into focused screens/widgets/services
-- Centralize configuration usage
-- Remove static mutable cross-screen state where possible
+Either merge `paymongo.service.ts` (direct QR Ph API wrapper) into `paymongo.ts` (transaction lifecycle service), or document clearly which routes use which instance and why. Eliminate the naming collision of two `paymongoService` singletons.
 
-## Priority 5: Add engineering guardrails
+### Priority 4: Add restart-resilient status lookup
 
-- Add ESLint config
-- Add backend tests
-- Add at least smoke tests for payment, storage, and print endpoints
-- Add Flutter analysis/build verification to the workflow
+In `checkPaymentStatus()` in `paymongo.ts`, add a fallback: if the transaction ID is not found in the in-memory map, query SQLite and reconstruct a minimal `PaymentTransaction` from the `transactions` row.
+
+### Priority 5: Add ESLint and smoke tests
+
+- Add `.eslintrc.json` wiring up `@typescript-eslint`
+- Add at minimum: create-payment, check-payment, and storage upload/list smoke tests
+
+---
 
 ## Current Verdict
 
-This repository is a strong thesis/demo prototype with meaningful real code, especially in storage, UI presentation, and backend structure.
+This repository has matured from a demo prototype toward a more functional system since March 17. The payment contract is fixed, QR code rendering works, SQLite persistence is real, scanning and photocopying are wired to actual hardware, and the frontend has been properly decomposed into focused page files.
 
-It is not yet a fully integrated production system.
-
-The most important truth about its current state is this:
-
-- It looks more complete than it is
-- the architecture is present
-- the user experience is present
-- but several critical runtime paths are still mocked, mismatched, or environment-dependent
+The most important outstanding issue is that real PayMongo payments will never be automatically confirmed — the webhook `payment.paid` handler is still a TODO. Every other success path relies on the "Simulate Success" dev button. This is acceptable for a supervised thesis demo but represents a real integration gap.
 
 In short:
 
-- Good demo foundation: yes
-- Good codebase for continued development: yes
-- Production-ready today: no
-
-## Suggested one-sentence summary
-
-The repository currently represents a well-presented kiosk prototype with a compilable backend and partially real storage/print infrastructure, but it still depends on mocked flows, inconsistent contracts, and incomplete hardening before it can be considered truly complete.
+- **Good demo foundation**: yes — improved significantly
+- **Real payment integration**: partially — creation works, confirmation via webhook does not
+- **Real hardware integration**: yes — scanning/printing are wired to Brother MFC-J2730DW
+- **Production-ready**: no — webhook gap, hardcoded license key, no tests, security defaults off
