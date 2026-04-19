@@ -50,7 +50,10 @@
       "Bash(/d/Projects-Shem/Flutter/flutter/bin/flutter.bat analyze:*)",
       "Bash(grep -v \"transfer_service\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\storage_page\\\\|lib\\\\\\\\\\\\\\\\payment\\\\|lib\\\\\\\\\\\\\\\\config\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\scanning\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\photocopy\")",
       "Bash(grep -v \"transfer_service\\\\|lib\\\\\\\\\\\\\\\\payment_service\\\\|lib\\\\\\\\\\\\\\\\config\\\\|lib\\\\\\\\\\\\\\\\pages\\\\\\\\\\\\\\\\photocopy\")",
-      "Read(//d/Projects-Shem/Thesis/2026/**)"
+      "Read(//d/Projects-Shem/Thesis/2026/**)",
+      "WebFetch(domain:heroui.com)",
+      "WebFetch(domain:www.heroui.com)",
+      "WebFetch(domain:v2.heroui.com)"
     ]
   }
 }

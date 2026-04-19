@@ -1,7 +1,11 @@
 import axios, { AxiosInstance } from 'axios';
 import { PaymentTransaction, PayMongoPaymentRequest, PayMongoWebhookPayload } from '../types';
 import { config } from '../utils/config';
-import { generateTransactionId, generateReferenceNumber, calculateExpirationTime } from '../utils/helpers';
+import {
+  generateTransactionId,
+  generateReferenceNumber,
+  calculateExpirationTime,
+} from '../utils/helpers';
 import { logger } from '../utils/logger';
 
 export class PayMongoService {
@@ -10,20 +14,20 @@ export class PayMongoService {
 
   constructor() {
     const secretKeyEncoded = Buffer.from(`${config.PAYMONGO.secretKey}:`).toString('base64');
-    
+
     logger.info('PayMongo Service Initialization', {
       secretKeyPresent: !!config.PAYMONGO.secretKey,
       secretKeyLength: config.PAYMONGO.secretKey?.length,
       apiBaseUrl: config.PAYMONGO.apiBaseUrl,
       authHeaderSample: `Basic ${secretKeyEncoded.substring(0, 20)}...`,
     });
-    
+
     this.axiosInstance = axios.create({
       baseURL: config.PAYMONGO.apiBaseUrl,
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${secretKeyEncoded}`,
+        Authorization: `Basic ${secretKeyEncoded}`,
       },
     });
 
@@ -45,7 +49,7 @@ export class PayMongoService {
           message: error.message,
         });
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -54,7 +58,9 @@ export class PayMongoService {
    */
   async createPayment(paymentRequest: PayMongoPaymentRequest): Promise<PaymentTransaction> {
     try {
-      const description = paymentRequest.description ?? `Payment for ${paymentRequest.serviceType ?? 'document service'}`;
+      const description =
+        paymentRequest.description ??
+        `Payment for ${paymentRequest.serviceType ?? 'document service'}`;
       const payload = {
         data: {
           attributes: {

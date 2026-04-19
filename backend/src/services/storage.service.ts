@@ -126,7 +126,7 @@ const createDocumentMetadata = (
   filename: string,
   filePath: string,
   mimeType: string,
-  originalName?: string
+  originalName?: string,
 ): StorageDocument => {
   const stats = fs.statSync(filePath);
   const fileUuid = path.basename(filename, path.extname(filename));
@@ -150,7 +150,7 @@ const createDocumentMetadata = (
 export const saveFile = (
   fileBuffer: Buffer,
   originalFileName: string,
-  mimeType: string
+  mimeType: string,
 ): Promise<StorageResult> => {
   return new Promise((resolve) => {
     try {
@@ -284,7 +284,9 @@ export const getDocument = (filename: string): Promise<StorageResult> => {
 /**
  * Get file buffer for download
  */
-export const getFileBuffer = (filename: string): Promise<{ success: boolean; buffer?: Buffer; error?: string }> => {
+export const getFileBuffer = (
+  filename: string,
+): Promise<{ success: boolean; buffer?: Buffer; error?: string }> => {
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
@@ -342,7 +344,11 @@ export const deleteDocument = (filename: string): Promise<StorageResult> => {
       const fileUuid = path.basename(filename, path.extname(filename));
       const mp = metaPath(uploadsDir, fileUuid);
       if (fs.existsSync(mp)) {
-        try { fs.unlinkSync(mp); } catch { /* ignore */ }
+        try {
+          fs.unlinkSync(mp);
+        } catch {
+          /* ignore */
+        }
       }
 
       logger.info('Document deleted', { filename });
@@ -359,7 +365,11 @@ export const deleteDocument = (filename: string): Promise<StorageResult> => {
 /**
  * Get storage statistics (excludes sidecar files)
  */
-export const getStorageStats = (): Promise<{ success: boolean; stats?: { totalFiles: number; totalSize: string }; error?: string }> => {
+export const getStorageStats = (): Promise<{
+  success: boolean;
+  stats?: { totalFiles: number; totalSize: string };
+  error?: string;
+}> => {
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();

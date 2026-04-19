@@ -45,47 +45,51 @@ const upload = multer({
  * POST /api/storage/upload
  * Upload a file to storage
  */
-router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
-  try {
-    const file = (req as any).file;
+router.post(
+  '/upload',
+  upload.single('file'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const file = (req as any).file;
 
-    if (!file) {
-      res.status(400).json({
-        success: false,
-        error: 'No file provided',
+      if (!file) {
+        res.status(400).json({
+          success: false,
+          error: 'No file provided',
+        });
+        return;
+      }
+
+      logger.info('File upload request received', {
+        filename: file.originalname,
+        size: file.size,
+        mimetype: file.mimetype,
       });
-      return;
-    }
 
-    logger.info('File upload request received', {
-      filename: file.originalname,
-      size: file.size,
-      mimetype: file.mimetype,
-    });
+      const result = await saveFile(file.buffer, file.originalname, file.mimetype);
 
-    const result = await saveFile(file.buffer, file.originalname, file.mimetype);
-
-    if (result.success) {
-      res.json({
-        success: true,
-        document: result.data,
-        message: 'File uploaded successfully',
-      });
-    } else {
+      if (result.success) {
+        res.json({
+          success: true,
+          document: result.data,
+          message: 'File uploaded successfully',
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      const err = error as Error;
+      logger.error('File upload endpoint error', { error: err.message });
       res.status(500).json({
         success: false,
-        error: result.error,
+        error: err.message,
       });
     }
-  } catch (error) {
-    const err = error as Error;
-    logger.error('File upload endpoint error', { error: err.message });
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /api/storage/documents

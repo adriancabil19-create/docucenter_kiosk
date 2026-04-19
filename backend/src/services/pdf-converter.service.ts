@@ -34,10 +34,10 @@ const convertWithLibreOffice = (inputPath: string, outputDir: string): string =>
     const cmd = `soffice --headless --convert-to pdf "${inputPath}" --outdir "${outputDir}"`;
     logger.info('Converting with LibreOffice', { cmd });
     execSync(cmd, { timeout: 30000, stdio: 'pipe' });
-    
+
     const inputFileName = path.parse(inputPath).name;
     const pdfPath = path.join(outputDir, `${inputFileName}.pdf`);
-    
+
     if (fs.existsSync(pdfPath)) {
       logger.info('Document converted to PDF', { inputPath, pdfPath });
       return pdfPath;
@@ -45,7 +45,7 @@ const convertWithLibreOffice = (inputPath: string, outputDir: string): string =>
   } catch (error) {
     logger.warn('LibreOffice conversion failed', { error: String(error) });
   }
-  
+
   throw new Error('Failed to convert document to PDF');
 };
 
@@ -75,7 +75,7 @@ const handleImageFile = (inputPath: string, outputPath: string): string => {
 export const convertToPdf = (
   inputPath: string,
   outputDir: string,
-  originalFileName: string
+  originalFileName: string,
 ): string => {
   if (!fs.existsSync(inputPath)) {
     throw new Error(`File not found: ${inputPath}`);
@@ -86,10 +86,10 @@ export const convertToPdf = (
   const outputPath = path.join(outputDir, `${fileName}.pdf`);
 
   try {
-    logger.info('Starting file conversion', { 
-      inputFile: originalFileName, 
+    logger.info('Starting file conversion', {
+      inputFile: originalFileName,
       ext,
-      outputPath 
+      outputPath,
     });
 
     // If already PDF, just copy it
@@ -125,14 +125,13 @@ export const convertToPdf = (
     logger.warn('Unknown file format, copying as-is', { ext, originalFileName });
     fs.copyFileSync(inputPath, outputPath);
     return outputPath;
-
   } catch (error) {
     const err = error as Error;
-    logger.error('PDF conversion failed', { 
-      file: originalFileName, 
-      error: err.message 
+    logger.error('PDF conversion failed', {
+      file: originalFileName,
+      error: err.message,
     });
-    
+
     // Fallback: just copy the file as-is
     try {
       fs.copyFileSync(inputPath, outputPath);

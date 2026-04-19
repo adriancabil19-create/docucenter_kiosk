@@ -191,7 +191,11 @@ export class PayMongoController {
 
       // Verify webhook signature
       const payloadString = JSON.stringify(req.body);
-      const isValid = verifyWebhookSignature(payloadString, signature, config.PAYMONGO.webhookSecret);
+      const isValid = verifyWebhookSignature(
+        payloadString,
+        signature,
+        config.PAYMONGO.webhookSecret,
+      );
 
       if (!isValid) {
         logger.warn('Webhook signature verification failed');
@@ -312,9 +316,16 @@ export class PayMongoController {
       if (Array.isArray(filenames) && filenames.length > 0) {
         try {
           printResult = await printFilesFromStorage(filenames);
-          logger.info('Triggered print from storage for simulated success', { transactionId, filenames, printResult });
+          logger.info('Triggered print from storage for simulated success', {
+            transactionId,
+            filenames,
+            printResult,
+          });
         } catch (printErr) {
-          logger.error('Error printing files during simulated success', { transactionId, error: String(printErr) });
+          logger.error('Error printing files during simulated success', {
+            transactionId,
+            error: String(printErr),
+          });
         }
       }
 
@@ -389,4 +400,3 @@ export class PayMongoController {
 }
 
 export const paymongoController = new PayMongoController();
-

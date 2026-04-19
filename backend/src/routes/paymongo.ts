@@ -13,13 +13,17 @@ router.post('/create-payment', (req: any, res: any) => paymongoController.create
  * GET /api/paymongo/check-payment/:transactionId
  * Check the status of a payment
  */
-router.get('/check-payment/:transactionId', (req: any, res: any) => paymongoController.checkPaymentStatus(req, res));
+router.get('/check-payment/:transactionId', (req: any, res: any) =>
+  paymongoController.checkPaymentStatus(req, res),
+);
 
 /**
  * POST /api/paymongo/cancel-payment/:transactionId
  * Cancel a pending payment
  */
-router.post('/cancel-payment/:transactionId', (req: any, res: any) => paymongoController.cancelPayment(req, res));
+router.post('/cancel-payment/:transactionId', (req: any, res: any) =>
+  paymongoController.cancelPayment(req, res),
+);
 
 /**
  * POST /api/paymongo/webhook
@@ -43,7 +47,7 @@ router.get('/health', (req: any, res: any) => paymongoController.healthCheck(req
  * Simulate a successful payment (development only)
  */
 router.post('/simulate/success/:transactionId', (req: any, res: any) =>
-  paymongoController.simulatePaymentSuccess(req, res)
+  paymongoController.simulatePaymentSuccess(req, res),
 );
 
 /**
@@ -51,8 +55,7 @@ router.post('/simulate/success/:transactionId', (req: any, res: any) =>
  * Simulate a failed payment (development only)
  */
 router.post('/simulate/failure/:transactionId', (req: any, res: any) =>
-  paymongoController.simulatePaymentFailure(req, res)
+  paymongoController.simulatePaymentFailure(req, res),
 );
 
 export default router;
-

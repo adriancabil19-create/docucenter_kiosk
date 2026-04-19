@@ -1,9 +1,5 @@
 import { Router, Request, Response } from 'express';
-import {
-  getMonitoringStats,
-  getRecentJobs,
-  getRecentTransactions,
-} from '../database';
+import { getMonitoringStats, getRecentJobs, getRecentTransactions } from '../database';
 import { logger } from '../utils/logger';
 
 const router = Router();

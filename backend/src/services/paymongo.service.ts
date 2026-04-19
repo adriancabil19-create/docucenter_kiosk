@@ -75,7 +75,9 @@ export class PayMongoService {
    * Retrieve the current status of a PayMongo source.
    * Returns one of PayMongo's source status values.
    */
-  async getSourceStatus(sourceId: string): Promise<'pending' | 'chargeable' | 'paid' | 'failed' | 'expired'> {
+  async getSourceStatus(
+    sourceId: string,
+  ): Promise<'pending' | 'chargeable' | 'paid' | 'failed' | 'expired'> {
     try {
       const response = await this.axiosInstance.get(`/sources/${sourceId}`);
       const status = response.data?.data?.attributes?.status;
@@ -132,10 +134,7 @@ export class PayMongoService {
    */
   validateWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
     try {
-      const expectedSignature = crypto
-        .createHmac('sha256', secret)
-        .update(rawBody)
-        .digest('hex');
+      const expectedSignature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
       return signature === expectedSignature;
     } catch (error: any) {

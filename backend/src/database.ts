@@ -15,8 +15,10 @@ import * as fs from 'fs';
 import { logger } from './utils/logger';
 
 // ─── Database location ────────────────────────────────────────────────────────
-const dbDir = path.resolve(__dirname, '../..');   // backend/ parent = project root
-const dbPath = path.join(dbDir, 'docucenter.db');
+// Override with DATABASE_PATH env var for persistent disk on Render:
+//   DATABASE_PATH=/data/docucenter.db
+const dbDir = path.resolve(__dirname, '../..'); // backend/ parent = project root
+const dbPath = process.env.DATABASE_PATH || path.join(dbDir, 'docucenter.db');
 
 // ─── Singleton connection ─────────────────────────────────────────────────────
 let _db: Database.Database | null = null;
@@ -24,7 +26,7 @@ let _db: Database.Database | null = null;
 export const getDb = (): Database.Database => {
   if (_db) return _db;
   _db = new Database(dbPath);
-  _db.pragma('journal_mode = WAL');   // better concurrent read performance
+  _db.pragma('journal_mode = WAL'); // better concurrent read performance
   _db.pragma('foreign_keys = ON');
   initSchema(_db);
   logger.info('SQLite database opened', { path: dbPath });
@@ -78,26 +80,30 @@ export interface TransactionRow {
 
 export const insertTransaction = (row: Omit<TransactionRow, 'created_at'>): void => {
   try {
-    getDb().prepare(`
+    getDb()
+      .prepare(
+        `
       INSERT INTO transactions (id, reference_number, amount, status, service_type)
       VALUES (@id, @reference_number, @amount, @status, @service_type)
-    `).run(row);
+    `,
+      )
+      .run(row);
   } catch (err) {
     logger.warn('Failed to insert transaction', { id: row.id, error: String(err) });
   }
 };
 
-export const updateTransactionStatus = (
-  id: string,
-  status: string,
-  completedAt?: string
-): void => {
+export const updateTransactionStatus = (id: string, status: string, completedAt?: string): void => {
   try {
-    getDb().prepare(`
+    getDb()
+      .prepare(
+        `
       UPDATE transactions
       SET status = @status, completed_at = @completedAt
       WHERE id = @id
-    `).run({ id, status, completedAt: completedAt ?? null });
+    `,
+      )
+      .run({ id, status, completedAt: completedAt ?? null });
   } catch (err) {
     logger.warn('Failed to update transaction status', { id, error: String(err) });
   }
@@ -108,7 +114,7 @@ export const updateTransactionStatus = (
 export interface PrintJobRow {
   id: string;
   transaction_id?: string;
-  filenames: string[];    // stored as JSON
+  filenames: string[]; // stored as JSON
   paper_size: string;
   copies: number;
   status: string;
@@ -118,16 +124,20 @@ export interface PrintJobRow {
 
 export const insertPrintJob = (row: PrintJobRow): void => {
   try {
-    getDb().prepare(`
+    getDb()
+      .prepare(
+        `
       INSERT INTO print_jobs (id, transaction_id, filenames, paper_size, copies, status, method, simulated)
       VALUES (@id, @transaction_id, @filenames, @paper_size, @copies, @status, @method, @simulated)
-    `).run({
-      ...row,
-      filenames: JSON.stringify(row.filenames),
-      transaction_id: row.transaction_id ?? null,
-      method: row.method ?? null,
-      simulated: row.simulated ? 1 : 0,
-    });
+    `,
+      )
+      .run({
+        ...row,
+        filenames: JSON.stringify(row.filenames),
+        transaction_id: row.transaction_id ?? null,
+        method: row.method ?? null,
+        simulated: row.simulated ? 1 : 0,
+      });
   } catch (err) {
     logger.warn('Failed to insert print job', { id: row.id, error: String(err) });
   }
@@ -149,7 +159,9 @@ export interface MonitoringStats {
 export const getMonitoringStats = (): MonitoringStats => {
   const db = getDb();
 
-  const txRow = db.prepare(`
+  const txRow = db
+    .prepare(
+      `
     SELECT
       COUNT(*)                                          AS total,
       SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END)   AS successful,
@@ -157,15 +169,27 @@ export const getMonitoringStats = (): MonitoringStats => {
       SUM(CASE WHEN status = 'PENDING' OR status = 'PROCESSING' THEN 1 ELSE 0 END) AS pending,
       COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS revenue
     FROM transactions
-  `).get() as { total: number; successful: number; failed: number; pending: number; revenue: number };
+  `,
+    )
+    .get() as {
+    total: number;
+    successful: number;
+    failed: number;
+    pending: number;
+    revenue: number;
+  };
 
-  const jobRow = db.prepare(`
+  const jobRow = db
+    .prepare(
+      `
     SELECT
       COUNT(*)                                       AS total,
       SUM(CASE WHEN simulated = 1 THEN 1 ELSE 0 END) AS simulated,
       SUM(CASE WHEN simulated = 0 THEN 1 ELSE 0 END) AS real
     FROM print_jobs
-  `).get() as { total: number; simulated: number; real: number };
+  `,
+    )
+    .get() as { total: number; simulated: number; real: number };
 
   return {
     totalTransactions: txRow.total ?? 0,
@@ -192,12 +216,18 @@ export interface RecentJob {
 }
 
 export const getRecentJobs = (limit = 20): RecentJob[] => {
-  const rows = getDb().prepare(`
+  const rows = getDb()
+    .prepare(
+      `
     SELECT id, transaction_id, filenames, paper_size, copies, status, method, simulated, created_at
     FROM print_jobs
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(limit) as Array<Omit<RecentJob, 'filenames' | 'simulated'> & { filenames: string; simulated: number }>;
+  `,
+    )
+    .all(limit) as Array<
+    Omit<RecentJob, 'filenames' | 'simulated'> & { filenames: string; simulated: number }
+  >;
 
   return rows.map((r) => ({
     ...r,
@@ -207,11 +237,14 @@ export const getRecentJobs = (limit = 20): RecentJob[] => {
 };
 
 export const getRecentTransactions = (limit = 20): TransactionRow[] => {
-  return getDb().prepare(`
+  return getDb()
+    .prepare(
+      `
     SELECT id, reference_number, amount, status, service_type, created_at, completed_at
     FROM transactions
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(limit) as TransactionRow[];
+  `,
+    )
+    .all(limit) as TransactionRow[];
 };
-

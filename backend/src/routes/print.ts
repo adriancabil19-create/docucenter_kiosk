@@ -73,7 +73,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const result = await printText(content, { paperSize });
 
     if (result.success) {
-      res.json({ success: true, jobID: result.jobID, method: result.method, message: 'Print job submitted successfully' });
+      res.json({
+        success: true,
+        jobID: result.jobID,
+        method: result.method,
+        message: 'Print job submitted successfully',
+      });
     } else {
       res.status(500).json({ success: false, error: result.error });
     }
@@ -101,7 +106,12 @@ router.post('/receipt', async (req: Request, res: Response): Promise<void> => {
     const result = await printReceipt(content, paperSize);
 
     if (result.success) {
-      res.json({ success: true, jobID: result.jobID, method: result.method, message: 'Receipt printed successfully' });
+      res.json({
+        success: true,
+        jobID: result.jobID,
+        method: result.method,
+        message: 'Receipt printed successfully',
+      });
     } else {
       res.status(500).json({ success: false, error: result.error });
     }
@@ -125,11 +135,20 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    logger.info('Document print request received', { documentName, contentLength: content.length, paperSize });
+    logger.info('Document print request received', {
+      documentName,
+      contentLength: content.length,
+      paperSize,
+    });
     const result = await printDocument(content, documentName, paperSize);
 
     if (result.success) {
-      res.json({ success: true, jobID: result.jobID, method: result.method, message: 'Document printed successfully' });
+      res.json({
+        success: true,
+        jobID: result.jobID,
+        method: result.method,
+        message: 'Document printed successfully',
+      });
     } else {
       res.status(500).json({ success: false, error: result.error });
     }
@@ -153,7 +172,12 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    logger.info('Print from storage request received', { count: filenames.length, paperSize, colorMode, quality });
+    logger.info('Print from storage request received', {
+      count: filenames.length,
+      paperSize,
+      colorMode,
+      quality,
+    });
     const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality);
 
     // Log to SQLite regardless of outcome

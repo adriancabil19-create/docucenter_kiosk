@@ -11,9 +11,10 @@ router.post('/api/payment/qrph/create', async (req: any, res: any) => {
   try {
     const { description } = req.body;
 
-    const finalDescription = typeof description === 'string' && description.length > 0
-      ? description
-      : 'PAYMONGO QR Ph Payment';
+    const finalDescription =
+      typeof description === 'string' && description.length > 0
+        ? description
+        : 'PAYMONGO QR Ph Payment';
 
     const result = await paymongoService.createQRPhSource(0, finalDescription);
 
@@ -61,7 +62,8 @@ router.get('/api/payment/qrph/status/:sourceId', async (req: any, res: any) => {
  */
 router.post('/webhook/paymongo', async (req: any, res: any) => {
   try {
-    const signature = (req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature']) as string;
+    const signature = (req.headers['x-webhook-signature'] ||
+      req.headers['X-Webhook-Signature']) as string;
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
 
     if (!signature) {

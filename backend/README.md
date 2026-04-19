@@ -1,472 +1,195 @@
-# Web Doc Backend - PAYMONGO Payment Integration
+# DocuCenter Kiosk Backend
 
-Complete Node.js + Express backend for the Web Doc Kiosk payment system with PAYMONGO integration.
+Node.js + Express backend for the DocuCenter Kiosk — handles QR Ph payments via PayMongo, file uploads, print job dispatch, and SQLite persistence.
 
-## 🚀 Quick Start
+---
+
+## Quick Start
 
 ### Prerequisites
-- Node.js 14+ or higher
-- npm or yarn
-- PAYMONGO Merchant Account credentials
 
-### Installation
+- Node.js 18+
+- npm
+
+### 1. Install dependencies
 
 ```bash
-# Install dependencies
+cd backend
 npm install
+```
 
-# Create environment configuration
+### 2. Configure environment
+
+```bash
 cp .env.example .env
 ```
 
-### Configuration
-
-Edit `.env` with your PAYMONGO credentials:
+Edit `.env`:
 
 ```env
-# PAYMONGO Configuration
-PAYMONGO_MERCHANT_ID=your_merchant_id
-PAYMONGO_API_KEY=your_api_key
-PAYMONGO_SECRET_KEY=your_secret_key
-PAYMONGO_WEBHOOK_SECRET=your_webhook_secret
+NODE_ENV=development
+PORT=5000
 
-# Frontend URL
-FRONTEND_URL=http://localhost:3000
+# PayMongo QR Ph
+PAYMONGO_SECRET_KEY=sk_test_...
+
+# CORS — comma-separated list of allowed origins
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# SQLite path (optional — defaults to ./database/docucenter.db)
+DATABASE_PATH=./database/docucenter.db
 ```
 
-### Development
+### 3. Start dev server
 
 ```bash
-# Start development server with auto-reload
 npm run dev
-
-# Server will start on http://localhost:5000
 ```
 
-### Build & Production
+Server starts on `http://localhost:5000`.
+
+---
+
+## Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start with ts-node-dev (hot reload) |
+| `npm run build` | Compile TypeScript → `dist/` |
+| `npm start` | Run compiled `dist/index.js` |
+| `npm run lint` | Run ESLint |
+| `npm run lint:fix` | Run ESLint with auto-fix |
+| `npm run format` | Format all source files with Prettier |
+| `npm run format:check` | Check formatting without writing |
+
+---
+
+## API Endpoints
+
+### Health
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Server liveness check |
+
+### Transactions (PayMongo QR Ph)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/qrph/generate` | Create a QR Ph payment source |
+| GET | `/qrph/status/:referenceNumber` | Poll payment status |
+| POST | `/qrph/webhook` | PayMongo webhook (payment.paid event) |
+
+### Print Jobs
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/print` | Submit a print job (triggers real or simulated print) |
+| POST | `/photocopy` | Submit a photocopy job |
+| GET | `/print/jobs` | List print jobs (query: `?limit=N`) |
+| GET | `/print/jobs/:id` | Get single print job |
+
+### File Storage
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/upload` | Upload a file (multipart/form-data) |
+| GET | `/documents` | List stored documents |
+| DELETE | `/documents/:id` | Delete a document by ID |
+
+### Admin / Monitoring
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/admin/stats` | Aggregate stats (transactions, revenue, print jobs) |
+| GET | `/admin/transactions` | All transactions (query: `?limit=N`) |
+| GET | `/admin/print-jobs` | All print jobs (query: `?limit=N`) |
+
+---
+
+## Environment Variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `NODE_ENV` | `development` or `production` | `development` |
+| `PORT` | HTTP port | `5000` |
+| `PAYMONGO_SECRET_KEY` | PayMongo secret key | — |
+| `PAYMONGO_WEBHOOK_SECRET` | Webhook signature secret | — |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins | `http://localhost:3000` |
+| `DATABASE_PATH` | Absolute or relative path to SQLite file | `./database/docucenter.db` |
+
+---
+
+## Production Deploy on Render
+
+### Using render.yaml (recommended)
+
+A [`render.yaml`](../render.yaml) at the repo root configures both the backend and the admin console as Render web services. Push to GitHub and connect the repo on Render — both services deploy automatically.
+
+Set these secret environment variables in the Render dashboard (they are marked `sync: false` in `render.yaml`):
+
+- `PAYMONGO_SECRET_KEY`
+- `PAYMONGO_WEBHOOK_SECRET`
+- `ALLOWED_ORIGINS` — include the Render URL of your admin console (e.g. `https://docucenter-kiosk-admin.onrender.com`)
+
+### Manual Render setup
+
+1. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Web Service**.
+2. Connect your GitHub repo.
+3. Set:
+   - **Root Directory**: `backend`
+   - **Build Command**: `npm ci && npm run build`
+   - **Start Command**: `npm start`
+4. Add the environment variables listed above.
+5. Click **Deploy**.
+
+### SQLite persistence on Render
+
+Render free-tier instances have ephemeral disks — the SQLite database resets on every deploy. For persistence:
+
+1. Add a **Disk** to the service (paid tier).
+2. Mount it at `/data`.
+3. Set `DATABASE_PATH=/data/docucenter.db`.
+
+### Docker
+
+A multi-stage `Dockerfile` is included:
 
 ```bash
-# Build TypeScript
-npm run build
-
-# Start production server
-npm start
+docker build -t docucenter-backend .
+docker run -p 5000:5000 --env-file .env docucenter-backend
 ```
 
 ---
 
-## 📡 API Endpoints
+## Caveats
 
-### 1. Create Payment
-**POST** `/api/PAYMONGO/create-payment`
-
-Request:
-```json
-{
-  "amount": 100,
-  "serviceType": "print",
-  "documentCount": 5,
-  "description": "Print service"
-}
-```
-
-Response:
-```json
-{
-  "data": {
-    "transactionId": "TXN-1707386400000-ABC123",
-    "referenceNumber": "REF-1707386400000-XYZ789",
-    "qrCode": "base64-encoded-qr-content",
-    "expiresIn": 300
-  },
-  "status": "success",
-  "message": "Payment created successfully"
-}
-```
-
-### 2. Check Payment Status
-**GET** `/api/PAYMONGO/check-payment/:transactionId`
-
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "status": "PENDING",
-    "transactionId": "TXN-1707386400000-ABC123",
-    "referenceNumber": "REF-1707386400000-XYZ789",
-    "amount": 100,
-    "completedAt": null
-  },
-  "message": "Payment status retrieved successfully"
-}
-```
-
-### 3. Cancel Payment
-**POST** `/api/PAYMONGO/cancel-payment/:transactionId`
-
-Request:
-```json
-{
-  "reason": "User cancelled"
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "transactionId": "TXN-1707386400000-ABC123"
-  },
-  "message": "Payment cancelled successfully"
-}
-```
-
-### 4. Webhook Handler
-**POST** `/api/PAYMONGO/webhook`
-
-Headers:
-```
-X-Webhook-Signature: <HMAC-SHA256 signature>
-```
-
-Payload:
-```json
-{
-  "eventType": "payment.success",
-  "transactionId": "TXN-1707386400000-ABC123",
-  "referenceNumber": "REF-1707386400000-XYZ789",
-  "status": "SUCCESS",
-  "amount": 100,
-  "timestamp": "2026-02-08T10:00:00Z"
-}
-```
-
-### 5. Health Check
-**GET** `/api/PAYMONGO/health`
-
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "status": "healthy",
-    "timestamp": "2026-02-08T10:00:00Z",
-    "uptime": 3600,
-    "PAYMONGOApi": "connected"
-  },
-  "message": "Server is healthy"
-}
-```
+- **Printing and scanning are Windows-only.** The WIA/TWAIN print driver integration only works on Windows. On Render (Linux), print jobs are logged as simulated and no physical print occurs.
+- **SQLite is ephemeral on Render free tier.** See the persistence note above.
 
 ---
 
-## 🧪 Testing & Simulation Endpoints
-
-### Simulate Payment Success
-**POST** `/api/PAYMONGO/simulate/success/:transactionId`
-
-*Development mode only*
-
-### Simulate Payment Failure
-**POST** `/api/PAYMONGO/simulate/failure/:transactionId`
-
-Body:
-```json
-{
-  "reason": "Insufficient funds"
-}
-```
-
-*Development mode only*
-
----
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 backend/
 ├── src/
-│   ├── controllers/
-│   │   └── PAYMONGO.ts          # Request handlers
-│   ├── services/
-│   │   └── PAYMONGO.ts          # Business logic & PAYMONGO API
-│   ├── routes/
-│   │   └── PAYMONGO.ts          # Route definitions
-│   ├── middleware/
-│   │   └── index.ts          # Express middleware
-│   ├── types/
-│   │   └── index.ts          # TypeScript interfaces
+│   ├── controllers/      # Route handlers
+│   ├── services/         # Business logic (PayMongo, print, storage)
+│   ├── routes/           # Express router definitions
+│   ├── middleware/        # CORS, auth, error handling
+│   ├── types/            # TypeScript interfaces
 │   ├── utils/
-│   │   ├── config.ts         # Configuration management
-│   │   ├── helpers.ts        # Utility functions
-│   │   └── logger.ts         # Logging utility
-│   └── index.ts              # Express server
-├── dist/                      # Compiled JavaScript (generated)
-├── package.json
-├── tsconfig.json
+│   │   ├── config.ts     # Centralised env config
+│   │   ├── helpers.ts    # Shared utilities
+│   │   └── logger.ts     # Console logger
+│   ├── database.ts       # better-sqlite3 setup and migrations
+│   └── index.ts          # Express server entry point
+├── dist/                  # Compiled output (generated)
+├── Dockerfile
 ├── .env.example
-└── .gitignore
+├── .eslintrc.json
+├── .prettierrc
+├── tsconfig.json
+└── package.json
 ```
-
----
-
-## 🔐 Security Features
-
-### Implemented
-- ✅ CORS protection with whitelist
-- ✅ Helmet.js security headers
-- ✅ Rate limiting (100 req/15 min)
-- ✅ HMAC-SHA256 webhook signature verification
-- ✅ Environment variable encryption
-- ✅ Input validation
-- ✅ Error sanitization
-- ✅ Request logging
-
-### Best Practices
-- All sensitive credentials in `.env` (never commit)
-- HTTPS enforced in production
-- Webhook signature verification mandatory
-- Request/response validation with TypeScript
-- Security headers (XSS, CSRF, Clickjacking protection)
-- Rate limiting prevents abuse
-
----
-
-## 📊 Data Flow
-
-```
-Frontend (React)
-    ↓
-POST /api/PAYMONGO/create-payment
-    ↓
-PAYMONGO Service (In-Memory Storage)
-    ↓
-Return Transaction ID + QR Code
-    ↓
-Frontend polls GET /api/PAYMONGO/check-payment/:id
-    ↓
-PAYMONGO Webhook → POST /api/PAYMONGO/webhook
-    ↓
-Transaction Status Updated
-    ↓
-Frontend detects SUCCESS → Print Job Starts
-```
-
----
-
-## 🔄 Payment Status Lifecycle
-
-```
-PENDING → PROCESSING → SUCCESS
-                    ↓ (error)
-                    FAILED
-                    
-PENDING → EXPIRED (if timeout)
-PENDING → CANCELLED (if user cancels)
-```
-
----
-
-## 🚨 Error Handling
-
-All endpoints return standard error responses:
-
-```json
-{
-  "success": false,
-  "error": "Error code",
-  "message": "Human readable message",
-  "details": "Stack trace (development only)"
-}
-```
-
-### Common HTTP Status Codes
-- `200`: Success
-- `201`: Resource created
-- `400`: Bad request / validation error
-- `401`: Unauthorized / invalid signature
-- `404`: Not found
-- `429`: Too many requests (rate limited)
-- `500`: Internal server error
-- `503`: Service unavailable
-
----
-
-## 🔧 Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `NODE_ENV` | Environment (development/production) | No |
-| `PORT` | Server port | No (default: 5000) |
-| `FRONTEND_URL` | Frontend origin for CORS | Yes |
-| `PAYMONGO_MERCHANT_ID` | PAYMONGO merchant ID | Yes |
-| `PAYMONGO_API_KEY` | PAYMONGO API key | Yes |
-| `PAYMONGO_SECRET_KEY` | PAYMONGO secret key | Yes |
-| `PAYMONGO_WEBHOOK_SECRET` | Webhook secret for verification | Yes |
-| `PAYMENT_TIMEOUT_SECONDS` | Payment expiration | No (default: 300) |
-| `LOG_LEVEL` | Logging level (error/warn/info/debug) | No (default: info) |
-
----
-
-## 📦 Dependencies
-
-### Production
-- **express**: Web framework
-- **axios**: HTTP client
-- **cors**: CORS middleware
-- **helmet**: Security headers
-- **express-rate-limit**: Rate limiting
-- **body-parser**: Request body parsing
-- **dotenv**: Environment configuration
-
-### Development
-- **typescript**: Language
-- **ts-node**: Typescript runtime
-- **@types/***: Type definitions
-- **eslint**: Linting
-- **jest**: Testing
-
----
-
-## 🧹 Code Quality
-
-```bash
-# Lint code
-npm run lint
-
-# Run tests
-npm test
-```
-
----
-
-## 📈 Deployment
-
-### Heroku
-
-```bash
-# Login
-heroku login
-
-# Create app
-heroku create web-doc-backend
-
-# Set environment variables
-heroku config:set PAYMONGO_MERCHANT_ID=xxx
-heroku config:set PAYMONGO_API_KEY=xxx
-# ... set other variables
-
-# Deploy
-git push heroku main
-
-# View logs
-heroku logs --tail
-```
-
-### Docker
-
-```dockerfile
-FROM node:18-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install --production
-
-COPY . .
-RUN npm run build
-
-EXPOSE 5000
-
-CMD ["npm", "start"]
-```
-
-### Docker Compose
-
-See `docker-compose.yml` in project root.
-
----
-
-## 📝 Logging
-
-Logs are output to console with timestamps:
-
-```
-[2026-02-08T10:00:00.000Z] [INFO] Payment created | {"transactionId":"TXN-...", "amount": 100}
-```
-
-Set `LOG_LEVEL` environment variable:
-- `error`: Errors only
-- `warn`: Warnings and errors
-- `info`: Info, warnings, and errors (default)
-- `debug`: All including debug messages
-
----
-
-## 🔗 Frontend Integration
-
-```typescript
-// React component example
-const response = await fetch('http://localhost:5000/api/PAYMONGO/create-payment', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    amount: 100,
-    serviceType: 'print',
-    documentCount: 5,
-  }),
-});
-
-const { data } = await response.json();
-// Use data.qrCode and data.transactionId
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Port Already in Use
-```bash
-# Find process on port 5000
-lsof -i :5000
-
-# Kill it
-kill -9 <PID>
-
-# Or change port
-PORT=3001 npm run dev
-```
-
-### CORS Errors
-Ensure `FRONTEND_URL` matches your frontend origin exactly.
-
-### Webhook Verification Fails
-1. Check `PAYMONGO_WEBHOOK_SECRET` is correct
-2. Verify payload is not modified
-3. Check request headers for signature
-
-### Rate Limit Exceeded
-Wait 15 minutes or adjust `RATE_LIMIT_WINDOW_MS` in `.env`
-
----
-
-## 📞 Support & Documentation
-
-- **PAYMONGO Merchant API**: https://developer.PAYMONGO.com
-- **Express.js Docs**: https://expressjs.com
-- **TypeScript Guide**: https://www.typescriptlang.org/docs/
-
----
-
-## 📄 License
-
-MIT License - See LICENSE file
-
----
-
-**Version**: 1.0.0  
-**Last Updated**: February 8, 2026  
-**Status**: Production Ready (Demo Mode Active)
-

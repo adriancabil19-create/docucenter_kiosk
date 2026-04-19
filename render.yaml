@@ -1,0 +1,51 @@
+services:
+  # ──────────────────────────────────────────────────────────
+  # Backend — Node.js / Express / TypeScript
+  # ──────────────────────────────────────────────────────────
+  - type: web
+    name: docucenter-kiosk-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: ENABLE_CORS
+        value: "true"
+      - key: ENABLE_HELMET
+        value: "true"
+      # Set ALLOWED_ORIGINS to include your admin console URL after first deploy:
+      #   http://localhost:3000,https://docucenter-kiosk-admin.onrender.com
+      - key: ALLOWED_ORIGINS
+        value: "http://localhost:3000"
+      # SQLite — use Render Disk (paid) or leave blank for ephemeral storage:
+      #   DATABASE_PATH=/data/docucenter.db
+      - key: DATABASE_PATH
+        value: ""
+      # ── Secrets — fill these in the Render Dashboard ──────
+      - key: PAYMONGO_SECRET_KEY
+        sync: false
+      - key: PAYMONGO_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMONGO_MERCHANT_ID
+        sync: false
+
+  # ──────────────────────────────────────────────────────────
+  # Admin Console — Next.js
+  # ──────────────────────────────────────────────────────────
+  - type: web
+    name: docucenter-kiosk-admin
+    runtime: node
+    rootDir: admin
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set this to the backend's Render URL after first deploy:
+      - key: NEXT_PUBLIC_API_URL
+        value: "https://docucenter-kiosk-backend.onrender.com"

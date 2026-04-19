@@ -12,7 +12,9 @@ export const qrController = {
 
       const result = await aivenService.verifyQr(qr);
       if (!result.ok) {
-        return res.status(404).json({ success: false, verified: false, reason: result.reason || 'unknown' });
+        return res
+          .status(404)
+          .json({ success: false, verified: false, reason: result.reason || 'unknown' });
       }
 
       return res.json({ success: true, verified: result.verified });

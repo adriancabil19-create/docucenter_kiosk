@@ -30,7 +30,7 @@ interface ScanResult {
  */
 const scanWithWIA = async (
   outputPath: string,
-  options: ScanOptions
+  options: ScanOptions,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const colorMode = options.colorMode === 'bw' ? 1 : 2; // 1 = BlackWhite, 2 = Color
@@ -222,7 +222,7 @@ const scanWithWIA = async (
       const err = execError as Error;
       const stdout = execError.stdout ? execError.stdout.toString('utf8').trim() : undefined;
       const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : undefined;
-      
+
       logger.error('WIA scan failed', {
         error: err.message,
         outputPath,
@@ -259,7 +259,7 @@ const scanWithWIA = async (
  */
 const scanWithTWAIN = async (
   outputPath: string,
-  options: ScanOptions
+  options: ScanOptions,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const colorMode = options.colorMode === 'bw' ? 0 : 2; // 0 = BlackWhite, 2 = Color
@@ -453,13 +453,16 @@ const scanWithTWAIN = async (
       const err = execError as Error;
       const stdout = execError.stdout ? execError.stdout.toString('utf8').trim() : undefined;
       const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : undefined;
-      
+
       // Check if TWAIN is not available (exit code 2)
       if (execError.status === 2) {
-        logger.info('TWAIN not available on this system, will use WIA fallback', { outputPath, options });
+        logger.info('TWAIN not available on this system, will use WIA fallback', {
+          outputPath,
+          options,
+        });
         return { success: false, error: 'TWAIN not available' };
       }
-      
+
       logger.error('TWAIN scan failed', {
         error: err.message,
         outputPath,
@@ -496,9 +499,7 @@ const scanWithTWAIN = async (
  *   1. Windows Image Acquisition (WIA) - most reliable
  *   2. TWAIN - alternative method
  */
-export const scanDocument = async (
-  options: Partial<ScanOptions> = {}
-): Promise<ScanResult> => {
+export const scanDocument = async (options: Partial<ScanOptions> = {}): Promise<ScanResult> => {
   const scanId = `SCAN-${Date.now()}`;
   const platform = os.platform();
 
@@ -552,7 +553,6 @@ export const scanDocument = async (
 
     logger.info('Document scanned successfully', { scanId, filePath: finalPath });
     return { success: true, filePath: finalPath, method: 'wia' };
-
   } catch (error) {
     const err = error as Error;
     logger.error('Scan error', { scanId, error: err.message });
@@ -569,41 +569,41 @@ export const scanDocument = async (
  */
 const convertImageToPdf = async (
   imagePath: string,
-  pdfPath: string
+  pdfPath: string,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const PDFDocument = require('pdfkit');
     const fs = require('fs');
-    
+
     // Create a new PDF document
     const doc = new PDFDocument({
       size: 'A4', // Default size, will be resized by print service if needed
-      margin: 0
+      margin: 0,
     });
-    
+
     // Pipe the PDF to a file
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
-    
+
     // Add the image to the PDF
     // PDFKit supports JPG images directly
     const imageBuffer = fs.readFileSync(imagePath);
-    doc.image(imageBuffer, 0, 0, { 
+    doc.image(imageBuffer, 0, 0, {
       width: doc.page.width,
       height: doc.page.height,
       align: 'center',
-      valign: 'center'
+      valign: 'center',
     });
-    
+
     // Finalize the PDF
     doc.end();
-    
+
     // Wait for the stream to finish
     await new Promise((resolve, reject) => {
       stream.on('finish', resolve);
       stream.on('error', reject);
     });
-    
+
     return { success: true };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -734,22 +734,26 @@ export const checkADFStatus = async (): Promise<ADFStatus> => {
 
       const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : '';
       logger.warn('ADF Status Check Failed', { stderr, error: execError.message });
-      
+
       // Default to not ready if unable to check
       return { ready: false, status: 'Please place your document on the scanner, thank you.' };
     }
   } catch (err) {
     logger.error('ADF Status Check Error', { error: (err as Error).message });
-    return { ready: false, status: 'Please place your document on the scanner, thank you.', error: (err as Error).message };
+    return {
+      ready: false,
+      status: 'Please place your document on the scanner, thank you.',
+      error: (err as Error).message,
+    };
   }
-}
+};
 
 /**
  * Perform photocopying using the scanner's ADF and printer.
  * This scans documents from the ADF and prints them.
  */
 export const photocopyDocument = async (
-  options: Partial<CopyOptions> = {}
+  options: Partial<CopyOptions> = {},
 ): Promise<CopyResult> => {
   const copyId = `COPY-${Date.now()}`;
 
@@ -779,7 +783,7 @@ export const photocopyDocument = async (
       colorMode: opts.colorMode,
       dpi: opts.quality === 'high' ? 600 : opts.quality === 'low' ? 150 : 300,
       paperSize: opts.paperSize,
-      outputFormat: 'jpg' // We'll convert to JPG for printing
+      outputFormat: 'jpg', // We'll convert to JPG for printing
     });
 
     if (!scanResult.success) {
@@ -792,9 +796,9 @@ export const photocopyDocument = async (
     // Convert JPG to PDF for printing
     const pdfPath = path.join(tempDir, `print_${copyId}.pdf`);
     logger.info('Converting image to PDF', { copyId, scanPath, pdfPath });
-    
+
     const convertResult = await convertImageToPdf(scanPath, pdfPath);
-    
+
     if (!convertResult.success) {
       logger.error('PDF conversion failed', { copyId, error: convertResult.error });
       throw new Error(`PDF conversion failed: ${convertResult.error}`);
@@ -804,13 +808,22 @@ export const photocopyDocument = async (
 
     // Print the scanned document (multiple copies)
     logger.info('Starting photocopy printing', { copyId, copies: opts.copies, pdfPath });
-    
+
     const { printPdfFile } = await import('./print.service');
-    let printResult: { success: boolean; method: string; error?: string } = { success: true, method: 'none' };
-    
+    let printResult: { success: boolean; method: string; error?: string } = {
+      success: true,
+      method: 'none',
+    };
+
     for (let i = 0; i < opts.copies; i++) {
       logger.info('Printing copy', { copyId, copyNumber: i + 1 });
-      const result = await printPdfFile(pdfPath, `${copyId}_copy${i + 1}`, opts.paperSize, opts.colorMode, opts.quality);
+      const result = await printPdfFile(
+        pdfPath,
+        `${copyId}_copy${i + 1}`,
+        opts.paperSize,
+        opts.colorMode,
+        opts.quality,
+      );
       if (!result.success) {
         logger.error('Print copy failed', { copyId, copyNumber: i + 1, error: result.error });
         printResult = result;
@@ -831,13 +844,15 @@ export const photocopyDocument = async (
       fs.unlinkSync(scanPath);
       fs.unlinkSync(pdfPath);
     } catch (cleanupError) {
-      logger.warn('Failed to clean up temporary files', { copyId, error: (cleanupError as Error).message });
+      logger.warn('Failed to clean up temporary files', {
+        copyId,
+        error: (cleanupError as Error).message,
+      });
     }
 
     logger.info('Photocopy job completed', { copyId, jobId: copyId });
 
     return { success: true, jobId: copyId };
-
   } catch (error) {
     const err = error as Error;
     logger.error('Photocopy error', { copyId, error: err.message });

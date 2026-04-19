@@ -1,6 +1,12 @@
 // PAYMONGO Payment Types
 
-export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+export type PaymentStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'EXPIRED'
+  | 'CANCELLED';
 
 export interface PaymentTransaction {
   transactionId: string;
@@ -84,4 +90,3 @@ export interface HealthCheckResponse {
   PAYMONGOApi: 'connected' | 'disconnected';
   message: string;
 }
-

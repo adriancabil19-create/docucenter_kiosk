@@ -105,12 +105,7 @@ router.get('/adf-status', async (req: Request, res: Response) => {
 
 router.post('/photocopy', async (req: Request, res: Response) => {
   try {
-    const {
-      copies = 1,
-      colorMode = 'bw',
-      paperSize = 'A4',
-      quality = 'normal'
-    } = req.body;
+    const { copies = 1, colorMode = 'bw', paperSize = 'A4', quality = 'normal' } = req.body;
 
     logger.info('Photocopy request received', { copies, colorMode, paperSize, quality });
 
@@ -189,19 +184,19 @@ router.post('/combine-pdf', upload.array('images'), async (req: Request, res: Re
     // Add each image as a page
     for (const file of files) {
       const imageBuffer = fs.readFileSync(file.path);
-      
+
       // Create a new page for each image
       doc.addPage({
         size: 'A4',
-        margin: 0
+        margin: 0,
       });
 
       // Add image to fit the page
-      doc.image(imageBuffer, 0, 0, { 
+      doc.image(imageBuffer, 0, 0, {
         width: doc.page.width,
         height: doc.page.height,
         align: 'center',
-        valign: 'center'
+        valign: 'center',
       });
 
       // Clean up temp image file
@@ -218,10 +213,10 @@ router.post('/combine-pdf', upload.array('images'), async (req: Request, res: Re
 
     // Read the created PDF
     const pdfBuffer = fs.readFileSync(tempPdfPath);
-    
+
     // Upload to storage (simulate for now)
     const finalFileName = documentName ? `${documentName}.pdf` : `Scanned_${Date.now()}.pdf`;
-    
+
     // Clean up temp PDF
     fs.unlinkSync(tempPdfPath);
 
@@ -231,9 +226,8 @@ router.post('/combine-pdf', upload.array('images'), async (req: Request, res: Re
       success: true,
       message: 'PDF created and saved successfully',
       fileName: finalFileName,
-      pageCount: files.length
+      pageCount: files.length,
     });
-
   } catch (error) {
     const err = error as Error;
     logger.error('Combine PDF endpoint error', { error: err.message });

@@ -32,7 +32,10 @@ export const aivenService = {
     }
 
     try {
-      const res = await pool.query('SELECT verified FROM qr_verifications WHERE qr_code = $1 LIMIT 1', [qr]);
+      const res = await pool.query(
+        'SELECT verified FROM qr_verifications WHERE qr_code = $1 LIMIT 1',
+        [qr],
+      );
       if (res.rowCount === 0) {
         return { ok: false, verified: false, reason: 'not_found' };
       }

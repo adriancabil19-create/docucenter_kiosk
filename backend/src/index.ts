@@ -39,28 +39,35 @@ if (config.helmetEnabled) {
   app.use(helmet());
 }
 
-// CORS configuration
+// CORS configuration — supports multiple origins via ALLOWED_ORIGINS env var
 if (config.corsEnabled) {
   app.use(
     cors({
-      origin: config.frontendUrl,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, Render health checks)
+        if (!origin) return callback(null, true);
+        if (config.allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`CORS blocked: origin ${origin} not in ALLOWED_ORIGINS`));
+      },
       credentials: config.corsCredentials,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Webhook-Signature'],
       maxAge: 86400,
-    })
+    }),
   );
 } else {
   app.use(corsMiddleware);
 }
 
 // Body parsing middleware
-app.use(bodyParser.json({
-  limit: '100mb',
-  verify: (req: any, _res: any, buf: Buffer) => {
-    req.rawBody = buf.toString();
-  },
-}));
+app.use(
+  bodyParser.json({
+    limit: '100mb',
+    verify: (req: any, _res: any, buf: Buffer) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
 app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 
 // Security headers
@@ -168,4 +175,3 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 export default app;
-

@@ -26,11 +26,12 @@ export const rateLimitMiddleware = rateLimit({
  * CORS headers middleware
  */
 export const corsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  if (!config.corsEnabled) {
-    return next();
+  const origin = req.headers.origin;
+  if (origin && config.allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.header('Access-Control-Allow-Origin', '*');
   }
-
-  res.header('Access-Control-Allow-Origin', config.frontendUrl);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Webhook-Signature');
   res.header('Access-Control-Max-Age', '86400');
@@ -49,7 +50,11 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction):
 /**
  * Security headers middleware
  */
-export const securityHeadersMiddleware = (_req: Request, res: Response, next: NextFunction): void => {
+export const securityHeadersMiddleware = (
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
   res.header('X-Content-Type-Options', 'nosniff');
   res.header('X-Frame-Options', 'DENY');
   res.header('X-XSS-Protection', '1; mode=block');
@@ -67,15 +72,12 @@ export const requestLoggingMiddleware = (req: Request, res: Response, next: Next
   res.on('finish', () => {
     const duration = Date.now() - start;
     const level = res.statusCode >= 400 ? 'warn' : 'info';
-    logger[level as 'warn' | 'info'](
-      `${req.method} ${req.path}`,
-      {
-        status: res.statusCode,
-        duration: `${duration}ms`,
-        ip: req.ip,
-        userAgent: req.get('user-agent'),
-      }
-    );
+    logger[level as 'warn' | 'info'](`${req.method} ${req.path}`, {
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
   });
 
   next();
@@ -89,7 +91,7 @@ export const errorHandlingMiddleware = (
   err: any,
   req: Request,
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ): void => {
   logger.error('Request error', {
     path: req.path,

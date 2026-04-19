@@ -9,8 +9,17 @@ export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:5000',
 
-  // CORS
+  // CORS — comma-separated list of allowed origins, e.g.:
+  //   ALLOWED_ORIGINS=http://localhost:3000,https://admin.onrender.com
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  allowedOrigins: (
+    process.env.ALLOWED_ORIGINS ||
+    process.env.FRONTEND_URL ||
+    'http://localhost:3000'
+  )
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
   corsEnabled: process.env.ENABLE_CORS === 'true',
   corsCredentials: process.env.CORS_CREDENTIALS === 'true',
 
@@ -48,7 +57,7 @@ export const config = {
     // Name of the printer to use. Leave empty to use the system default.
     printerName: process.env.PRINTER_NAME || '',
   },
-  
+
   // Aiven / External DB (optional)
   aiven: {
     databaseUrl: process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '',
@@ -60,10 +69,7 @@ export const config = {
 
 // Validate required configuration
 export const validateConfig = (): void => {
-  const requiredVars = [
-    'PAYMONGO_SECRET_KEY',
-    'PAYMONGO_WEBHOOK_SECRET',
-  ];
+  const requiredVars = ['PAYMONGO_SECRET_KEY', 'PAYMONGO_WEBHOOK_SECRET'];
 
   if (config.isProduction) {
     const missing = requiredVars.filter((v) => !process.env[v]);
@@ -72,4 +78,3 @@ export const validateConfig = (): void => {
     }
   }
 };
-

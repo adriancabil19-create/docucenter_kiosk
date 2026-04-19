@@ -62,7 +62,11 @@ const paperSizesMm: Record<string, { width: number; height: number }> = {
 /**
  * Resize PDF to fit the target paper size by scaling content.
  */
-const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paperSize: string): Promise<void> => {
+const resizePdfToPaperSize = async (
+  inputPath: string,
+  outputPath: string,
+  paperSize: string,
+): Promise<void> => {
   const targetSize = paperSizesMm[paperSize.toUpperCase()];
   if (!targetSize) {
     // Copy original if size not defined
@@ -77,8 +81,8 @@ const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paper
   for (const page of pages) {
     const { width, height } = page.getSize();
     // Assume PDF size is in points (1/72 inch), convert target to points
-    const targetWidthPt = targetSize.width * 72 / 25.4;
-    const targetHeightPt = targetSize.height * 72 / 25.4;
+    const targetWidthPt = (targetSize.width * 72) / 25.4;
+    const targetHeightPt = (targetSize.height * 72) / 25.4;
 
     // Check if original page is landscape (width > height)
     const isOriginalLandscape = width > height;
@@ -117,7 +121,7 @@ const resizePdfToPaperSize = async (inputPath: string, outputPath: string, paper
 const convertImageToPdf = async (
   imagePath: string,
   pdfPath: string,
-  paperSize: string
+  paperSize: string,
 ): Promise<void> => {
   const doc = new PDFDocument({
     size: toPdfKitSize(paperSize),
@@ -210,11 +214,7 @@ const isSafePath = (filePath: string, baseDir: string): boolean => {
  * Uses Courier (monospace) so receipt columns align correctly.
  * Returns the path of the created PDF file.
  */
-const renderTextToPdf = (
-  text: string,
-  outputPath: string,
-  paperSize: string
-): Promise<void> => {
+const renderTextToPdf = (text: string, outputPath: string, paperSize: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -226,10 +226,7 @@ const renderTextToPdf = (
       const stream = fs.createWriteStream(outputPath);
       doc.pipe(stream);
 
-      doc
-        .font('Courier')
-        .fontSize(9)
-        .text(text, { lineGap: 1, paragraphGap: 0 });
+      doc.font('Courier').fontSize(9).text(text, { lineGap: 1, paragraphGap: 0 });
 
       doc.end();
 
@@ -258,7 +255,7 @@ export const printPdfFile = async (
   jobID: string,
   paperSize?: string,
   colorMode?: string,
-  quality?: string
+  quality?: string,
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
@@ -270,12 +267,19 @@ export const printPdfFile = async (
       const pdfModule = await import('pdf-to-printer');
       // Handle both CJS named export and ESM default wrapping
       const printFn: ((file: string, opts?: object) => Promise<void>) | undefined =
-        (pdfModule as Record<string, unknown>).print as typeof printFn ??
-        (pdfModule.default as Record<string, unknown> | undefined)?.print as typeof printFn;
+        ((pdfModule as Record<string, unknown>).print as typeof printFn) ??
+        ((pdfModule.default as Record<string, unknown> | undefined)?.print as typeof printFn);
 
       if (typeof printFn !== 'function') throw new Error('pdf-to-printer print function not found');
 
-      const printOptions: { printer?: string; silent?: boolean; paperSize?: string; monochrome?: boolean; printQuality?: string; bin?: string } = { silent: true };
+      const printOptions: {
+        printer?: string;
+        silent?: boolean;
+        paperSize?: string;
+        monochrome?: boolean;
+        printQuality?: string;
+        bin?: string;
+      } = { silent: true };
       if (config.print.printerName) printOptions.printer = config.print.printerName;
       const sumatraSize = toSumatraSize(paperSize);
       if (sumatraSize) printOptions.paperSize = sumatraSize;
@@ -307,7 +311,7 @@ export const printPdfFile = async (
       const escaped = filePath.replace(/'/g, "''");
       execSync(
         `powershell -NoProfile -Command "Start-Process -FilePath '${escaped}' -Verb Print -Wait"`,
-        { stdio: 'pipe', timeout: 20000, windowsHide: true }
+        { stdio: 'pipe', timeout: 20000, windowsHide: true },
       );
       logger.info('PDF printed via Start-Process', { jobID });
       return { success: true, method: 'start-process' };
@@ -353,7 +357,7 @@ export const printPdfFile = async (
  */
 export const printText = async (
   text: string,
-  options?: Partial<PrintOptions>
+  options?: Partial<PrintOptions>,
 ): Promise<PrintResult> => {
   const jobID = `JOB-${Date.now()}`;
   const paperSize = options?.paperSize ?? 'A4';
@@ -402,7 +406,11 @@ export const printText = async (
 
     return { success: false, jobID, error: err.message };
   } finally {
-    try { fs.unlinkSync(tempPdf); } catch { /* temp file may not exist */ }
+    try {
+      fs.unlinkSync(tempPdf);
+    } catch {
+      /* temp file may not exist */
+    }
   }
 };
 
@@ -411,7 +419,7 @@ export const printText = async (
  */
 export const printReceipt = async (
   receiptContent: string,
-  paperSize?: string
+  paperSize?: string,
 ): Promise<PrintResult> => {
   logger.info('Printing receipt', { contentLength: receiptContent.length, paperSize });
   return printText(receiptContent, { paperSize: paperSize ?? 'A4' });
@@ -423,7 +431,7 @@ export const printReceipt = async (
 export const printDocument = async (
   documentContent: string,
   documentName?: string,
-  paperSize?: string
+  paperSize?: string,
 ): Promise<PrintResult> => {
   logger.info('Printing document', { documentName, paperSize });
   return printText(documentContent, { paperSize: paperSize ?? 'A4' });
@@ -443,7 +451,7 @@ export const printFilesFromStorage = async (
   filenames: string[],
   paperSize?: string,
   colorMode?: string,
-  quality?: string
+  quality?: string,
 ): Promise<PrintResult> => {
   if (!fs.existsSync(uploadsDir)) {
     logger.warn('Uploads directory does not exist', { uploadsDir });
@@ -472,7 +480,10 @@ export const printFilesFromStorage = async (
       let printSuccess = false;
 
       if (ext === '.pdf') {
-        const tempResizedPdf = path.join(os.tmpdir(), `resized_${jobID}_${path.basename(filename, '.pdf')}.pdf`);
+        const tempResizedPdf = path.join(
+          os.tmpdir(),
+          `resized_${jobID}_${path.basename(filename, '.pdf')}.pdf`,
+        );
         try {
           await resizePdfToPaperSize(filePath, tempResizedPdf, paperSize || 'A4');
           const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality);
@@ -483,11 +494,18 @@ export const printFilesFromStorage = async (
           const simPath = copyToSimulation(filePath, filename);
           if (simPath) simulatedPaths.push(simPath);
         } finally {
-          try { fs.unlinkSync(tempResizedPdf); } catch {}
+          try {
+            fs.unlinkSync(tempResizedPdf);
+          } catch (_e) {
+            /* temp file may already be gone */
+          }
         }
       } else if (['.jpg', '.jpeg', '.png', '.bmp', '.gif'].includes(ext)) {
         // Image files: convert to PDF with the requested paper size before printing.
-        const tempPdf = path.join(os.tmpdir(), `image_print_${jobID}_${path.basename(filename, ext)}.pdf`);
+        const tempPdf = path.join(
+          os.tmpdir(),
+          `image_print_${jobID}_${path.basename(filename, ext)}.pdf`,
+        );
         try {
           await convertImageToPdf(filePath, tempPdf, paperSize || 'A4');
           const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality);
@@ -500,7 +518,11 @@ export const printFilesFromStorage = async (
         } catch (imageErr) {
           logger.error('Image conversion or print failed', { filename, error: String(imageErr) });
         } finally {
-          try { fs.unlinkSync(tempPdf); } catch {}
+          try {
+            fs.unlinkSync(tempPdf);
+          } catch (_e) {
+            /* temp file may already be gone */
+          }
         }
       } else {
         // Non-PDF: read as text, render to PDF, print
@@ -599,8 +621,9 @@ export const getAvailablePrinters = async (): Promise<{ name: string; paperSizes
   try {
     const pdfModule = await import('pdf-to-printer');
     const getPrintersFn: (() => Promise<{ name: string; paperSizes?: string[] }[]>) | undefined =
-      (pdfModule as Record<string, unknown>).getPrinters as typeof getPrintersFn ??
-      (pdfModule.default as Record<string, unknown> | undefined)?.getPrinters as typeof getPrintersFn;
+      ((pdfModule as Record<string, unknown>).getPrinters as typeof getPrintersFn) ??
+      ((pdfModule.default as Record<string, unknown> | undefined)
+        ?.getPrinters as typeof getPrintersFn);
 
     if (typeof getPrintersFn !== 'function') throw new Error('getPrinters not found');
     const printers = await getPrintersFn();
@@ -615,9 +638,12 @@ export const getAvailablePrinters = async (): Promise<{ name: string; paperSizes
     try {
       const out = execSync(
         'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
-        { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+        { encoding: 'utf-8', timeout: 5000, windowsHide: true },
       );
-      const names = out.split('\n').map((s) => s.trim()).filter(Boolean);
+      const names = out
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
       logger.info('Retrieved printers via PowerShell', { count: names.length });
       return names.map((name) => ({ name, paperSizes: [] }));
     } catch (err) {
@@ -628,7 +654,10 @@ export const getAvailablePrinters = async (): Promise<{ name: string; paperSizes
   // ── lpstat fallback (Linux / macOS) ──────────────────────────────────────
   try {
     const out = execSync('lpstat -a', { encoding: 'utf-8', timeout: 5000 });
-    const names = out.split('\n').map((line) => line.split(' ')[0]).filter(Boolean);
+    const names = out
+      .split('\n')
+      .map((line) => line.split(' ')[0])
+      .filter(Boolean);
     return names.map((name) => ({ name, paperSizes: [] }));
   } catch {
     return [];

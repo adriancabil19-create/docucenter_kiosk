@@ -4,17 +4,21 @@ import { config } from './config';
 /**
  * Generate HMAC-SHA256 signature for webhook verification
  */
-export const generateSignature = (payload: string, secret: string = config.PAYMONGO.webhookSecret): string => {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
+export const generateSignature = (
+  payload: string,
+  secret: string = config.PAYMONGO.webhookSecret,
+): string => {
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex');
 };
 
 /**
  * Verify webhook signature
  */
-export const verifyWebhookSignature = (payload: string, signature: string, secret: string = config.PAYMONGO.webhookSecret): boolean => {
+export const verifyWebhookSignature = (
+  payload: string,
+  signature: string,
+  secret: string = config.PAYMONGO.webhookSecret,
+): boolean => {
   const expectedSignature = generateSignature(payload, secret);
   const a = Buffer.from(signature);
   const b = Buffer.from(expectedSignature);
@@ -46,7 +50,7 @@ export const generateQRCodeContent = (transactionId: string, amount: number): st
       transactionId,
       amount,
       timestamp: new Date().toISOString(),
-    })
+    }),
   ).toString('base64');
 };
 
@@ -94,7 +98,10 @@ export const isValidPhoneNumber = (phone: string): boolean => {
 /**
  * Validate amount
  */
-export const isValidAmount = (amount: number, minAmount: number = 1, maxAmount: number = 100000): boolean => {
+export const isValidAmount = (
+  amount: number,
+  minAmount: number = 1,
+  maxAmount: number = 100000,
+): boolean => {
   return amount >= minAmount && amount <= maxAmount && Number.isFinite(amount);
 };
-
