@@ -232,7 +232,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                   _adfMessage = '';
                   _scanStatus = '';
                 });
-                _scanSinglePage();
+                _scanAllADFPages();
               },
               icon: const Icon(Icons.play_arrow),
               label: const Text('Start Scanning with ADF'),
@@ -265,10 +265,74 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   Widget _buildPreview() => _buildScanningComplete();
 
 
+  // Scan all pages loaded in the ADF in a single job (used by "Start Scanning" button).
+  Future<void> _scanAllADFPages() async {
+    setState(() {
+      _isProcessing = true;
+      _scanStatus = 'Scanning all pages from ADF...';
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('${BackendConfig.serverUrl}/api/scan/all'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'colorMode': _colorMode == 'bw' ? 'bw' : 'color',
+          'dpi': int.tryParse(_dpi) ?? 300,
+        }),
+      ).timeout(const Duration(seconds: 600));
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final pageCount = body['pageCount'] as int? ?? 0;
+        final pagesBase64 = (body['pages'] as List<dynamic>).cast<String>();
+
+        final newPages = pagesBase64.map((b64) => base64Decode(b64)).toList();
+        setState(() {
+          _scannedPages.addAll(newPages);
+          for (var i = _scannedPages.length - pageCount + 1; i <= _scannedPages.length; i++) {
+            _scannedPageNames.add('Page $i');
+          }
+          _scanStatus = 'Scan complete! ${_scannedPages.length} page(s) scanned.';
+          _isProcessing = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$pageCount page(s) scanned successfully')),
+          );
+        }
+      } else {
+        final errorBody = response.body;
+        String errorMsg;
+        try {
+          errorMsg = (jsonDecode(errorBody) as Map<String, dynamic>)['error'] as String? ?? 'Scan failed';
+        } catch (_) {
+          errorMsg = 'Scan failed (HTTP ${response.statusCode})';
+        }
+        setState(() {
+          _scanStatus = errorMsg;
+          _isProcessing = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMsg)));
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _scanStatus = 'Scan error: $e';
+        _isProcessing = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scan failed: $e')));
+      }
+    }
+  }
+
+  // Scan a single page (used by the manual "Scan Page" button to add one more page).
   Future<void> _scanSinglePage() async {
     setState(() {
       _isProcessing = true;
-      _scanStatus = 'Scanning via WIA...';
+      _scanStatus = 'Scanning page...';
     });
 
     try {

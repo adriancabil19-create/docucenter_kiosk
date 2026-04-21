@@ -24,10 +24,16 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   String _paperSize = 'A4';
   String _quality = 'standard';
 
-  // ── Pricing ───────────────────────────────────────────────────────────────
-  // Color: High=5, Standard=4, Draft=3  |  B&W: High=3, Standard=2, Draft=1
+  // Pre-scan state
+  bool _isPreScanning = false;
+  String? _sessionId;
+  int _pageCount = 0;
+  String _preScanError = '';
 
-  double get _costPerCopy {
+  // ── Pricing: cost per page per copy ──────────────────────────────────────
+  // Color: High=₱5, Standard=₱4, Draft=₱3  |  B&W: High=₱3, Standard=₱2, Draft=₱1
+
+  double get _costPerPage {
     if (_colorMode == 'color') {
       return _quality == 'high' ? 5.0 : _quality == 'standard' ? 4.0 : 3.0;
     } else {
@@ -35,23 +41,72 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
     }
   }
 
-  double get _totalCost => _costPerCopy * _copies;
+  double get _totalCost => _costPerPage * _pageCount * _copies;
 
   String get _qualityLabel =>
       _quality == 'high' ? 'High' : _quality == 'standard' ? 'Standard' : 'Draft';
 
-  // ── Post-payment: scan ADF then print using user preferences ─────────────
+  // ── Phase 1: Pre-scan ADF before payment ─────────────────────────────────
+
+  Future<void> _preScanDocuments() async {
+    setState(() {
+      _isPreScanning = true;
+      _sessionId = null;
+      _pageCount = 0;
+      _preScanError = '';
+    });
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.serverUrl}/api/scan/photocopy-prepare'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'colorMode': _colorMode, 'quality': _quality}),
+          )
+          .timeout(const Duration(minutes: 7));
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _sessionId = body['sessionId'] as String?;
+          _pageCount = body['pageCount'] as int? ?? 0;
+          _isPreScanning = false;
+        });
+      } else {
+        String msg;
+        try {
+          msg = (jsonDecode(response.body) as Map<String, dynamic>)['error']
+                  as String? ??
+              'Scan failed';
+        } catch (_) {
+          msg = 'Scan failed (HTTP ${response.statusCode})';
+        }
+        setState(() {
+          _isPreScanning = false;
+          _preScanError = msg;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isPreScanning = false;
+        _preScanError = 'Scan error: $e';
+      });
+    }
+  }
+
+  // ── Phase 2: Print from stored session after payment succeeds ─────────────
 
   Future<void> _executePhotocopyJob() async {
     final response = await http
         .post(
-          Uri.parse('${BackendConfig.serverUrl}/api/scan/photocopy'),
+          Uri.parse('${BackendConfig.serverUrl}/api/scan/photocopy-execute'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'copies':    _copies,
+            'sessionId': _sessionId,
+            'copies': _copies,
             'paperSize': _paperSize,
             'colorMode': _colorMode,
-            'quality':   _quality,
+            'quality': _quality,
           }),
         )
         .timeout(const Duration(minutes: 10));
@@ -60,7 +115,8 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
       String msg;
       try {
         msg = (jsonDecode(response.body) as Map<String, dynamic>)['error']
-                as String? ?? 'Photocopy failed';
+                as String? ??
+            'Photocopy failed';
       } catch (_) {
         msg = 'Photocopy failed (HTTP ${response.statusCode})';
       }
@@ -68,16 +124,17 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
     }
   }
 
-  // ── Navigate to payment; job fires after payment succeeds ─────────────────
+  // ── Navigate to payment; print job fires after payment succeeds ───────────
 
   void _proceedToPayment() {
-    PAYMONGOPaymentPageState.pendingAmount  = _totalCost;
-    PAYMONGOPaymentPageState.printFiles     = [];
-    PAYMONGOPaymentPageState.paperSize      = _paperSize;
-    PAYMONGOPaymentPageState.colorMode      = _colorMode;
-    PAYMONGOPaymentPageState.quality        = _quality;
-    PAYMONGOPaymentPageState.printContent   = '''PHOTOCOPYING JOB
+    PAYMONGOPaymentPageState.pendingAmount = _totalCost;
+    PAYMONGOPaymentPageState.printFiles = [];
+    PAYMONGOPaymentPageState.paperSize = _paperSize;
+    PAYMONGOPaymentPageState.colorMode = _colorMode;
+    PAYMONGOPaymentPageState.quality = _quality;
+    PAYMONGOPaymentPageState.printContent = '''PHOTOCOPYING JOB
 -----------------
+Pages Scanned: $_pageCount
 Copies: $_copies
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Paper Size: $_paperSize
@@ -98,55 +155,86 @@ Total Cost: PHP ${_totalCost.toStringAsFixed(2)}''';
 ========================================
 
 Service: Photocopying
+Pages Scanned: $_pageCount
 Copies: $_copies
 Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
 Copy Quality: $_qualityLabel
 
 ----------------------------------------
-Cost per Copy: PHP ${_costPerCopy.toStringAsFixed(2)}
-Total Copies: $_copies
+Cost per Page: PHP ${_costPerPage.toStringAsFixed(2)}
+Total Pages Printed: ${_pageCount * _copies}
 Total Cost: PHP ${_totalCost.toStringAsFixed(2)}
 
 ----------------------------------------
 Date: ${DateTime.now().toString().split('.')[0]}
 Status: [COPY JOB SUBMITTED]
-Documents will be scanned and printed automatically.
+Documents are being printed.
 
 ----------------------------------------
 Thank you for using our service!
 ''';
   }
 
-  // ── UI ───────────────────────────────────────────────────────────────────────
+  // ── UI state machine: settings → scanning → confirm ───────────────────────
 
   @override
   Widget build(BuildContext context) {
+    if (_isPreScanning) return _buildScanningView();
+    if (_sessionId != null) return _buildConfirmView();
+    return _buildSettingsView();
+  }
+
+  // ── Settings screen ───────────────────────────────────────────────────────
+
+  Widget _buildSettingsView() {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Status banner
           Container(
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.green[50],
-              border: Border.all(color: Colors.green),
+              color: Colors.blue[50],
+              border: Border.all(color: Colors.blue),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                Icon(Icons.info_outline, color: Colors.blue, size: 20),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Scanner Connected — Brother MFC-J2730DW detected. Ready for photocopying.',
+                    'Place all documents in the ADF, select your options below, then tap Scan Documents.',
                     style: TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ),
               ],
             ),
           ),
+
+          if (_preScanError.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                border: Border.all(color: Colors.red),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _preScanError,
+                      style: const TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Header
           Container(
@@ -170,7 +258,7 @@ Thank you for using our service!
                               fontWeight: FontWeight.bold,
                             ),
                       ),
-                      const Text('Select options, pay, then we scan and print for you.'),
+                      const Text('Scan first → see page count → pay → print'),
                     ],
                   ),
                 ),
@@ -301,13 +389,12 @@ Thank you for using our service!
                   Wrap(
                     spacing: 8,
                     children: ['high', 'standard', 'draft'].map((q) {
-                      final label = q == 'high'
-                          ? 'High'
-                          : q == 'standard'
-                              ? 'Standard'
-                              : 'Draft';
                       return FilterChip(
-                        label: Text(label),
+                        label: Text(q == 'high'
+                            ? 'High'
+                            : q == 'standard'
+                                ? 'Standard'
+                                : 'Draft'),
                         selected: _quality == q,
                         onSelected: (_) => setState(() => _quality = q),
                       );
@@ -319,43 +406,155 @@ Thank you for using our service!
           ),
           const SizedBox(height: 24),
 
-          // Estimated Cost
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _preScanDocuments,
+              icon: const Icon(Icons.document_scanner),
+              label: const Text('Scan Documents'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: const Color(0xFF2563EB),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Scanning progress screen ──────────────────────────────────────────────
+
+  Widget _buildScanningView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(strokeWidth: 4),
+          const SizedBox(height: 24),
+          Text(
+            'Scanning documents...',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Please wait — all pages are being scanned from the ADF.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Confirmation screen (post-scan, pre-payment) ──────────────────────────
+
+  Widget _buildConfirmView() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              border: Border.all(color: Colors.green),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, size: 32, color: Colors.green),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$_pageCount page(s) scanned successfully',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[900],
+                            ),
+                      ),
+                      Text(
+                        'Review the cost breakdown below, then proceed to payment.',
+                        style: TextStyle(color: Colors.green[700], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Cost breakdown card
           Card(
             color: Colors.blue[50],
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Estimated Cost',
+                    'Cost Breakdown',
                     style: Theme.of(context)
                         .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.grey[600]),
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '₱${_totalCost.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: const Color(0xFF2563EB),
+                  const SizedBox(height: 16),
+                  _costRow('Pages scanned', '$_pageCount pages'),
+                  _costRow('Copies', '× $_copies'),
+                  _costRow(
+                      'Rate', '₱${_costPerPage.toStringAsFixed(2)} per page'),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        '₱${_totalCost.toStringAsFixed(2)}',
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                          color: Color(0xFF2563EB),
                         ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${_costPerCopy.toStringAsFixed(2)} per copy × $_copies',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.grey[600]),
-                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Options summary
+          Card(
+            color: Colors.grey[50],
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 4,
+                children: [
+                  _summaryChip(Icons.color_lens,
+                      _colorMode == 'color' ? 'Color' : 'B&W'),
+                  _summaryChip(Icons.article, _paperSize),
+                  _summaryChip(Icons.star, _qualityLabel),
+                  _summaryChip(Icons.copy,
+                      '$_copies cop${_copies == 1 ? 'y' : 'ies'}'),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 24),
 
-          // Proceed button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -368,8 +567,47 @@ Thank you for using our service!
               ),
             ),
           ),
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() {
+                _sessionId = null;
+                _pageCount = 0;
+                _preScanError = '';
+              }),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Re-scan Documents'),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _costRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.black54)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryChip(IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF4B5563)),
+        const SizedBox(width: 4),
+        Text(label,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
+      ],
     );
   }
 }

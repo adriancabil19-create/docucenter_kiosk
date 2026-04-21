@@ -502,6 +502,41 @@ const scanAllADFPages = async (
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Public: scan ALL pages from the ADF and return image buffers.
+// Used by the "Scan to PC" document scanning workflow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const scanAllPages = async (
+  options: Partial<ScanOptions> = {},
+): Promise<{ success: boolean; pages: Buffer[]; error?: string }> => {
+  if (os.platform() !== 'win32') {
+    return { success: false, pages: [], error: 'Scanning is only supported on Windows.' };
+  }
+
+  const result = await scanAllADFPages({
+    colorMode: options.colorMode ?? 'color',
+    dpi: options.dpi ?? 300,
+    outputFormat: 'jpg',
+  });
+
+  if (!result.success) {
+    return { success: false, pages: [], error: result.error };
+  }
+
+  const pageBuffers: Buffer[] = [];
+  for (const pagePath of result.pages) {
+    try {
+      pageBuffers.push(fs.readFileSync(pagePath));
+      fs.unlinkSync(pagePath);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  return { success: true, pages: pageBuffers };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public: scan one page via TWAIN
 // ─────────────────────────────────────────────────────────────────────────────
 

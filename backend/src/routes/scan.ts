@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   scanDocument,
+  scanAllPages,
   photocopyDocument,
   checkADFStatus,
   createPhotocopySession,
@@ -67,6 +68,33 @@ router.post('/', async (req: Request, res: Response) => {
       success: false,
       error: 'Internal server error during scanning',
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/scan/all
+// Scan ALL pages loaded in the ADF at once; returns base64 JPEG array.
+// Used by the "Start Scanning with ADF" button in the document scan workflow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/all', async (req: Request, res: Response) => {
+  try {
+    const { colorMode = 'color', dpi = 300 } = req.body;
+    logger.info('Scan all ADF pages request', { colorMode, dpi });
+
+    const result = await scanAllPages({ colorMode, dpi: Number(dpi) });
+
+    if (!result.success) {
+      res.status(500).json({ success: false, error: result.error });
+      return;
+    }
+
+    const pages = result.pages.map((buf) => buf.toString('base64'));
+    res.json({ success: true, pageCount: pages.length, pages });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Scan all endpoint error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error during scanning' });
   }
 });
 

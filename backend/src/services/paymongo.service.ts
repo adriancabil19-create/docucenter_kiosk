@@ -1,5 +1,9 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import axios, { AxiosInstance } from 'axios';
 import crypto from 'crypto';
+
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 interface QRPhSourceResult {
   sourceId: string;
