@@ -6,8 +6,12 @@ import { usePathname } from 'next/navigation';
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '📊' },
   { href: '/transactions', label: 'Transactions', icon: '💳' },
+  { href: '/payments', label: 'Payments', icon: '💰' },
   { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️' },
+  { href: '/paper', label: 'Paper Trays', icon: '📄' },
   { href: '/storage', label: 'Storage', icon: '📁' },
+  { href: '/logs', label: 'Activity Logs', icon: '📋' },
+  { href: '/kiosk', label: 'Kiosk Status', icon: '🖥️' },
 ];
 
 export function NavSidebar() {
@@ -25,14 +29,14 @@ export function NavSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-2 py-4">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {NAV_ITEMS.map(({ href, label, icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 active
                   ? 'bg-blue-50 text-blue-700'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'

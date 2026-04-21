@@ -3,6 +3,9 @@ import type {
   TransactionsResponse,
   PrintJobsResponse,
   StorageResponse,
+  PaperTraysResponse,
+  LogsResponse,
+  KioskStatusResponse,
   HealthResponse,
 } from './types';
 
@@ -12,7 +15,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
-    // Disable Next.js static caching — always fresh data in the admin console
     cache: 'no-store',
   });
 
@@ -35,8 +37,43 @@ export const getTransactions = (limit = 50): Promise<TransactionsResponse> =>
 export const getPrintJobs = (limit = 50): Promise<PrintJobsResponse> =>
   apiFetch<PrintJobsResponse>(`/api/monitoring/jobs?limit=${limit}`);
 
-export const getPaperAlerts = (): Promise<{ success: boolean; data: Array<{ tray_name: string; current_count: number; threshold: number }> }> =>
-  apiFetch('/api/paper-tracker/paper-trays/alerts');
+export const cancelTransaction = (id: string): Promise<{ success: boolean; message: string }> =>
+  apiFetch(`/api/monitoring/transactions/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+
+export const getLogs = (limit = 100): Promise<LogsResponse> =>
+  apiFetch<LogsResponse>(`/api/monitoring/logs?limit=${limit}`);
+
+export const getKioskStatus = (): Promise<KioskStatusResponse> =>
+  apiFetch<KioskStatusResponse>('/api/monitoring/kiosk-status');
+
+// ─── Paper Trays ──────────────────────────────────────────────────────────────
+
+export const getPaperTrays = (): Promise<PaperTraysResponse> =>
+  apiFetch<PaperTraysResponse>('/api/paper-tracker/paper-trays');
+
+export const getPaperAlerts = (): Promise<{
+  success: boolean;
+  data: Array<{ tray_name: string; current_count: number; threshold: number }>;
+}> => apiFetch('/api/paper-tracker/paper-trays/alerts');
+
+export const updatePaperTray = (
+  trayName: string,
+  maxCapacity: number,
+  threshold?: number,
+): Promise<{ success: boolean; message: string }> =>
+  apiFetch(`/api/paper-tracker/paper-trays/${encodeURIComponent(trayName)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ maxCapacity, ...(threshold !== undefined ? { threshold } : {}) }),
+  });
+
+export const updatePaperTrayThreshold = (
+  trayName: string,
+  threshold: number,
+): Promise<{ success: boolean; message: string }> =>
+  apiFetch(`/api/paper-tracker/paper-trays/${encodeURIComponent(trayName)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ threshold }),
+  });
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 

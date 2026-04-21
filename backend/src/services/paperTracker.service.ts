@@ -1,4 +1,10 @@
-import { getPaperTrays, updatePaperTray, decrementPaperTray, getLowPaperAlerts, PaperTrayRow } from '../database';
+import {
+  getPaperTrays,
+  updatePaperTray,
+  decrementPaperTray,
+  getLowPaperAlerts,
+  PaperTrayRow,
+} from '../database';
 import { logger } from '../utils/logger';
 
 export class PaperTrackerService {
@@ -46,7 +52,11 @@ export class PaperTrackerService {
   /**
    * Get trays that are low on paper (for admin alerts)
    */
-  static getLowPaperAlerts(): Array<{ tray_name: string; current_count: number; threshold: number }> {
+  static getLowPaperAlerts(): Array<{
+    tray_name: string;
+    current_count: number;
+    threshold: number;
+  }> {
     try {
       return getLowPaperAlerts();
     } catch (error) {
@@ -61,10 +71,14 @@ export class PaperTrackerService {
   static hasEnoughPaper(trayName: string, requiredSheets: number): boolean {
     try {
       const trays = getPaperTrays();
-      const tray = trays.find(t => t.tray_name === trayName);
+      const tray = trays.find((t) => t.tray_name === trayName);
       return tray ? tray.current_count >= requiredSheets : false;
     } catch (error) {
-      logger.error('Failed to check paper availability', { trayName, requiredSheets, error: String(error) });
+      logger.error('Failed to check paper availability', {
+        trayName,
+        requiredSheets,
+        error: String(error),
+      });
       return false;
     }
   }

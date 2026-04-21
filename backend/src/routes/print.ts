@@ -207,7 +207,10 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         const sheetsUsed = filenames.length; // 1 sheet per file
         const defaultTray = 'Tray 1'; // Default tray for printing
         await PaperTrackerService.usePaper(defaultTray, sheetsUsed);
-        logger.info('Paper tracking updated after print', { tray: defaultTray, sheets: sheetsUsed });
+        logger.info('Paper tracking updated after print', {
+          tray: defaultTray,
+          sheets: sheetsUsed,
+        });
       } catch (paperError) {
         logger.warn('Failed to update paper tracking after print', { error: String(paperError) });
         // Don't fail the print job if paper tracking fails

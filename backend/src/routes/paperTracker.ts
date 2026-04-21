@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { PaperTrackerService } from '../services/paperTracker.service';
+import { updatePaperTrayThreshold, insertLog } from '../database';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-// GET /api/paper-trays - Get all tray statuses
-router.get('/paper-trays', (req, res) => {
+// GET /api/paper-tracker/paper-trays
+router.get('/paper-trays', (_req, res) => {
   try {
     const trays = PaperTrackerService.getTrays();
     res.json({ success: true, data: trays });
@@ -15,30 +16,41 @@ router.get('/paper-trays', (req, res) => {
   }
 });
 
-// PUT /api/paper-trays/:trayName - Set tray capacity (user inputs paper count)
+// PUT /api/paper-tracker/paper-trays/:trayName
+// Body: { maxCapacity: number, threshold?: number }
 router.put('/paper-trays/:trayName', (req, res) => {
   try {
     const { trayName } = req.params;
-    const { maxCapacity } = req.body;
+    const { maxCapacity, threshold } = req.body as { maxCapacity?: number; threshold?: number };
 
-    if (typeof maxCapacity !== 'number' || maxCapacity < 0) {
-      return res.status(400).json({ success: false, error: 'Invalid maxCapacity' });
+    if (maxCapacity !== undefined) {
+      if (typeof maxCapacity !== 'number' || maxCapacity < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid maxCapacity' });
+      }
+      const ok = PaperTrackerService.setTrayCapacity(trayName, maxCapacity);
+      if (!ok) {
+        return res.status(500).json({ success: false, error: 'Failed to update tray capacity' });
+      }
+      insertLog('info', 'paper', `Tray "${trayName}" refilled`, { trayName, maxCapacity });
     }
 
-    const success = PaperTrackerService.setTrayCapacity(trayName, maxCapacity);
-    if (success) {
-      return res.json({ success: true, message: `Tray ${trayName} capacity set to ${maxCapacity}` });
-    } else {
-      return res.status(500).json({ success: false, error: 'Failed to update tray capacity' });
+    if (threshold !== undefined) {
+      if (typeof threshold !== 'number' || threshold < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid threshold' });
+      }
+      updatePaperTrayThreshold(trayName, threshold);
+      insertLog('info', 'paper', `Tray "${trayName}" threshold updated`, { trayName, threshold });
     }
+
+    return res.json({ success: true, message: `Tray "${trayName}" updated` });
   } catch (error) {
-    logger.error('Failed to set tray capacity', { error: String(error) });
-    return res.status(500).json({ success: false, error: 'Failed to set tray capacity' });
+    logger.error('Failed to update paper tray', { error: String(error) });
+    return res.status(500).json({ success: false, error: 'Failed to update paper tray' });
   }
 });
 
-// GET /api/paper-trays/alerts - Get low paper alerts for admin
-router.get('/paper-trays/alerts', (req, res) => {
+// GET /api/paper-tracker/paper-trays/alerts
+router.get('/paper-trays/alerts', (_req, res) => {
   try {
     const alerts = PaperTrackerService.getLowPaperAlerts();
     res.json({ success: true, data: alerts });
@@ -48,25 +60,21 @@ router.get('/paper-trays/alerts', (req, res) => {
   }
 });
 
-// POST /api/paper-trays/:trayName/use - Decrement paper count (for printing)
+// POST /api/paper-tracker/paper-trays/:trayName/use
 router.post('/paper-trays/:trayName/use', (req, res) => {
   try {
     const { trayName } = req.params;
-    const { sheets } = req.body;
+    const { sheets } = req.body as { sheets: number };
 
     if (typeof sheets !== 'number' || sheets <= 0) {
       return res.status(400).json({ success: false, error: 'Invalid sheets count' });
     }
 
-    const success = PaperTrackerService.usePaper(trayName, sheets);
-    if (success) {
-      return res.json({ success: true, message: `Used ${sheets} sheets from ${trayName}` });
-    } else {
-      return res.status(500).json({ success: false, error: 'Failed to update paper count' });
-    }
+    PaperTrackerService.usePaper(trayName, sheets);
+    return res.json({ success: true, message: `Used ${sheets} sheets from ${trayName}` });
   } catch (error) {
     logger.error('Failed to use paper', { error: String(error) });
-    return res.status(500).json({ success: false, error: 'Failed to use paper' });
+    return res.status(500).json({ success: false, error: 'Failed to update paper count' });
   }
 });
 

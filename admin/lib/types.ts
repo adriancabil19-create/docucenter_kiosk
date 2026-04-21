@@ -47,6 +47,44 @@ export interface StorageDocument {
   mimeType: string;
 }
 
+// ─── Paper Trays ─────────────────────────────────────────────────────────────
+
+export interface PaperTray {
+  tray_name: string;
+  current_count: number;
+  max_capacity: number;
+  threshold: number;
+  updated_at: string;
+}
+
+// ─── Activity Logs ────────────────────────────────────────────────────────────
+
+export type LogLevel = 'info' | 'warn' | 'error';
+
+export interface ActivityLog {
+  id: number;
+  level: LogLevel;
+  category: string;
+  message: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+// ─── Kiosk Status ─────────────────────────────────────────────────────────────
+
+export interface KioskStatus {
+  server: {
+    online: boolean;
+    uptimeSeconds: number;
+    environment: string;
+    version: string;
+  };
+  database: { connected: boolean };
+  paperTrays: PaperTray[];
+  lowPaperAlerts: number;
+  stats: MonitoringStats;
+}
+
 // ─── Monitoring Stats ─────────────────────────────────────────────────────────
 
 export interface MonitoringStats {
@@ -83,6 +121,22 @@ export interface StorageResponse {
   success: boolean;
   documents: StorageDocument[];
   count: number;
+}
+
+export interface PaperTraysResponse {
+  success: boolean;
+  data: PaperTray[];
+}
+
+export interface LogsResponse {
+  success: boolean;
+  logs: ActivityLog[];
+  count: number;
+}
+
+export interface KioskStatusResponse {
+  success: boolean;
+  status: KioskStatus;
 }
 
 export interface HealthResponse {

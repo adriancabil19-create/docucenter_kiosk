@@ -1,5 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { scanDocument, photocopyDocument, checkADFStatus, createPhotocopySession, executePhotocopySession } from '../services/scan.service';
+import {
+  scanDocument,
+  photocopyDocument,
+  checkADFStatus,
+  createPhotocopySession,
+  executePhotocopySession,
+} from '../services/scan.service';
 import { logger } from '../utils/logger';
 import multer from 'multer';
 import * as path from 'path';
@@ -20,12 +26,7 @@ const upload = multer({
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const {
-      colorMode = 'color',
-      dpi = 300,
-      paperSize = 'A4',
-      outputFormat = 'pdf',
-    } = req.body;
+    const { colorMode = 'color', dpi = 300, paperSize = 'A4', outputFormat = 'pdf' } = req.body;
 
     logger.info('Scan request received', { colorMode, dpi, paperSize, outputFormat });
 
@@ -172,10 +173,10 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
   try {
     const {
       sessionId,
-      copies    = 1,
+      copies = 1,
       paperSize = 'A4',
       colorMode = 'bw',
-      quality   = 'standard',
+      quality = 'standard',
     } = req.body;
 
     if (!sessionId) {

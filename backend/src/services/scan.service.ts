@@ -49,7 +49,8 @@ const DWT_HOST = '127.0.0.1';
 const DWT_PORT = 18622;
 const DWT_DCP_PORT = 18625;
 const DWT_DCP_VERSION = 'dwasm2_19301028';
-const DWT_LICENSE = 't0200EQYAACdTxWAVwW/IIbkLSSWSboeM7i37QH6J75HEH8pOSydAno8ilBC40qlhRTQ37w7VY63TyF81OQumTpZk/m+MRFi215UTE5wy3pnEY508wYlHTiKXPm0+bZXGxQEIwJon+16HH8A1kNdyAjZ99F4ZCgA9QDqA9NbAPaC5C5981MmLv/85vXegLScmOGW8sy6QMU6e4MQjpy+QxZLa/W73XCBc35wCQA+QJpDmZWoUCJ0B9ABpAtupilEAZLQ2zhn7AZNyN6M=';
+const DWT_LICENSE =
+  't0200EQYAACdTxWAVwW/IIbkLSSWSboeM7i37QH6J75HEH8pOSydAno8ilBC40qlhRTQ37w7VY63TyF81OQumTpZk/m+MRFi215UTE5wy3pnEY508wYlHTiKXPm0+bZXGxQEIwJon+16HH8A1kNdyAjZ99F4ZCgA9QDqA9NbAPaC5C5981MmLv/85vXegLScmOGW8sy6QMU6e4MQjpy+QxZLa/W73XCBc35wCQA+QJpDmZWoUCJ0B9ABpAtupilEAZLQ2zhn7AZNyN6M=';
 
 function dwtRequest(
   method: string,
@@ -73,9 +74,7 @@ function dwtRequest(
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () =>
-          resolve({ status: res.statusCode ?? 0, data: Buffer.concat(chunks) }),
-        );
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, data: Buffer.concat(chunks) }));
       },
     );
     req.setTimeout(timeoutMs, () => {
@@ -112,7 +111,10 @@ function isDWTAlive(timeoutMs = 3000): Promise<boolean> {
         resolve(res.statusCode === 200);
       },
     );
-    req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve(false);
+    });
     req.on('error', () => resolve(false));
     req.write(body);
     req.end();
@@ -134,9 +136,15 @@ async function rebootDWT(): Promise<void> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
       },
-      (res) => { res.resume(); resolve(); },
+      (res) => {
+        res.resume();
+        resolve();
+      },
     );
-    req.setTimeout(5000, () => { req.destroy(); resolve(); });
+    req.setTimeout(5000, () => {
+      req.destroy();
+      resolve();
+    });
     req.on('error', () => resolve());
     req.write(body);
     req.end();
@@ -158,7 +166,8 @@ const scanWithDWT = async (
   outputPath: string,
   options: ScanOptions,
 ): Promise<{ success: boolean; error?: string }> => {
-  const tryGetScanners = async (timeoutMs: number) => dwtRequest('GET', '/DWTAPI/Scanners', undefined, timeoutMs);
+  const tryGetScanners = async (timeoutMs: number) =>
+    dwtRequest('GET', '/DWTAPI/Scanners', undefined, timeoutMs);
 
   let scannersResp!: { status: number; data: Buffer };
   try {
@@ -174,10 +183,16 @@ const scanWithDWT = async (
       try {
         scannersResp = await tryGetScanners(15000);
       } catch {
-        return { success: false, error: 'DWT TWAIN enumeration hung after reboot. Check scanner drivers.' };
+        return {
+          success: false,
+          error: 'DWT TWAIN enumeration hung after reboot. Check scanner drivers.',
+        };
       }
     } else {
-      return { success: false, error: 'DWT service is not responding. Ensure Dynamsoft Web TWAIN Service is running.' };
+      return {
+        success: false,
+        error: 'DWT service is not responding. Ensure Dynamsoft Web TWAIN Service is running.',
+      };
     }
   }
 
@@ -198,7 +213,8 @@ const scanWithDWT = async (
     if (!Array.isArray(scanners) || scanners.length === 0) {
       return {
         success: false,
-        error: 'No TWAIN scanners found. Ensure scanner is connected and TWAIN driver is installed.',
+        error:
+          'No TWAIN scanners found. Ensure scanner is connected and TWAIN driver is installed.',
       };
     }
 
@@ -235,7 +251,11 @@ const scanWithDWT = async (
     const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
     if (jobResp.status !== 201) {
       const detail = jobResp.data.toString('utf8').trim();
-      logger.error('DWT createJob failed', { status: jobResp.status, detail, scanner: scanner.name });
+      logger.error('DWT createJob failed', {
+        status: jobResp.status,
+        detail,
+        scanner: scanner.name,
+      });
       return {
         success: false,
         error: `DWT createJob failed (HTTP ${jobResp.status}): ${detail}`,
@@ -298,10 +318,10 @@ const scanWithDWT = async (
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PAPER_SIZES: Record<string, [number, number]> = {
-  A4:     [595.28, 841.89],
-  Letter: [612,    792],
-  Folio:  [612,    936],   // 8.5 × 13 in
-  Legal:  [612,    1008],  // 8.5 × 14 in
+  A4: [595.28, 841.89],
+  Letter: [612, 792],
+  Folio: [612, 936], // 8.5 × 13 in
+  Legal: [612, 1008], // 8.5 × 14 in
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,7 +400,12 @@ const scanAllADFPages = async (
   }
 
   if (scannersResp.status !== 200) {
-    return { success: false, pages, sessionId, error: `DWT unavailable (HTTP ${scannersResp.status})` };
+    return {
+      success: false,
+      pages,
+      sessionId,
+      error: `DWT unavailable (HTTP ${scannersResp.status})`,
+    };
   }
 
   let scanners: Array<{ name: string; device: string }>;
@@ -404,43 +429,55 @@ const scanAllADFPages = async (
     license: DWT_LICENSE,
     device: scanner.device,
     config: {
-      IfShowUI:       false,
-      PixelType:      options.colorMode === 'bw' ? 0 : 2,
-      Resolution:     options.dpi ?? 300,
-      XferCount:      -1,   // scan every page until ADF is empty
+      IfShowUI: false,
+      PixelType: options.colorMode === 'bw' ? 0 : 2,
+      Resolution: options.dpi ?? 300,
+      XferCount: -1, // scan every page until ADF is empty
       IfFeederEnabled: true,
-      IfAutoFeed:     true,
+      IfAutoFeed: true,
     },
   };
 
   const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
   if (jobResp.status !== 201) {
     const detail = jobResp.data.toString('utf8').trim();
-    return { success: false, pages, sessionId, error: `createJob failed (HTTP ${jobResp.status}): ${detail}` };
+    return {
+      success: false,
+      pages,
+      sessionId,
+      error: `createJob failed (HTTP ${jobResp.status}): ${detail}`,
+    };
   }
 
   const jobId = jobResp.data.toString('utf8').replace(/^"|"$/g, '').trim();
   logger.info('Multi-page ADF scan job created', { jobId, sessionId });
 
   // ── Poll NextDocument until ADF is empty (410) ────────────────────────────
-  const maxPages   = 100;
-  const maxWaitMs  = 7 * 60 * 1000;   // 7 minutes absolute ceiling
-  const startMs    = Date.now();
+  const maxPages = 100;
+  const maxWaitMs = 7 * 60 * 1000; // 7 minutes absolute ceiling
+  const startMs = Date.now();
 
-  while (pages.length < maxPages && (Date.now() - startMs) < maxWaitMs) {
+  while (pages.length < maxPages && Date.now() - startMs < maxWaitMs) {
     const imgResp = await dwtRequest(
-      'GET', `/DWTAPI/ScanJobs/${jobId}/NextDocument`, undefined, 30000,
+      'GET',
+      `/DWTAPI/ScanJobs/${jobId}/NextDocument`,
+      undefined,
+      30000,
     );
 
     if (imgResp.status === 200) {
       const pagePath = path.join(os.tmpdir(), `${sessionId}_p${pages.length}.jpg`);
       fs.writeFileSync(pagePath, imgResp.data);
       pages.push(pagePath);
-      logger.info('ADF page received', { sessionId, page: pages.length, bytes: imgResp.data.length });
+      logger.info('ADF page received', {
+        sessionId,
+        page: pages.length,
+        bytes: imgResp.data.length,
+      });
     } else if (imgResp.status === 202) {
-      await new Promise((r) => setTimeout(r, 2000));  // still scanning
+      await new Promise((r) => setTimeout(r, 2000)); // still scanning
     } else if (imgResp.status === 410) {
-      break;  // ADF empty — all done
+      break; // ADF empty — all done
     } else {
       logger.warn('Unexpected NextDocument status', { status: imgResp.status, sessionId });
       break;
@@ -452,7 +489,12 @@ const scanAllADFPages = async (
   await new Promise((r) => setTimeout(r, 500));
 
   if (pages.length === 0) {
-    return { success: false, pages, sessionId, error: 'No pages scanned. Ensure documents are loaded in the ADF.' };
+    return {
+      success: false,
+      pages,
+      sessionId,
+      error: 'No pages scanned. Ensure documents are loaded in the ADF.',
+    };
   }
 
   logger.info('Multi-page ADF scan complete', { sessionId, pageCount: pages.length });
@@ -562,10 +604,10 @@ export const photocopyDocument = async (
   }
 
   const opts: CopyOptions = {
-    copies:    options.copies    ?? 1,
+    copies: options.copies ?? 1,
     colorMode: options.colorMode ?? 'bw',
     paperSize: options.paperSize ?? 'A4',
-    quality:   options.quality   ?? 'standard',
+    quality: options.quality ?? 'standard',
   };
 
   logger.info('Photocopy request', { copyId, opts });
@@ -575,7 +617,7 @@ export const photocopyDocument = async (
 
     // Scan every page in the ADF in one job
     const scanResult = await scanAllADFPages({
-      colorMode:    opts.colorMode,
+      colorMode: opts.colorMode,
       dpi,
       outputFormat: 'jpg',
     });
@@ -604,16 +646,30 @@ export const photocopyDocument = async (
           opts.quality,
         );
 
-        try { fs.unlinkSync(pdfPath); } catch { /* best-effort */ }
+        try {
+          fs.unlinkSync(pdfPath);
+        } catch {
+          /* best-effort */
+        }
 
         if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
       }
     }
 
     // Clean up session scan files
-    for (const p of scanResult.pages) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+    for (const p of scanResult.pages) {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* best-effort */
+      }
+    }
 
-    logger.info('Photocopy job completed', { copyId, pages: scanResult.pages.length, copies: opts.copies });
+    logger.info('Photocopy job completed', {
+      copyId,
+      pages: scanResult.pages.length,
+      copies: opts.copies,
+    });
     return { success: true, jobId: copyId };
   } catch (error) {
     logger.error('Photocopy error', { copyId, error: (error as Error).message });
@@ -626,12 +682,11 @@ export const photocopyDocument = async (
 // Call this BEFORE the payment screen.  Returns sessionId + pageCount.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createPhotocopySession = async (
-  options: { colorMode?: 'color' | 'bw'; quality?: string },
-): Promise<{ success: boolean; sessionId?: string; pageCount?: number; error?: string }> => {
-  const dpi = options.quality === 'high' ? 600
-            : options.quality === 'draft'  ? 150
-            : 300;
+export const createPhotocopySession = async (options: {
+  colorMode?: 'color' | 'bw';
+  quality?: string;
+}): Promise<{ success: boolean; sessionId?: string; pageCount?: number; error?: string }> => {
+  const dpi = options.quality === 'high' ? 600 : options.quality === 'draft' ? 150 : 300;
 
   const result = await scanAllADFPages({
     colorMode: options.colorMode ?? 'color',
@@ -654,10 +709,10 @@ export const createPhotocopySession = async (
 
 export const executePhotocopySession = async (options: {
   sessionId: string;
-  copies:    number;
+  copies: number;
   paperSize: string;
   colorMode: string;
-  quality:   string;
+  quality: string;
 }): Promise<{ success: boolean; jobId?: string; error?: string }> => {
   const { sessionId, copies, paperSize, colorMode, quality } = options;
   const jobId = `COPY-${Date.now()}`;
@@ -674,7 +729,15 @@ export const executePhotocopySession = async (options: {
     return { success: false, error: `Session "${sessionId}" not found or already consumed.` };
   }
 
-  logger.info('Executing photocopy session', { jobId, sessionId, pages: pages.length, copies, paperSize, colorMode, quality });
+  logger.info('Executing photocopy session', {
+    jobId,
+    sessionId,
+    pages: pages.length,
+    copies,
+    paperSize,
+    colorMode,
+    quality,
+  });
 
   try {
     const { printPdfFile } = await import('./print.service');
@@ -690,17 +753,29 @@ export const executePhotocopySession = async (options: {
         const pr = await printPdfFile(
           pdfPath,
           `${jobId}_p${pi + 1}_c${copy}`,
-          paperSize, colorMode, quality,
+          paperSize,
+          colorMode,
+          quality,
         );
 
-        try { fs.unlinkSync(pdfPath); } catch { /* best-effort */ }
+        try {
+          fs.unlinkSync(pdfPath);
+        } catch {
+          /* best-effort */
+        }
 
         if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
       }
     }
 
     // Clean up session scan files
-    for (const p of pages) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+    for (const p of pages) {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* best-effort */
+      }
+    }
 
     logger.info('Photocopy session executed', { jobId, pages: pages.length, copies });
     return { success: true, jobId };

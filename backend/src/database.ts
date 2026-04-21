@@ -73,10 +73,20 @@ const initSchema = (db: Database.Database): void => {
       ('Tray 1', 0, 0, 20),
       ('Tray 2', 0, 0, 20);
 
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      level       TEXT    NOT NULL DEFAULT 'info',
+      category    TEXT    NOT NULL,
+      message     TEXT    NOT NULL,
+      metadata    TEXT,
+      created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status   ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created  ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created    ON print_jobs(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_txn        ON print_jobs(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_logs_created          ON activity_logs(created_at);
   `);
 };
 
@@ -275,11 +285,17 @@ export interface PaperTrayRow {
 
 export const getPaperTrays = (): PaperTrayRow[] => {
   return getDb()
-    .prepare('SELECT tray_name, current_count, max_capacity, threshold, updated_at FROM paper_trays')
+    .prepare(
+      'SELECT tray_name, current_count, max_capacity, threshold, updated_at FROM paper_trays',
+    )
     .all() as PaperTrayRow[];
 };
 
-export const updatePaperTray = (trayName: string, currentCount: number, maxCapacity?: number): void => {
+export const updatePaperTray = (
+  trayName: string,
+  currentCount: number,
+  maxCapacity?: number,
+): void => {
   try {
     const update = getDb().prepare(`
       UPDATE paper_trays
@@ -295,23 +311,104 @@ export const updatePaperTray = (trayName: string, currentCount: number, maxCapac
 export const decrementPaperTray = (trayName: string, amount: number): void => {
   try {
     getDb()
-      .prepare(`
+      .prepare(
+        `
         UPDATE paper_trays
         SET current_count = MAX(0, current_count - @amount), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
         WHERE tray_name = @trayName
-      `)
+      `,
+      )
       .run({ trayName, amount });
   } catch (err) {
     logger.warn('Failed to decrement paper tray', { trayName, amount, error: String(err) });
   }
 };
 
-export const getLowPaperAlerts = (): Array<{ tray_name: string; current_count: number; threshold: number }> => {
+export const getLowPaperAlerts = (): Array<{
+  tray_name: string;
+  current_count: number;
+  threshold: number;
+}> => {
   return getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT tray_name, current_count, threshold
       FROM paper_trays
       WHERE current_count <= threshold
-    `)
+    `,
+    )
     .all() as Array<{ tray_name: string; current_count: number; threshold: number }>;
+};
+
+export const updatePaperTrayThreshold = (trayName: string, threshold: number): void => {
+  try {
+    getDb()
+      .prepare(
+        `UPDATE paper_trays SET threshold = @threshold, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE tray_name = @trayName`,
+      )
+      .run({ trayName, threshold });
+  } catch (err) {
+    logger.warn('Failed to update paper tray threshold', { trayName, error: String(err) });
+  }
+};
+
+// ─── Transaction helpers (extended) ──────────────────────────────────────────
+
+export const getTransactionById = (id: string): TransactionRow | null => {
+  return (
+    (getDb().prepare('SELECT * FROM transactions WHERE id = ?').get(id) as
+      | TransactionRow
+      | undefined) ?? null
+  );
+};
+
+export const cancelTransactionById = (id: string): boolean => {
+  try {
+    const result = getDb()
+      .prepare(
+        `UPDATE transactions SET status = 'CANCELLED', completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+         WHERE id = ? AND status IN ('PENDING', 'PROCESSING')`,
+      )
+      .run(id);
+    return result.changes > 0;
+  } catch (err) {
+    logger.warn('Failed to cancel transaction', { id, error: String(err) });
+    return false;
+  }
+};
+
+// ─── Activity log helpers ─────────────────────────────────────────────────────
+
+export interface ActivityLogRow {
+  id: number;
+  level: string;
+  category: string;
+  message: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+export const insertLog = (
+  level: 'info' | 'warn' | 'error',
+  category: string,
+  message: string,
+  metadata?: Record<string, unknown>,
+): void => {
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO activity_logs (level, category, message, metadata) VALUES (@level, @category, @message, @metadata)`,
+      )
+      .run({ level, category, message, metadata: metadata ? JSON.stringify(metadata) : null });
+  } catch (err) {
+    logger.warn('Failed to insert activity log', { error: String(err) });
+  }
+};
+
+export const getRecentLogs = (limit = 50): ActivityLogRow[] => {
+  return getDb()
+    .prepare(
+      `SELECT id, level, category, message, metadata, created_at FROM activity_logs ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(limit) as ActivityLogRow[];
 };

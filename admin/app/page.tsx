@@ -80,19 +80,12 @@ export default async function DashboardPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {paperAlerts.map((alert) => (
-              <div
-                key={alert.tray_name}
-                className="rounded-lg border border-red-200 bg-red-50 p-4"
-              >
+              <div key={alert.tray_name} className="rounded-lg border border-red-200 bg-red-50 p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-medium text-red-900">{alert.tray_name}</h3>
-                    <p className="text-sm text-red-700">
-                      {alert.current_count} sheets remaining
-                    </p>
-                    <p className="text-xs text-red-600">
-                      Threshold: {alert.threshold} sheets
-                    </p>
+                    <p className="text-sm text-red-700">{alert.current_count} sheets remaining</p>
+                    <p className="text-xs text-red-600">Threshold: {alert.threshold} sheets</p>
                   </div>
                   <div className="text-2xl">📄</div>
                 </div>

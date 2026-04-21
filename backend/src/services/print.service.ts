@@ -44,7 +44,6 @@ const toPdfKitSize = (size?: string): string => {
   return map[s] ?? 'A4';
 };
 
-
 /**
  * Paper sizes in mm for resizing
  */
@@ -421,7 +420,9 @@ export const printPdfFile = async (
         ? `Start-Process -FilePath '${filePath.replace(/'/g, "''")}' -Verb PrintTo -ArgumentList '${printerName.replace(/'/g, "''")}' -Wait`
         : `Start-Process -FilePath '${filePath.replace(/'/g, "''")}' -Verb Print -Wait`;
       execSync(`powershell -NoProfile -Command "${psArgs}"`, {
-        stdio: 'pipe', timeout: 30000, windowsHide: true,
+        stdio: 'pipe',
+        timeout: 30000,
+        windowsHide: true,
       });
       logger.info('PDF printed via PowerShell PrintTo', { jobID, printerName });
       restoreColor();
@@ -475,7 +476,13 @@ export const printText = async (
   const paperSize = options?.paperSize ?? 'A4';
   const colorMode = options?.colorMode;
   const quality = options?.quality;
-  logger.info('Print text request', { jobID, contentLength: text.length, paperSize, colorMode, quality });
+  logger.info('Print text request', {
+    jobID,
+    contentLength: text.length,
+    paperSize,
+    colorMode,
+    quality,
+  });
 
   const tempPdf = path.join(os.tmpdir(), `print_${jobID}.pdf`);
 
