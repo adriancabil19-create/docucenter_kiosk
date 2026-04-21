@@ -36,9 +36,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
   bool _isLoading = false;
 
-  List<LocalBluetoothDevice> _bluetoothDevices = [];
-  LocalBluetoothDevice? _connectedBluetoothDevice;
-  bool _isBluetoothScanning = false;
   String _wifiStatusMessage = '';
 
   Future<void> _refreshDocuments() async {
@@ -46,47 +43,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
     await Future.delayed(const Duration(milliseconds: 500));
     widget.onUpload?.call();
     setState(() => _isLoading = false);
-  }
-
-  // ── Bluetooth ────────────────────────────────────────────────────────────
-  Future<void> _scanBluetoothDevices() async {
-    if (widget.transferManager == null) return;
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      _isBluetoothScanning = true;
-      _bluetoothDevices = [];
-    });
-    try {
-      final devices = await widget.transferManager!.bluetooth.discoverDevices();
-      setState(() => _bluetoothDevices = devices);
-      if (devices.isEmpty) {
-        messenger.showSnackBar(const SnackBar(content: Text('No Bluetooth devices found')));
-      }
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Bluetooth scan failed: $e')));
-    } finally {
-      setState(() => _isBluetoothScanning = false);
-    }
-  }
-
-  Future<void> _connectAndSendBluetooth(LocalBluetoothDevice device) async {
-    if (widget.transferManager == null) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(content: Text('Connecting to ${device.name}...')));
-    final ok = await widget.transferManager!.bluetooth.connectToDevice(device.address, device.name);
-    if (!ok) {
-      messenger.showSnackBar(SnackBar(content: Text('Failed to connect to ${device.name}')));
-      return;
-    }
-    setState(() {
-      _connectedBluetoothDevice = LocalBluetoothDevice(
-          address: device.address, name: device.name, isConnected: true);
-    });
-    final docsToSend = _selectedDocs.isNotEmpty
-        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-        : widget.documents;
-    final result = await widget.transferManager!.transferDocuments(TransferMethod.bluetooth, docsToSend);
-    messenger.showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _importFromUSB() async {
@@ -129,9 +85,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
     final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
   }
-
-  Future<void> _connectBluetoothDevice(LocalBluetoothDevice device) =>
-      _connectAndSendBluetooth(device);
 
   Future<void> _shareViaWifi() async {
     if (widget.transferManager == null) return;
@@ -345,18 +298,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
                               runSpacing: 8,
                               children: [
                                 ElevatedButton.icon(
-                                  onPressed: _isBluetoothScanning ? null : _scanBluetoothDevices,
-                                  icon: const Icon(Icons.search),
-                                  label: Text(_isBluetoothScanning ? 'Scanning...' : 'Scan Bluetooth'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _connectedBluetoothDevice == null || _bluetoothDevices.isEmpty
-                                      ? null
-                                      : () => _connectBluetoothDevice(_connectedBluetoothDevice ?? _bluetoothDevices.first),
-                                  icon: const Icon(Icons.bluetooth),
-                                  label: const Text('Connect Bluetooth'),
-                                ),
-                                ElevatedButton.icon(
                                   onPressed: _shareViaWifi,
                                   icon: const Icon(Icons.wifi_tethering),
                                   label: const Text('Share via WiFi'),
@@ -364,25 +305,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text('Bluetooth devices found: ${_bluetoothDevices.length}'),
-                            if (_bluetoothDevices.isNotEmpty)
-                              Wrap(
-                                spacing: 8,
-                                children: _bluetoothDevices.map((device) {
-                                  final selected = _connectedBluetoothDevice?.address == device.address;
-                                  return ChoiceChip(
-                                    label: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
-                                    selected: selected,
-                                    onSelected: (isSelected) {
-                                      if (isSelected) {
-                                        _connectBluetoothDevice(device);
-                                      }
-                                    },
-                                  );
-                                }).toList(),
-                              ),
-                            if (_connectedBluetoothDevice != null)
-                              Text('Connected BT: ${_connectedBluetoothDevice!.name.isNotEmpty ? _connectedBluetoothDevice!.name : 'Unknown Device'}'),
                             Text('WiFi status: $_wifiStatusMessage'),
                           ],
                         ),

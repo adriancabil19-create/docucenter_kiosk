@@ -20,7 +20,7 @@ graph TB
         G[Print Service<br/>PDF Processing]
         H[Scan Service<br/>TWAIN Integration]
         I[Storage Service<br/>File Management]
-        J[Transfer Service<br/>USB/Bluetooth/WiFi]
+        J[Transfer Service<br/>USB/WiFi]
     end
 
     subgraph "Hardware"

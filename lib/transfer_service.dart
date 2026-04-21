@@ -1,16 +1,11 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:ffi';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fb;
-import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:win32/win32.dart';
-import 'package:ffi/ffi.dart' show calloc;
 import 'storage_service.dart';
 
 /// Transfer method types
-enum TransferMethod { usb, bluetooth, wifiHotspot, qrCode }
+enum TransferMethod { usb, wifiHotspot, qrCode }
 
 /// Transfer status
 enum TransferStatus { idle, initializing, transferring, completed, failed, cancelled }
@@ -58,21 +53,6 @@ abstract class TransferService {
   /// Clean up resources
   void dispose() {
     statusNotifier.dispose();
-  }
-
-  /// Discover available devices (Bluetooth only)
-  Future<List<LocalBluetoothDevice>> discoverDevices() async {
-    throw UnsupportedError('Device discovery not supported by this service');
-  }
-
-  /// Connect to a specific device (Bluetooth only)
-  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
-    throw UnsupportedError('Device connection not supported by this service');
-  }
-
-  /// Connect to default device (Bluetooth only)
-  Future<bool> connectToDefaultDevice() async {
-    throw UnsupportedError('Default device connection not supported by this service');
   }
 
   /// Get network information (WiFi hotspot only)
@@ -162,401 +142,6 @@ class USBTransferService extends TransferService {
       status = TransferStatus.failed;
       rethrow;
     }
-  }
-}
-
-/// Bluetooth Transfer Service
-class BluetoothTransferService extends TransferService {
-  String? _deviceAddress;
-  double _progress = 0.0;
-  fb.BluetoothDevice? _connectedDevice;
-
-  @override
-  Future<void> initialize() async {
-    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
-      status = TransferStatus.failed;
-      throw Exception('Bluetooth not supported on this platform');
-    }
-
-    try {
-      status = TransferStatus.initializing;
-
-      if (Platform.isAndroid || Platform.isIOS) {
-        if (!await Permission.bluetooth.request().isGranted) {
-          status = TransferStatus.failed;
-          throw Exception('Bluetooth permission denied');
-        }
-      }
-
-      final adapterState = await fb.FlutterBluePlus.adapterState.first;
-      if (adapterState != fb.BluetoothAdapterState.on) {
-        status = TransferStatus.failed;
-        throw Exception('Bluetooth is not enabled. Please enable Bluetooth in settings.');
-      }
-
-      status = TransferStatus.idle;
-    } catch (e) {
-      status = TransferStatus.failed;
-      rethrow;
-    }
-  }
-
-  @override
-  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
-    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux
-    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux) {
-      return TransferResult(
-        success: false,
-        message: 'Bluetooth not supported on this platform',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
-    try {
-      status = TransferStatus.transferring;
-      _progress = 0.0;
-
-      if (_connectedDevice == null) {
-        final connected = await connectToDefaultDevice();
-        if (!connected) {
-          status = TransferStatus.failed;
-          return TransferResult(
-            success: false,
-            message: 'No system Bluetooth device available',
-            transferredDocumentIds: [],
-            timestamp: DateTime.now(),
-          );
-        }
-      }
-
-      final transferred = <String>[];
-
-      // discover services and characteristics
-      final services = await _connectedDevice!.discoverServices();
-      fb.BluetoothCharacteristic? writeChar;
-
-      for (var service in services) {
-        for (var char in service.characteristics) {
-          if (char.properties.write || char.properties.writeWithoutResponse) {
-            writeChar = char;
-            break;
-          }
-        }
-        if (writeChar != null) break;
-      }
-
-      if (writeChar == null) {
-        status = TransferStatus.failed;
-        return TransferResult(
-          success: false,
-          message: 'No writable Bluetooth characteristic found',
-          transferredDocumentIds: [],
-          timestamp: DateTime.now(),
-        );
-      }
-
-      for (int i = 0; i < documents.length; i++) {
-        final doc = documents[i];
-        final bytes = await StorageService.downloadFile(doc.name);
-        if (bytes == null || bytes.isEmpty) {
-          continue;
-        }
-
-        const chunkSize = 512;
-        for (var offset = 0; offset < bytes.length; offset += chunkSize) {
-          final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
-          await writeChar.write(bytes.sublist(offset, end), withoutResponse: true);
-          await Future.delayed(const Duration(milliseconds: 20));
-        }
-
-        transferred.add(doc.id);
-        _progress = (i + 1) / documents.length;
-      }
-
-      status = TransferStatus.completed;
-      return TransferResult(
-        success: transferred.isNotEmpty,
-        message: transferred.isNotEmpty
-            ? 'Bluetooth transfer to default device (${_deviceAddress ?? 'unknown'}) completed'
-            : 'No documents were transferred',
-        transferredDocumentIds: transferred,
-        timestamp: DateTime.now(),
-      );
-    } catch (e) {
-      status = TransferStatus.failed;
-      return TransferResult(
-        success: false,
-        message: 'Bluetooth transfer failed: $e',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-  }
-
-  @override
-  double getProgress() => _progress;
-
-  @override
-  Future<void> cancel() async {
-    status = TransferStatus.cancelled;
-    _progress = 0.0;
-  }
-
-  @override
-  Future<List<LocalBluetoothDevice>> discoverDevices() async {
-    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
-    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
-      throw Exception('Bluetooth not supported on this platform');
-    }
-
-    final List<LocalBluetoothDevice> devices = [];
-    final List<fb.ScanResult> results = [];
-
-    final subscription = fb.FlutterBluePlus.scanResults.listen((list) {
-      results.clear();
-      results.addAll(list);
-    });
-
-    fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
-    await Future.delayed(const Duration(seconds: 5));
-    await subscription.cancel();
-    await fb.FlutterBluePlus.stopScan();
-
-    for (var result in results) {
-      final id = result.device.remoteId.str;
-      final name = result.device.platformName.isNotEmpty
-          ? result.device.platformName
-          : 'Unknown Device';
-      devices.add(LocalBluetoothDevice(address: id, name: name));
-    }
-
-    return devices;
-  }
-
-  /// Connect to a specific device. Returns true on success.
-  @override
-  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
-    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux, Windows
-    if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
-      throw Exception('Bluetooth not supported on this platform');
-    }
-
-    try {
-      status = TransferStatus.initializing;
-
-      List<fb.ScanResult> currentResults = [];
-      final subscription = fb.FlutterBluePlus.scanResults.listen((list) {
-        currentResults = list;
-      });
-      fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
-      await Future.delayed(const Duration(seconds: 5));
-      await subscription.cancel();
-      await fb.FlutterBluePlus.stopScan();
-
-      final found = currentResults.firstWhere(
-        (r) => r.device.remoteId.str == deviceAddress,
-        orElse: () => throw Exception('Device not found'),
-      );
-
-      _connectedDevice = found.device;
-      _deviceAddress = deviceAddress;
-
-      await _connectedDevice!.connect(timeout: const Duration(seconds: 10));
-      await _connectedDevice!.discoverServices();
-
-      status = TransferStatus.idle;
-      return true;
-    } catch (e) {
-      status = TransferStatus.failed;
-      return false;
-    }
-  }
-
-  /// Connect to the default system Bluetooth device (first available)
-  @override
-  Future<bool> connectToDefaultDevice() async {
-    final devices = await discoverDevices();
-    if (devices.isEmpty) return false;
-    return connectToDevice(devices.first.address, devices.first.name);
-  }
-
-  Future<void> disconnect() async {
-    _deviceAddress = null;
-    status = TransferStatus.idle;
-  }
-}
-
-/// Windows Bluetooth Transfer Service
-/// Uses Win32 API to enumerate paired/nearby devices, then opens the Windows
-/// "Send a File via Bluetooth" wizard (bthprops.cpl) for each file.
-class WindowsBluetoothTransferService extends TransferService {
-  String? _deviceAddress;
-  double _progress = 0.0;
-
-  @override
-  Future<void> initialize() async {
-    if (!Platform.isWindows) {
-      status = TransferStatus.failed;
-      throw Exception('Windows Bluetooth not supported on this platform');
-    }
-    // Win32 discovery is used directly — no WinBle/BLE server needed.
-    status = TransferStatus.idle;
-  }
-
-  @override
-  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
-    if (!Platform.isWindows) {
-      return TransferResult(
-        success: false,
-        message: 'Windows Bluetooth not supported on this platform',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
-    if (_deviceAddress == null) {
-      return TransferResult(
-        success: false,
-        message: 'No Bluetooth device selected. Scan and connect first.',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
-    try {
-      status = TransferStatus.transferring;
-      _progress = 0.0;
-      final transferred = <String>[];
-
-      final baseDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory('${baseDir.path}${Platform.pathSeparator}Bluetooth_Transfer');
-      if (!await exportDir.exists()) {
-        await exportDir.create(recursive: true);
-      }
-
-      for (int i = 0; i < documents.length; i++) {
-        final doc = documents[i];
-        final bytes = await StorageService.downloadFile(doc.name);
-        if (bytes == null) continue;
-
-        final fileName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
-        final outFile = File('${exportDir.path}${Platform.pathSeparator}$fileName');
-        await outFile.writeAsBytes(bytes, flush: true);
-
-        // Open the Windows Bluetooth Send File wizard non-blocking.
-        // bthprops.cpl,BluetoothSendFile receives the file path as lpszCmdLine.
-        await Process.start(
-          'rundll32.exe',
-          ['bthprops.cpl,BluetoothSendFile', outFile.path],
-          runInShell: false,
-        );
-
-        transferred.add(doc.id);
-        _progress = (i + 1) / documents.length;
-      }
-
-      status = TransferStatus.completed;
-      return TransferResult(
-        success: transferred.isNotEmpty,
-        message: transferred.isNotEmpty
-            ? 'Bluetooth send wizard opened for ${transferred.length} file(s). '
-              'Select the target device in each dialog to complete the transfer.'
-            : 'No documents could be downloaded for transfer',
-        transferredDocumentIds: transferred,
-        timestamp: DateTime.now(),
-      );
-    } catch (e) {
-      status = TransferStatus.failed;
-      return TransferResult(
-        success: false,
-        message: 'Bluetooth transfer failed: $e',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-  }
-
-  @override
-  double getProgress() => _progress;
-
-  @override
-  Future<void> cancel() async {
-    status = TransferStatus.cancelled;
-    _progress = 0.0;
-  }
-
-  @override
-  Future<List<LocalBluetoothDevice>> discoverDevices() async {
-    if (!Platform.isWindows) {
-      throw Exception('Windows Bluetooth not supported on this platform');
-    }
-
-    final devices = <LocalBluetoothDevice>[];
-
-    final searchParams = calloc<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
-    searchParams.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
-    searchParams.ref.fReturnAuthenticated = TRUE;
-    searchParams.ref.fReturnRemembered = TRUE;
-    searchParams.ref.fReturnUnknown = TRUE;
-    searchParams.ref.fReturnConnected = TRUE;
-    searchParams.ref.fIssueInquiry = TRUE;
-    searchParams.ref.cTimeoutMultiplier = 4;
-
-    final deviceInfo = calloc<BLUETOOTH_DEVICE_INFO>();
-    deviceInfo.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_INFO>();
-
-    final hFind = BluetoothFindFirstDevice(searchParams, deviceInfo);
-    if (hFind == NULL) {
-      calloc.free(searchParams);
-      calloc.free(deviceInfo);
-      // No devices found — return empty list instead of throwing.
-      return devices;
-    }
-
-    try {
-      do {
-        final address = deviceInfo.ref.Address.ullLong;
-        final hex = address.toRadixString(16).padLeft(12, '0').toUpperCase();
-        final formattedAddress =
-            '${hex.substring(0, 2)}:${hex.substring(2, 4)}:'
-            '${hex.substring(4, 6)}:${hex.substring(6, 8)}:'
-            '${hex.substring(8, 10)}:${hex.substring(10, 12)}';
-        final name = deviceInfo.ref.szName.replaceAll('\x00', '').trim();
-        devices.add(LocalBluetoothDevice(
-          address: formattedAddress,
-          name: name.isNotEmpty ? name : 'Unknown Device',
-        ));
-      } while (BluetoothFindNextDevice(hFind, deviceInfo) != FALSE);
-    } finally {
-      BluetoothFindDeviceClose(hFind);
-      calloc.free(searchParams);
-      calloc.free(deviceInfo);
-    }
-
-    return devices;
-  }
-
-  @override
-  Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
-    if (!Platform.isWindows) return false;
-    _deviceAddress = deviceAddress;
-    status = TransferStatus.idle;
-    debugPrint('BT device selected: $deviceAddress (${deviceName ?? '?'})');
-    return true;
-  }
-
-  @override
-  Future<bool> connectToDefaultDevice() async {
-    final devices = await discoverDevices();
-    if (devices.isEmpty) return false;
-    return connectToDevice(devices.first.address, devices.first.name);
-  }
-
-  @override
-  void dispose() {
-    _deviceAddress = null;
-    super.dispose();
   }
 }
 
@@ -844,19 +429,16 @@ class QrCodeTransferService extends TransferService {
 /// Manager for coordinating transfer operations
 class TransferManager {
   static bool _created = false;
-  
+
   final USBTransferService usb = USBTransferService();
-  final TransferService bluetooth;
   final TransferService wifiHotspot;
   final QrCodeTransferService qrCode = QrCodeTransferService();
 
   TransferManager() :
-    bluetooth = WindowsBluetoothTransferService(),
     wifiHotspot = LocalWebTransferService() {
     debugPrint('=== TransferManager constructor START ===');
     _created = true;
     debugPrint('TransferManager constructor called - Created: $_created');
-    debugPrint('Bluetooth service type: ${bluetooth.runtimeType}');
     debugPrint('WiFi service type: ${wifiHotspot.runtimeType}');
     debugPrint('=== TransferManager constructor END ===');
   }
@@ -867,7 +449,6 @@ class TransferManager {
     debugPrint('TransferManager.initializeAll() called - Created: $_created');
     final services = [
       ('USB', usb),
-      ('Bluetooth', bluetooth),
       ('WiFi Hotspot', wifiHotspot),
       ('QR Code', qrCode),
     ];
@@ -898,15 +479,12 @@ class TransferManager {
     return service.startTransfer(documents);
   }
 
-  /// Get service for transfer method
   /// Check if a transfer service is available on this platform
   bool isServiceAvailable(TransferMethod method) {
     switch (method) {
       case TransferMethod.usb:
       case TransferMethod.qrCode:
-        return true; // Always available
-      case TransferMethod.bluetooth:
-        return Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isLinux || Platform.isWindows;
+        return true;
       case TransferMethod.wifiHotspot:
         return Platform.isAndroid || Platform.isWindows;
     }
@@ -920,7 +498,6 @@ class TransferManager {
   TransferService _getService(TransferMethod method) {
     return switch (method) {
       TransferMethod.usb => usb,
-      TransferMethod.bluetooth => bluetooth,
       TransferMethod.wifiHotspot => wifiHotspot,
       TransferMethod.qrCode => qrCode,
     };
@@ -929,24 +506,7 @@ class TransferManager {
   /// Clean up all services
   void dispose() {
     usb.dispose();
-    bluetooth.dispose();
     wifiHotspot.dispose();
     qrCode.dispose();
   }
-}
-
-/// Local Bluetooth Device wrapper
-class LocalBluetoothDevice {
-  final String address;
-  final String name;
-  final bool isConnected;
-
-  LocalBluetoothDevice({
-    required this.address,
-    required this.name,
-    this.isConnected = false,
-  });
-
-  @override
-  String toString() => '$name ($address)';
 }
