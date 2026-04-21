@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { scanDocument, photocopyDocument, checkADFStatus } from '../services/scan.service';
+import { scanDocument, photocopyDocument, checkADFStatus, createPhotocopySession, executePhotocopySession } from '../services/scan.service';
 import { logger } from '../utils/logger';
 import multer from 'multer';
 import * as path from 'path';
@@ -25,17 +25,15 @@ router.post('/', async (req: Request, res: Response) => {
       dpi = 300,
       paperSize = 'A4',
       outputFormat = 'pdf',
-      doubleSided = false,
     } = req.body;
 
-    logger.info('Scan request received', { colorMode, dpi, paperSize, outputFormat, doubleSided });
+    logger.info('Scan request received', { colorMode, dpi, paperSize, outputFormat });
 
     const result = await scanDocument({
       colorMode,
       dpi: Number(dpi),
       paperSize,
       outputFormat,
-      doubleSided: Boolean(doubleSided),
     });
 
     if (result.success && result.filePath) {
@@ -135,6 +133,76 @@ router.post('/photocopy', async (req: Request, res: Response) => {
       success: false,
       error: 'Internal server error during photocopying',
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/scan/photocopy-prepare
+// Phase 1: scan all ADF pages and store as a session.
+// Call before the payment screen; returns sessionId + pageCount.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/photocopy-prepare', async (req: Request, res: Response) => {
+  try {
+    const { colorMode = 'color', quality = 'standard' } = req.body;
+    logger.info('Photocopy prepare request', { colorMode, quality });
+
+    const result = await createPhotocopySession({ colorMode, quality });
+
+    if (!result.success) {
+      res.status(500).json({ success: false, error: result.error });
+      return;
+    }
+
+    res.json({ success: true, sessionId: result.sessionId, pageCount: result.pageCount });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Photocopy prepare error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error during scanning' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/scan/photocopy-execute
+// Phase 2: print a previously scanned session after payment succeeds.
+// Body: { sessionId, copies, paperSize, colorMode, quality }
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/photocopy-execute', async (req: Request, res: Response) => {
+  try {
+    const {
+      sessionId,
+      copies    = 1,
+      paperSize = 'A4',
+      colorMode = 'bw',
+      quality   = 'standard',
+    } = req.body;
+
+    if (!sessionId) {
+      res.status(400).json({ success: false, error: 'sessionId is required' });
+      return;
+    }
+
+    logger.info('Photocopy execute request', { sessionId, copies, paperSize, colorMode, quality });
+
+    const result = await executePhotocopySession({
+      sessionId,
+      copies: Number(copies),
+      paperSize,
+      colorMode,
+      quality,
+    });
+
+    if (!result.success) {
+      res.status(500).json({ success: false, error: result.error });
+      return;
+    }
+
+    res.json({ success: true, jobId: result.jobId });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Photocopy execute error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error during printing' });
   }
 });
 

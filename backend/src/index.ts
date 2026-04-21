@@ -12,6 +12,7 @@ import printRoutes from './routes/print';
 import storageRoutes from './routes/storage';
 import monitoringRoutes from './routes/monitoring';
 import scanRoutes from './routes/scan';
+import paperTrackerRoutes from './routes/paperTracker';
 import {
   corsMiddleware,
   securityHeadersMiddleware,
@@ -100,6 +101,7 @@ app.use('/api/print', printRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/scan', scanRoutes);
+app.use('/api/paper-tracker', paperTrackerRoutes);
 
 // API status endpoint
 app.get('/api/status', (_req: any, res: any) => {

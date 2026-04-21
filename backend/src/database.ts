@@ -59,6 +59,20 @@ const initSchema = (db: Database.Database): void => {
       created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    CREATE TABLE IF NOT EXISTS paper_trays (
+      tray_name       TEXT    PRIMARY KEY,
+      current_count   INTEGER NOT NULL DEFAULT 0,
+      max_capacity    INTEGER NOT NULL DEFAULT 0,
+      threshold       INTEGER NOT NULL DEFAULT 20,  -- sheets remaining before low alert
+      updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    -- Insert default trays if not exist
+    INSERT OR IGNORE INTO paper_trays (tray_name, current_count, max_capacity, threshold) VALUES
+      ('MP Tray', 0, 0, 20),
+      ('Tray 1', 0, 0, 20),
+      ('Tray 2', 0, 0, 20);
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status   ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created  ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created    ON print_jobs(created_at);
@@ -247,4 +261,57 @@ export const getRecentTransactions = (limit = 20): TransactionRow[] => {
   `,
     )
     .all(limit) as TransactionRow[];
+};
+
+// ─── Paper tray helpers ───────────────────────────────────────────────────────
+
+export interface PaperTrayRow {
+  tray_name: string;
+  current_count: number;
+  max_capacity: number;
+  threshold: number;
+  updated_at: string;
+}
+
+export const getPaperTrays = (): PaperTrayRow[] => {
+  return getDb()
+    .prepare('SELECT tray_name, current_count, max_capacity, threshold, updated_at FROM paper_trays')
+    .all() as PaperTrayRow[];
+};
+
+export const updatePaperTray = (trayName: string, currentCount: number, maxCapacity?: number): void => {
+  try {
+    const update = getDb().prepare(`
+      UPDATE paper_trays
+      SET current_count = @currentCount, max_capacity = COALESCE(@maxCapacity, max_capacity), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      WHERE tray_name = @trayName
+    `);
+    update.run({ trayName, currentCount, maxCapacity });
+  } catch (err) {
+    logger.warn('Failed to update paper tray', { trayName, error: String(err) });
+  }
+};
+
+export const decrementPaperTray = (trayName: string, amount: number): void => {
+  try {
+    getDb()
+      .prepare(`
+        UPDATE paper_trays
+        SET current_count = MAX(0, current_count - @amount), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+        WHERE tray_name = @trayName
+      `)
+      .run({ trayName, amount });
+  } catch (err) {
+    logger.warn('Failed to decrement paper tray', { trayName, amount, error: String(err) });
+  }
+};
+
+export const getLowPaperAlerts = (): Array<{ tray_name: string; current_count: number; threshold: number }> => {
+  return getDb()
+    .prepare(`
+      SELECT tray_name, current_count, threshold
+      FROM paper_trays
+      WHERE current_count <= threshold
+    `)
+    .all() as Array<{ tray_name: string; current_count: number; threshold: number }>;
 };

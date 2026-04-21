@@ -1,17 +1,15 @@
 // DEMO MODE: Scanning requires physical scanner hardware.
 // This page simulates the scanning workflow for thesis/demo purposes.
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_twain_scanner/flutter_twain_scanner.dart';
-import 'package:flutter_twain_scanner/dynamsoft_service.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../storage_service.dart';
 import '../config.dart';
+import '../payment_service.dart';
 
 class ScanningInterface extends StatefulWidget {
   final List<StorageDocument> savedDocuments;
@@ -37,18 +35,15 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   // Scan to PC - default settings (ADF only)
   String _colorMode = 'color'; // Default to color
   String _dpi = '300'; // Default DPI
-  bool _doubleScanning = false; // Default to single-sided
   String _documentName = '';
   bool _isProcessing = false;
 
   String _scanStatus = '';
   String _adfMessage = ''; // Message for ADF status
-  final DynamsoftService _dynamsoftService = DynamsoftService();
-  final FlutterTwainScanner _twainScanner = FlutterTwainScanner();
-  final String _host = 'http://127.0.0.1:18622';
-  final String _license = 't0200EQYAACdTxWAVwW/IIbkLSSWSboeM7i37QH6J75HEH8pOSydAno8ilBC40qlhRTQ37w7VY63TyF81OQumTpZk/m+MRFi215UTE5wy3pnEY508wYlHTiKXPm0+bZXGxQEIwJon+16HH8A1kNdyAjZ99F4ZCgA9QDqA9NbAPaC5C5981MmLv/85vXegLScmOGW8sy6QMU6e4MQjpy+QxZLa/W73XCBc35wCQA+QJpDmZWoUCJ0B9ABpAtupilEAZLQ2zhn7AZNyN6M='; // Dynamsoft license key
-
-  bool get _hasDynamsoftLicense => _license.trim().isNotEmpty;
+  bool _showPreview = false;
+  final String _paperSize = 'Auto';
+  final String _outputFormat = 'PDF';
+  final String _quality = 'standard';
 
   @override
   Widget build(BuildContext context) {
@@ -224,19 +219,6 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: CheckboxListTile(
-                title: const Text('Double-sided Scanning'),
-                subtitle: const Text('Scan both sides of documents'),
-                value: _doubleScanning,
-                onChanged: (val) =>
-                    setState(() => _doubleScanning = val ?? false),
-              ),
-            ),
-          ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -246,9 +228,11 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                   _isScanning = true;
                   _showPreview = false;
                   _scannedPages = [];
-                  _adfMessage = 'Checking ADF status...';
+                  _scannedPageNames = [];
+                  _adfMessage = '';
+                  _scanStatus = '';
                 });
-                _checkADFAndStartScanning();
+                _scanSinglePage();
               },
               icon: const Icon(Icons.play_arrow),
               label: const Text('Start Scanning with ADF'),
@@ -265,144 +249,74 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
 
 
-  Future<void> _checkADFAndStartScanning() async {
+  void _reset() {
     setState(() {
-      _isProcessing = true;
-      _scanStatus = 'Checking ADF status...';
+      _isScanning = false;
+      _showPreview = false;
+      _scannedPages = [];
+      _scannedPageNames = [];
+      _documentName = '';
+      _scanStatus = '';
+      _adfMessage = '';
+      _isProcessing = false;
     });
-
-    try {
-      // Call backend to check ADF status
-      final response = await http.get(
-        Uri.parse('${BackendConfig.serverUrl}/api/scan/adf-status'),
-      );
-
-      if (response.statusCode == 200) {
-        final adfData = jsonDecode(response.body);
-        final adfReady = adfData['ready'] as bool?;
-
-        if (adfReady == true) {
-          setState(() {
-            _scanStatus = 'OKAY - ADF Ready! Starting scan...';
-            _adfMessage = 'ADF is ready. Beginning scan process.';
-          });
-          // Proceed with scanning
-          await _scanSinglePage();
-        } else {
-          setState(() {
-            _scanStatus = 'ADF Not Ready';
-            _adfMessage = 'Please place your document on the scanner, thank you.';
-            _isProcessing = false;
-          });
-        }
-      } else {
-        setState(() {
-          _scanStatus = 'Unable to check ADF status';
-          _adfMessage = 'Please place your document on the scanner, thank you.';
-          _isProcessing = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _scanStatus = 'Error checking ADF: $e';
-        _adfMessage = 'Please place your document on the scanner, thank you.';
-        _isProcessing = false;
-      });
-    }
   }
+
+  Widget _buildPreview() => _buildScanningComplete();
+
 
   Future<void> _scanSinglePage() async {
     setState(() {
       _isProcessing = true;
-      _scanStatus = 'Connecting to scanner service...';
+      _scanStatus = 'Scanning via WIA...';
     });
 
     try {
-      // Get list of devices
-      List<dynamic> devices = await _dynamsoftService.getDevices(_host);
-      if (devices.isEmpty) {
+      final response = await http.post(
+        Uri.parse('${BackendConfig.serverUrl}/api/scan'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'colorMode': _colorMode == 'bw' ? 'bw' : 'color',
+          'dpi': int.tryParse(_dpi) ?? 300,
+          'paperSize': 'A4',
+          'outputFormat': 'jpg',
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final imageBytes = response.bodyBytes;
         setState(() {
-          _scanStatus = 'No scanners found. Please ensure Brother MFC-J2730DW is connected and TWAIN driver is installed.';
+          _scannedPages.add(imageBytes);
+          _scannedPageNames.add('Page ${_scannedPages.length}');
+          _scanStatus = 'Scan complete! ${_scannedPages.length} page(s) scanned.';
           _isProcessing = false;
         });
-        return;
-      }
-
-      final deviceInfo = devices[0] as Map<String, dynamic>? ?? {};
-      final deviceName = (deviceInfo['name'] as String?)?.trim().isNotEmpty == true
-          ? deviceInfo['name'] as String
-          : (deviceInfo['device'] as String?)?.trim().isNotEmpty == true
-              ? deviceInfo['device'] as String
-              : 'Unknown scanner';
-      final deviceId = deviceInfo['device'] as String?;
-
-      if (deviceId == null || deviceId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Page ${_scannedPages.length} scanned successfully')),
+          );
+        }
+      } else {
+        final errorBody = response.body;
+        String errorMsg;
+        try {
+          errorMsg = (jsonDecode(errorBody) as Map<String, dynamic>)['error'] as String? ?? 'Scan failed';
+        } catch (_) {
+          errorMsg = 'Scan failed (HTTP ${response.statusCode})';
+        }
         setState(() {
-          _scanStatus = 'Found scanner device entry, but no device ID is available from Dynamsoft.';
+          _scanStatus = errorMsg;
           _isProcessing = false;
         });
-        return;
-      }
-
-      setState(() {
-        _scanStatus = 'Found scanner: $deviceName. Starting scan with ADF...';
-      });
-
-      if (!_hasDynamsoftLicense) {
-        final scanned = await _scanUsingDirectTwain();
-        if (scanned) {
-          return;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg)),
+          );
         }
       }
-
-      // Create scan job via Dynamsoft service with user-selected settings
-      final job = await _dynamsoftService.createJob(_host, {
-        'license': _license,
-        'device': deviceId,
-        'config': {
-          'IfShowUI': false,
-          'PixelType': _colorMode == 'color' ? 2 : (_colorMode == 'grayscale' ? 1 : 0), // 2 = color, 1 = gray, 0 = BW
-          'Resolution': int.tryParse(_dpi) ?? 300,
-          'IfFeederEnabled': true, // Always use ADF
-          'IfDuplexEnabled': _doubleScanning,
-        }
-      }) as Map<String, dynamic>?;
-
-      if (job == null || job.isEmpty) {
-        throw Exception(
-          'Dynamsoft createJob failed. Please verify the license key in the app and ensure the Dynamic Web TWAIN Service is running.',
-        );
-      }
-
-      final jobUid = (job['jobuid'] as String?) ?? (job['jobUID'] as String?) ?? (job['jobId'] as String?);
-      if (jobUid == null || jobUid.isEmpty) {
-        throw Exception('Dynamsoft job response did not include a valid job UID. Response: $job');
-      }
-
-      // Get scanned images
-      final images = await _dynamsoftService.getImageStreams(_host, jobUid) as List<Uint8List>?;
-      if (images == null || images.isEmpty) {
-        throw Exception('No scanned image data was returned by Dynamsoft.');
-      }
-
-      setState(() {
-        _scannedPages.addAll(images);
-        for (int i = 0; i < images.length; i++) {
-          _scannedPageNames.add('Page ${_scannedPages.length - images.length + i + 1}');
-        }
-        _scanStatus = 'Scan completed successfully! ${images.length} page(s) added.';
-        _isProcessing = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scanned ${images.length} page(s) successfully with ADF')),
-        );
-      }
-
     } catch (e) {
       setState(() {
-        _scanStatus = 'Scan failed: $e';
+        _scanStatus = 'Scan error: $e';
         _isProcessing = false;
       });
       if (mounted) {
@@ -413,76 +327,6 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     }
   }
 
-  Future<bool> _scanUsingDirectTwain() async {
-    setState(() {
-      _scanStatus = 'Connecting to scanner via TWAIN...';
-    });
-
-    try {
-      final List<String> sources = await _twainScanner.getDataSources();
-      if (sources.isEmpty) {
-        setState(() {
-          _scanStatus = 'No local TWAIN sources found. Please verify the Brother scanner is installed and connected.';
-          _isProcessing = false;
-        });
-        return false;
-      }
-
-      setState(() {
-        _scanStatus = 'Found TWAIN source: ${sources[0]}. Starting direct scan...';
-      });
-
-      final List<String> scannedPaths = await _twainScanner.scanDocument(0);
-      if (scannedPaths.isEmpty) {
-        setState(() {
-          _scanStatus = 'Direct TWAIN scan did not return any pages.';
-          _isProcessing = false;
-        });
-        return false;
-      }
-
-      final List<Uint8List> images = [];
-      for (final path in scannedPaths) {
-        try {
-          final bytes = await File(path).readAsBytes();
-          images.add(bytes);
-        } catch (readError) {
-          // ignore individual file read errors to keep scan progress if some files are valid
-        }
-      }
-
-      if (images.isEmpty) {
-        setState(() {
-          _scanStatus = 'Direct TWAIN scan completed but no image files could be read.';
-          _isProcessing = false;
-        });
-        return false;
-      }
-
-      setState(() {
-        _scannedPages.addAll(images);
-        for (int i = 0; i < images.length; i++) {
-          _scannedPageNames.add('Page ${_scannedPages.length - images.length + i + 1}');
-        }
-        _scanStatus = 'Scan completed successfully! ${images.length} page(s) added.';
-        _isProcessing = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scanned ${images.length} page(s) successfully via direct TWAIN')),
-        );
-      }
-
-      return true;
-    } catch (error) {
-      setState(() {
-        _scanStatus = 'Direct TWAIN scan failed: $error';
-        _isProcessing = false;
-      });
-      return false;
-    }
-  }
 
   Widget _buildScanning() {
     return Column(
@@ -648,7 +492,10 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
             const SizedBox(width: 8),
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _scannedPages.isEmpty ? null : () => setState(() => _isScanning = false),
+                onPressed: _scannedPages.isEmpty ? null : () => setState(() {
+                _isScanning = false;
+                _showPreview = true;
+              }),
                 icon: const Icon(Icons.check),
                 label: const Text('Finish'),
                 style:
@@ -834,8 +681,6 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                   _summaryChip(Icons.article, _paperSize),
                   _summaryChip(Icons.file_present, _outputFormat),
                   _summaryChip(Icons.star, _quality == 'draft' ? 'Draft' : 'Standard'),
-                  if (_doubleScanning)
-                    _summaryChip(Icons.flip, 'Double-sided'),
                 ],
               ),
             ),
@@ -1000,54 +845,6 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     );
   }
 
-  Future<void> _confirmSave() async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _isSaving = true);
-
-    try {
-      final ext = _outputFormat.toLowerCase();
-      final fileName = _documentName.trim().isEmpty
-          ? 'Scanned_${DateTime.now().millisecondsSinceEpoch}.$ext'
-          : '${_documentName.trim()}.$ext';
-
-      final List<int> pdfBytes = List.generate(250000, (i) => i % 256);
-      final mimeType = _outputFormat == 'PDF'
-          ? 'application/pdf'
-          : _outputFormat == 'JPG'
-              ? 'image/jpeg'
-              : 'image/png';
-
-      final doc = await StorageService.uploadFile(
-          fileName, pdfBytes, fileName, mimeType);
-
-      if (doc != null && mounted) {
-        widget.onDocumentSaved();
-        messenger.showSnackBar(SnackBar(
-          content: Text(
-              'Saved "$fileName" (${_scannedPages.length} pages) to storage'),
-          backgroundColor: Colors.green,
-        ));
-        await _printScanReceipt(fileName);
-      } else if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Save failed. Is the backend running?'),
-          backgroundColor: Colors.red,
-        ));
-      }
-    } catch (e) {
-      debugPrint('Error saving scan: $e');
-      if (mounted) {
-        messenger.showSnackBar(
-            SnackBar(content: Text('Error saving: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-        _reset();
-      }
-    }
-  }
-
   Future<void> _printScanReceipt(String fileName) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -1066,7 +863,6 @@ Color Mode: ${_colorMode == 'color' ? 'Color' : _colorMode == 'grayscale' ? 'Gra
 DPI Resolution: $_dpi DPI
 Paper Size: $_paperSize
 Scan Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
-Double-Sided: ${_doubleScanning ? 'Yes' : 'No'}
 
 ----------------------------------------
 File Size (est.): ${(_scannedPages.length * 250)} KB

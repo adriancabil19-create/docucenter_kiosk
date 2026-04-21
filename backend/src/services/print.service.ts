@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -11,6 +11,8 @@ interface PrintOptions {
   type?: string;
   printerName?: string;
   paperSize?: string; // 'A4' | 'Folio' | 'Letter'
+  colorMode?: string; // 'bw' | 'color'
+  quality?: string; // 'draft' | 'standard' | 'high'
 }
 
 interface PrintResult {
@@ -42,13 +44,6 @@ const toPdfKitSize = (size?: string): string => {
   return map[s] ?? 'A4';
 };
 
-/**
- * Normalise paper size for pdf-to-printer / SumatraPDF (lowercase preferred).
- */
-const toSumatraSize = (size?: string): string | undefined => {
-  if (!size) return undefined;
-  return size.toLowerCase();
-};
 
 /**
  * Paper sizes in mm for resizing
@@ -243,13 +238,80 @@ const renderTextToPdf = (text: string, outputPath: string, paperSize: string): P
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Print a PDF file using the best available method for the current platform.
- *
- * Windows strategy (in order):
- *   1. pdf-to-printer (bundles SumatraPDF — best, supports printer + paper size)
- *   2. PowerShell Start-Process -Verb Print (system default printer, no size control)
- *   3. print.exe (legacy fallback)
+ * Resolve the exact Windows printer name.
+ * Tries the configured name first; if SumatraPDF rejects it,
+ * falls back to the first Brother printer found, then the default printer.
  */
+const resolveWindowsPrinterName = (): string => {
+  try {
+    const raw = execSync(
+      'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress"',
+      { encoding: 'utf8', timeout: 8000, windowsHide: true },
+    ).trim();
+    const names: string[] = JSON.parse(raw);
+    if (!Array.isArray(names) || names.length === 0) return config.print.printerName || '';
+
+    const pref = config.print.printerName?.toLowerCase() ?? '';
+
+    // 1. Exact match
+    const exact = names.find((n) => n.toLowerCase() === pref);
+    if (exact) return exact;
+
+    // 2. Configured name is a substring of a real printer name
+    if (pref) {
+      const partial = names.find((n) => n.toLowerCase().includes(pref));
+      if (partial) return partial;
+    }
+
+    // 3. Any Brother printer
+    const brother = names.find((n) => /brother/i.test(n));
+    if (brother) return brother;
+
+    // 4. First non-virtual printer
+    const real = names.find((n) => !/pdf|xps|fax|onenote|microsoft/i.test(n));
+    return real ?? names[0] ?? '';
+  } catch {
+    return config.print.printerName || '';
+  }
+};
+
+/**
+ * Read the current Color setting from the Windows printer configuration.
+ * Returns null if the call fails (e.g. printer not found, no PrintManagement module).
+ */
+const getWindowsPrinterColor = (printerName: string): boolean | null => {
+  try {
+    const out = execSync(
+      `powershell -NoProfile -Command "(Get-PrintConfiguration -PrinterName '${printerName.replace(/'/g, "''")}').Color"`,
+      { encoding: 'utf8', timeout: 5000, windowsHide: true },
+    ).trim();
+    return out.toLowerCase() === 'true';
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Set the Windows printer's Color configuration flag.
+ * This modifies the printer's stored DevMode (including Brother's private data),
+ * which is more reliable than passing dmColor in the print job DevMode alone.
+ */
+const setWindowsPrinterColor = (printerName: string, color: boolean): void => {
+  try {
+    const flag = color ? '$true' : '$false';
+    execSync(
+      `powershell -NoProfile -Command "Set-PrintConfiguration -PrinterName '${printerName.replace(/'/g, "''")}' -Color ${flag}"`,
+      { encoding: 'utf8', timeout: 5000, windowsHide: true },
+    );
+  } catch (err) {
+    logger.warn('Failed to set printer color mode via Set-PrintConfiguration', {
+      printerName,
+      color,
+      error: String(err).substring(0, 200),
+    });
+  }
+};
+
 export const printPdfFile = async (
   filePath: string,
   jobID: string,
@@ -260,69 +322,119 @@ export const printPdfFile = async (
   const platform = os.platform();
 
   if (platform === 'win32') {
-    // ── Method 1: pdf-to-printer (SumatraPDF) ───────────────────────────────
-    try {
-      // pdf-to-printer is a CJS module — dynamic import exposes named exports
-      // directly (no .default wrapper) when running in a CJS host.
-      const pdfModule = await import('pdf-to-printer');
-      // Handle both CJS named export and ESM default wrapping
-      const printFn: ((file: string, opts?: object) => Promise<void>) | undefined =
-        ((pdfModule as Record<string, unknown>).print as typeof printFn) ??
-        ((pdfModule.default as Record<string, unknown> | undefined)?.print as typeof printFn);
+    const sumatraPath = path.resolve(
+      __dirname,
+      '../../node_modules/pdf-to-printer/dist/SumatraPDF-3.4.6-32.exe',
+    );
+    const hasSumatra = fs.existsSync(sumatraPath);
 
-      if (typeof printFn !== 'function') throw new Error('pdf-to-printer print function not found');
+    // Resolve the actual Windows printer name (auto-detects if configured name is wrong)
+    const printerName = resolveWindowsPrinterName();
+    logger.info('Resolved printer name', { jobID, printerName });
 
-      const printOptions: {
-        printer?: string;
-        silent?: boolean;
-        paperSize?: string;
-        monochrome?: boolean;
-        printQuality?: string;
-        bin?: string;
-      } = { silent: true };
-      if (config.print.printerName) printOptions.printer = config.print.printerName;
-      const sumatraSize = toSumatraSize(paperSize);
-      if (sumatraSize) printOptions.paperSize = sumatraSize;
-      if (colorMode === 'bw') printOptions.monochrome = true;
-      if (quality === 'draft') printOptions.printQuality = 'draft';
-      else if (quality === 'standard') printOptions.printQuality = 'high';
-
-      // Set paper tray based on paper size
-      if (paperSize?.toUpperCase() === 'A4') {
-        printOptions.bin = 'Tray 1';
-      } else if (paperSize?.toUpperCase() === 'LETTER') {
-        printOptions.bin = 'Tray 2';
-      } else if (paperSize?.toUpperCase() === 'FOLIO') {
-        printOptions.bin = 'MP Tray';
+    // ── Set printer color mode at the Windows driver level ───────────────────
+    // Brother drivers maintain private DevMode data that overrides the standard
+    // dmColor field passed by the print application.  Setting the stored printer
+    // configuration (Set-PrintConfiguration) propagates into that private data,
+    // making it the most reliable way to enforce B&W or colour output.
+    let originalColor: boolean | null = null;
+    if (printerName && colorMode) {
+      originalColor = getWindowsPrinterColor(printerName);
+      const wantColor = colorMode !== 'bw';
+      if (originalColor !== null && originalColor !== wantColor) {
+        setWindowsPrinterColor(printerName, wantColor);
+        logger.info('Printer color mode set', { jobID, printerName, wantColor });
       }
-
-      await printFn(filePath, printOptions);
-      logger.info('PDF printed via pdf-to-printer', { jobID, paperSize: sumatraSize });
-      return { success: true, method: 'pdf-to-printer' };
-    } catch (err) {
-      logger.warn('pdf-to-printer failed, falling back to Start-Process', {
-        jobID,
-        error: String(err).substring(0, 200),
-      });
     }
 
-    // ── Method 2: PowerShell Start-Process -Verb Print ───────────────────────
+    // Build -print-settings — comma-separated, no spaces in values
+    // SumatraPDF 3.x uses 'mono' for B&W (not 'color=no')
+    const buildSettings = (): string => {
+      const parts: string[] = [];
+      if (paperSize) parts.push(`paper=${paperSize.toLowerCase()}`);
+      if (colorMode === 'bw') parts.push('mono');
+      else if (colorMode === 'color') parts.push('color');
+      if (quality === 'high') parts.push('nHires');
+      else if (quality === 'draft') parts.push('draft');
+      return parts.join(',');
+    };
+
+    // Restore the printer's original color setting after printing (or on failure).
+    const restoreColor = () => {
+      if (originalColor !== null && printerName) {
+        setWindowsPrinterColor(printerName, originalColor);
+      }
+    };
+
+    // ── Method 1: SumatraPDF via execFileSync — no shell, args as array ──────
+    if (hasSumatra) {
+      try {
+        const settings = buildSettings();
+        const args: string[] = [];
+        if (printerName) {
+          args.push('-print-to', printerName);
+        } else {
+          args.push('-print-to-default');
+        }
+        args.push('-silent');
+        if (settings) args.push('-print-settings', settings);
+        args.push(filePath);
+
+        execFileSync(sumatraPath, args, { stdio: 'pipe', timeout: 60000, windowsHide: true });
+        logger.info('PDF printed via SumatraPDF', { jobID, printerName, paperSize, colorMode });
+        restoreColor();
+        return { success: true, method: 'sumatra-direct' };
+      } catch (err) {
+        logger.warn('SumatraPDF with settings failed, retrying with color setting only', {
+          jobID,
+          error: String(err).substring(0, 300),
+        });
+      }
+    }
+
+    // ── Method 2: SumatraPDF — bare (paper/quality dropped, color still set at driver level) ─
+    if (hasSumatra) {
+      try {
+        const args: string[] = [];
+        if (printerName) {
+          args.push('-print-to', printerName);
+        } else {
+          args.push('-print-to-default');
+        }
+        args.push('-silent', filePath);
+
+        execFileSync(sumatraPath, args, { stdio: 'pipe', timeout: 60000, windowsHide: true });
+        logger.info('PDF printed via SumatraPDF (bare)', { jobID, printerName, colorMode });
+        restoreColor();
+        return { success: true, method: 'sumatra-bare' };
+      } catch (err) {
+        logger.warn('SumatraPDF bare failed, trying PowerShell', {
+          jobID,
+          error: String(err).substring(0, 300),
+        });
+      }
+    }
+
+    // ── Method 3: PowerShell Start-Process -Verb PrintTo ─────────────────────
     try {
-      const escaped = filePath.replace(/'/g, "''");
-      execSync(
-        `powershell -NoProfile -Command "Start-Process -FilePath '${escaped}' -Verb Print -Wait"`,
-        { stdio: 'pipe', timeout: 20000, windowsHide: true },
-      );
-      logger.info('PDF printed via Start-Process', { jobID });
-      return { success: true, method: 'start-process' };
+      const psArgs = printerName
+        ? `Start-Process -FilePath '${filePath.replace(/'/g, "''")}' -Verb PrintTo -ArgumentList '${printerName.replace(/'/g, "''")}' -Wait`
+        : `Start-Process -FilePath '${filePath.replace(/'/g, "''")}' -Verb Print -Wait`;
+      execSync(`powershell -NoProfile -Command "${psArgs}"`, {
+        stdio: 'pipe', timeout: 30000, windowsHide: true,
+      });
+      logger.info('PDF printed via PowerShell PrintTo', { jobID, printerName });
+      restoreColor();
+      return { success: true, method: 'ps-printto' };
     } catch (err) {
-      logger.warn('Start-Process failed', { jobID, error: String(err).substring(0, 200) });
+      logger.warn('PowerShell PrintTo failed', { jobID, error: String(err).substring(0, 200) });
     }
 
+    restoreColor();
     return {
       success: false,
       method: 'windows-all-failed',
-      error: 'All Windows PDF print methods failed',
+      error: `All Windows PDF print methods failed. Printer: "${printerName}"`,
     };
   }
 
@@ -361,7 +473,9 @@ export const printText = async (
 ): Promise<PrintResult> => {
   const jobID = `JOB-${Date.now()}`;
   const paperSize = options?.paperSize ?? 'A4';
-  logger.info('Print text request', { jobID, contentLength: text.length, paperSize });
+  const colorMode = options?.colorMode;
+  const quality = options?.quality;
+  logger.info('Print text request', { jobID, contentLength: text.length, paperSize, colorMode, quality });
 
   const tempPdf = path.join(os.tmpdir(), `print_${jobID}.pdf`);
 
@@ -371,7 +485,7 @@ export const printText = async (
     logger.info('Text rendered to PDF', { jobID, tempPdf });
 
     // 2. Print the PDF
-    const result = await printPdfFile(tempPdf, jobID, paperSize);
+    const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality);
     if (result.success) {
       // Save simulation copy of the original text too
       if (config.print.simulationEnabled) {
@@ -528,7 +642,7 @@ export const printFilesFromStorage = async (
         // Non-PDF: read as text, render to PDF, print
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
-          const result = await printText(content, { paperSize });
+          const result = await printText(content, { paperSize, colorMode, quality });
           printSuccess = result.success;
           if (result.simulatedPaths) simulatedPaths.push(...result.simulatedPaths);
         } catch (readErr) {

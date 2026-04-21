@@ -35,6 +35,9 @@ export const getTransactions = (limit = 50): Promise<TransactionsResponse> =>
 export const getPrintJobs = (limit = 50): Promise<PrintJobsResponse> =>
   apiFetch<PrintJobsResponse>(`/api/monitoring/jobs?limit=${limit}`);
 
+export const getPaperAlerts = (): Promise<{ success: boolean; data: Array<{ tray_name: string; current_count: number; threshold: number }> }> =>
+  apiFetch('/api/paper-tracker/paper-trays/alerts');
+
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
 export const getDocuments = (): Promise<StorageResponse> =>

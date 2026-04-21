@@ -1,21 +1,23 @@
-import { getStats, getTransactions, getPrintJobs, getHealth } from '@/lib/api';
+import { getStats, getTransactions, getPrintJobs, getHealth, getPaperAlerts } from '@/lib/api';
 import { StatCard } from '@/components/stat-card';
 import { StatusChip } from '@/components/status-chip';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [statsRes, txRes, jobsRes, healthRes] = await Promise.allSettled([
+  const [statsRes, txRes, jobsRes, healthRes, alertsRes] = await Promise.allSettled([
     getStats(),
     getTransactions(5),
     getPrintJobs(5),
     getHealth(),
+    getPaperAlerts(),
   ]);
 
   const stats = statsRes.status === 'fulfilled' ? statsRes.value.stats : null;
   const transactions = txRes.status === 'fulfilled' ? txRes.value.transactions : [];
   const jobs = jobsRes.status === 'fulfilled' ? jobsRes.value.jobs : [];
   const health = healthRes.status === 'fulfilled' ? healthRes.value : null;
+  const paperAlerts = alertsRes.status === 'fulfilled' ? alertsRes.value.data : [];
 
   const serverOnline = health?.success === true;
 
@@ -68,6 +70,37 @@ export default async function DashboardPage() {
           color={stats && stats.pendingTransactions > 0 ? 'warning' : 'default'}
         />
       </div>
+
+      {/* Paper Alerts */}
+      {paperAlerts.length > 0 && (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-gray-800">⚠️ Paper Alerts</h2>
+            <p className="text-sm text-gray-500">Trays running low on paper</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {paperAlerts.map((alert) => (
+              <div
+                key={alert.tray_name}
+                className="rounded-lg border border-red-200 bg-red-50 p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-red-900">{alert.tray_name}</h3>
+                    <p className="text-sm text-red-700">
+                      {alert.current_count} sheets remaining
+                    </p>
+                    <p className="text-xs text-red-600">
+                      Threshold: {alert.threshold} sheets
+                    </p>
+                  </div>
+                  <div className="text-2xl">📄</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Recent Transactions */}
       <section>

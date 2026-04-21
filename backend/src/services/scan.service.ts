@@ -1,16 +1,18 @@
 import { logger } from '../utils/logger';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { config } from '../utils/config';
+import * as http from 'http';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interfaces
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface ScanOptions {
   colorMode?: 'color' | 'bw';
   dpi?: number;
   paperSize?: string;
   outputFormat?: 'pdf' | 'jpg' | 'png';
-  doubleSided?: boolean;
 }
 
 interface ScanResult {
@@ -19,611 +21,6 @@ interface ScanResult {
   error?: string;
   method?: string;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Windows Image Acquisition (WIA) scanning
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Scan a document using Windows Image Acquisition (WIA) via PowerShell.
- * This is the most reliable method for Windows scanning.
- */
-const scanWithWIA = async (
-  outputPath: string,
-  options: ScanOptions,
-): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const colorMode = options.colorMode === 'bw' ? 1 : 2; // 1 = BlackWhite, 2 = Color
-    const dpi = options.dpi || 300;
-
-    // PowerShell script to scan using WIA
-    const psScript = `
-      Add-Type -AssemblyName "WIA"
-      $deviceManager = New-Object -ComObject WIA.DeviceManager
-      
-      Write-Host "Available WIA devices:"
-      $deviceManager.DeviceInfos | ForEach-Object { 
-        Write-Host "  $($_.DeviceID) - $($_.Type) - $($_.Properties['Name'].Value)"
-      }
-      
-      # Select Brother scanner specifically
-      $wiaDevice = $null
-      try {
-        # Look for Brother scanner specifically
-        foreach ($deviceInfo in $deviceManager.DeviceInfos) {
-          $deviceName = $deviceInfo.Properties['Name'].Value
-          Write-Host "Checking device: $deviceName"
-          if ($deviceName -like "*Brother*" -and $deviceName -like "*MFC*") {
-            Write-Host "Found Brother MFC scanner: $deviceName"
-            $wiaDevice = $deviceInfo.Connect()
-            break
-          }
-        }
-        
-        # If no Brother found, use first available scanner
-        if ($wiaDevice -eq $null) {
-          $wiaDevice = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1 | ForEach-Object { $_.Connect() }
-        }
-      } catch {
-        Write-Host "Error selecting device: $($_.Exception.Message)"
-        $wiaDevice = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1 | ForEach-Object { $_.Connect() }
-      }
-
-      Write-Host "Connected to device"
-
-      $useAdf = ${options.doubleSided ? 'true' : 'false'}
-      # Try to access ADF item directly - Brother scanners often have multiple items
-      $wiaItem = $null
-      $adfFound = $false
-      
-      Write-Host "Scanner has $($wiaDevice.Items.Count) items"
-      
-      # List all items first
-      for ($i = 1; $i -le $wiaDevice.Items.Count; $i++) {
-        try {
-          $item = $wiaDevice.Items[$i]
-          Write-Host "Item $i : $($item.ItemID)"
-          try {
-            $name = $item.Properties.Item(4098).Value
-            Write-Host "  Item Name: $name"
-          } catch {
-            # ignore missing name
-          }
-        } catch {
-          Write-Host "Could not access item $i : $($_.Exception.Message)"
-        }
-      }
-
-      # Choose ADF item if double-sided is requested
-      if ($useAdf -eq 'true') {
-        for ($i = 1; $i -le $wiaDevice.Items.Count; $i++) {
-          try {
-            $item = $wiaDevice.Items[$i]
-            if ($item.ItemID -match 'ADF|Feeder|DocumentFeeder' -or ($item.Properties.Item(4098).Value -match 'ADF|Feeder|DocumentFeeder')) {
-              $wiaItem = $item
-              Write-Host "Using detected ADF item: $($wiaItem.ItemID)"
-              $adfFound = $true
-              break
-            }
-          } catch {
-            # ignore unavailable properties
-          }
-        }
-      }
-
-      if (-not $adfFound) {
-        try {
-          Write-Host "FORCING Brother ADF: Attempting to access item 2..."
-          $wiaItem = $wiaDevice.Items[2]
-          Write-Host "SUCCESS: Using item 2: $($wiaItem.ItemID)"
-          $adfFound = $true
-        } catch {
-          Write-Host "Item 2 not accessible: $($_.Exception.Message)"
-          # If item 2 fails, try item 1
-          try {
-            $wiaItem = $wiaDevice.Items[1]
-            Write-Host "Falling back to item 1: $($wiaItem.ItemID)"
-          } catch {
-            Write-Host "Item 1 also failed: $($_.Exception.Message)"
-            throw "No scanner items available"
-          }
-        }
-      }
-
-      # DEBUG: Enumerate all available properties on this item
-      Write-Host "=== AVAILABLE WIA PROPERTIES ==="
-      try {
-        foreach ($prop in $wiaItem.Properties) {
-          try {
-            $propId = $prop.PropertyID
-            $propName = ""
-            try { $propName = $prop.Name } catch { $propName = "Unknown" }
-            Write-Host "Property $propId ($propName): Available"
-          } catch {
-            Write-Host "Could not enumerate property: $($_.Exception.Message)"
-          }
-        }
-      } catch {
-        Write-Host "Could not enumerate properties: $($_.Exception.Message)"
-      }
-      Write-Host "=== END PROPERTIES LIST ==="
-
-      # AGGRESSIVE Brother ADF Configuration - Try EVERYTHING
-      Write-Host "=== BROTHER ADF FORCE CONFIGURATION ==="
-      
-      function SetPropertyValue($item, $propId, $value, $label) {
-        try {
-          $property = $item.Properties.Item($propId)
-          $property.Value = $value
-          Write-Host "✓ Set $label ($propId) to $value"
-        } catch {
-          Write-Host "✗ Could not set $label ($propId): $($_.Exception.Message)"
-        }
-      }
-
-      SetPropertyValue $wiaItem 3093 1 "DOCUMENT_HANDLING_SELECT"
-      SetPropertyValue $wiaItem 3094 1 "DOCUMENT_HANDLING_CAPABILITIES"
-      SetPropertyValue $wiaItem 3095 1 "FEEDER_READY"
-      SetPropertyValue $wiaItem 3096 0 "PAGES"
-      SetPropertyValue $wiaItem 3097 1 "PAGE_SIZE"
-      SetPropertyValue $wiaItem 3098 1 "DOCUMENT_HANDLING_STATUS"
-
-      if ($useAdf -eq 'true') {
-        SetPropertyValue $wiaItem 3084 1 "DUPLEX"
-      }
-
-      Write-Host "=== ADF FORCE CONFIGURATION COMPLETE ==="
-
-      # Perform the scan
-      Write-Host "Starting scan transfer..."
-      $wiaImage = $wiaItem.Transfer()
-      Write-Host "Scan transfer completed"
-
-      # Save as file
-      $imageProcess = New-Object -ComObject WIA.ImageProcess
-      $imageProcess.Filters.Add($imageProcess.FilterInfos.Item("Convert").FilterID)
-      $imageProcess.Filters.Item(1).Properties.Item("FormatID").Value = "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}"  # JPG format
-      $imageProcess.Filters.Item(1).Properties.Item("Quality").Value = 100
-
-      $wiaImage = $imageProcess.Apply($wiaImage)
-      $wiaImage.SaveFile("${outputPath.replace(/\\/g, '\\\\')}")
-      Write-Host "Image saved to ${outputPath.replace(/\\/g, '\\\\')}"
-      # Confirm output file
-      if (-Not (Test-Path -Path "${outputPath.replace(/\\/g, '\\\\')}")) {
-        throw "Scan output not found"
-      }
-      $size = (Get-Item "${outputPath.replace(/\\/g, '\\\\')}").Length
-      Write-Host "Output path size: $size"
-      if ($size -lt 1024) {
-        throw "Scan output too small ($size bytes)"
-      }
-    `;
-
-    try {
-      const execResult = execSync('powershell -NoProfile -NonInteractive -Command -', {
-        input: psScript,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 90000,
-        windowsHide: true,
-      });
-
-      const output = execResult.toString('utf8').trim();
-      logger.info('WIA scan PowerShell output', { outputPath, options, output });
-
-      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 1024) {
-        const fileSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
-        const err = `Scan file invalid or missing (${outputPath}, size ${fileSize})`;
-        logger.error('WIA scan file validation failed', { outputPath, fileSize });
-        return { success: false, error: err };
-      }
-
-      return { success: true };
-    } catch (execError: any) {
-      const err = execError as Error;
-      const stdout = execError.stdout ? execError.stdout.toString('utf8').trim() : undefined;
-      const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : undefined;
-
-      logger.error('WIA scan failed', {
-        error: err.message,
-        outputPath,
-        options,
-        stdout,
-        stderr,
-      });
-
-      let errorDetails = err.message;
-      if (stderr) {
-        errorDetails += ` | stderr: ${stderr}`;
-      }
-      if (stdout) {
-        errorDetails += ` | stdout: ${stdout}`;
-      }
-      if (errorDetails.includes('Command failed:')) {
-        errorDetails = 'PowerShell execution failed - check scanner connection and ADF status';
-      }
-
-      return { success: false, error: errorDetails };
-    }
-  } catch (err) {
-    return { success: false, error: String(err) };
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TWAIN scanning (alternative method)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Attempt scanning using TWAIN via PowerShell COM objects.
- * Configures the TWAIN driver to use ADF (Automatic Document Feeder) only.
- */
-const scanWithTWAIN = async (
-  outputPath: string,
-  options: ScanOptions,
-): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const colorMode = options.colorMode === 'bw' ? 0 : 2; // 0 = BlackWhite, 2 = Color
-    const dpi = options.dpi || 300;
-
-    // PowerShell script to scan using TWAIN with ADF configuration
-    const psScript = `
-      # TWAIN scanning with ADF configuration
-      try {
-        # Try different TWAIN COM objects (excluding WIA.CommonDialog as it's not TWAIN)
-        $twain = $null
-        $comObjects = @("TWAIN.TWAINCtrl.1", "TwainControl.TwainCtrl.1", "BrTwainDS.BrTwainDS.1", "Brother.TWAIN.1", "TWAINDSM.TWAINDSM.1", "BrScnCtrl.BrScnCtrl.1", "Brother_Scanner.TWAIN", "MFCJ2730DW.TWAIN")
-        
-        foreach ($comObj in $comObjects) {
-          try {
-            $twain = New-Object -ComObject $comObj
-            Write-Host "TWAIN COM object created successfully using: $comObj"
-            break
-          } catch {
-            Write-Host "Failed to create COM object $comObj : $($_.Exception.Message)"
-          }
-        }
-        
-        if ($twain -eq $null) {
-          Write-Host "No TWAIN COM objects available, skipping TWAIN scan"
-          exit 2  # Special exit code to indicate TWAIN not available
-        }
-
-        # List available TWAIN sources
-        Write-Host "Available TWAIN sources:"
-        try {
-          $sources = $twain.Sources
-          if ($sources) {
-            $sources | ForEach-Object {
-              Write-Host "  Source: $($_.Name)"
-            }
-          }
-        } catch {
-          Write-Host "Could not enumerate TWAIN sources: $($_.Exception.Message)"
-        }
-
-        # Try to find Brother MFC-J2730DW source
-        $sourceFound = $false
-        try {
-          $sources = $twain.Sources
-          if ($sources) {
-            $brotherSource = $sources | Where-Object { $_.Name -like "*Brother*" -or $_.Name -like "*MFC*" } | Select-Object -First 1
-            if ($brotherSource) {
-              $twain.SourceName = $brotherSource.Name
-              Write-Host "Using Brother TWAIN source: $($brotherSource.Name)"
-              $sourceFound = $true
-            }
-          }
-        } catch {
-          Write-Host "Could not find Brother source: $($_.Exception.Message)"
-        }
-
-        # If Brother source not found, try TWAIN_32 or default
-        if (-not $sourceFound) {
-          try {
-            $twain.SourceName = "TWAIN_32"
-            Write-Host "Using TWAIN_32 source"
-          } catch {
-            Write-Host "TWAIN_32 not available, using default source"
-          }
-        }
-
-        # Configure TWAIN source to use ADF (Feeder)
-        Write-Host "Configuring TWAIN for ADF (Feeder) mode..."
-        try {
-          $twain.Capability = 0x100A  # ICAP_SCAN_SOURCE
-          $twain.CapabilityValue = 1   # TWSS_FEEDER (1 = feeder, 0 = flatbed)
-          Write-Host "Set ICAP_SCAN_SOURCE to TWSS_FEEDER (1)"
-        } catch {
-          Write-Host "Failed to set scan source capability: $($_.Exception.Message)"
-        }
-
-        # Configure color mode
-        try {
-          $twain.Capability = 0x1003  # ICAP_PIXELTYPE
-          $twain.CapabilityValue = ${colorMode}  # 0 = BW, 2 = Color
-          Write-Host "Set color mode to ${colorMode}"
-        } catch {
-          Write-Host "Failed to set color mode: $($_.Exception.Message)"
-        }
-
-        # Configure DPI
-        try {
-          $twain.Capability = 0x1004  # ICAP_XRESOLUTION
-          $twain.CapabilityValue = ${dpi}
-          $twain.Capability = 0x1005  # ICAP_YRESOLUTION
-          $twain.CapabilityValue = ${dpi}
-          Write-Host "Set resolution to ${dpi} DPI"
-        } catch {
-          Write-Host "Failed to set resolution: $($_.Exception.Message)"
-        }
-
-        # Configure paper size (A4)
-        try {
-          $twain.Capability = 0x1006  # ICAP_SUPPORTEDSIZES
-          $twain.CapabilityValue = 1   # TWSS_A4
-          Write-Host "Set paper size to A4"
-        } catch {
-          Write-Host "Failed to set paper size: $($_.Exception.Message)"
-        }
-
-        # Additional ADF-specific settings
-        try {
-          # Set duplex mode based on doubleSided option
-          $twain.Capability = 0x100C  # ICAP_DUPLEX
-          if (${options.doubleSided ? 'true' : 'false'}) {
-            $twain.CapabilityValue = 1   # TWDX_1PASSDUPLEX (enable duplex)
-            Write-Host "Enabled duplex scanning (ADF mode)"
-          } else {
-            $twain.CapabilityValue = 0   # TWDX_NONE (disable duplex)
-            Write-Host "Disabled duplex scanning"
-          }
-        } catch {
-          Write-Host "Could not set duplex mode: $($_.Exception.Message)"
-        }
-
-        # Try to enable automatic feeding
-        try {
-          $twain.Capability = 0x100B  # ICAP_AUTOMATICCAPTURE
-          $twain.CapabilityValue = 1   # TRUE
-          Write-Host "Enabled automatic capture"
-        } catch {
-          Write-Host "Could not set automatic capture: $($_.Exception.Message)"
-        }
-
-        # Try to set feeder loaded
-        try {
-          $twain.Capability = 0x1030  # ICAP_FEEDERLOADED
-          $twain.CapabilityValue = 1   # TRUE
-          Write-Host "Set feeder loaded"
-        } catch {
-          Write-Host "Could not set feeder loaded: $($_.Exception.Message)"
-        }
-
-        # Start scanning
-        Write-Host "Starting TWAIN scan..."
-        $result = $twain.Acquire("${outputPath.replace(/\\/g, '\\\\')}")
-
-        if ($result -eq 0) {
-          Write-Host "TWAIN scan completed with result: $result"
-          # Verify file was created
-          if (Test-Path "${outputPath.replace(/\\/g, '\\\\')}") {
-            $size = (Get-Item "${outputPath.replace(/\\/g, '\\\\')}").Length
-            Write-Host "Output file size: $size bytes"
-            if ($size -gt 1024) {
-              Write-Host "TWAIN scan successful!"
-              exit 0
-            } else {
-              Write-Error "Scan file too small ($size bytes)"
-              exit 1
-            }
-          } else {
-            Write-Error "Output file not created"
-            exit 1
-          }
-        } else {
-          Write-Error "TWAIN scan failed with result: $result"
-          exit 1
-        }
-      } catch {
-        Write-Error "TWAIN scanning error: $($_.Exception.Message)"
-        exit 1
-      }
-    `;
-
-    try {
-      const execResult = execSync('powershell -NoProfile -NonInteractive -Command -', {
-        input: psScript,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 120000, // 2 minutes timeout for scanning
-        windowsHide: true,
-      });
-
-      const output = execResult.toString('utf8').trim();
-      logger.info('TWAIN scan PowerShell output', { outputPath, options, output });
-
-      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 1024) {
-        const fileSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
-        const err = `TWAIN scan file invalid or missing (${outputPath}, size ${fileSize})`;
-        logger.error('TWAIN scan file validation failed', { outputPath, fileSize });
-        return { success: false, error: err };
-      }
-
-      return { success: true };
-    } catch (execError: any) {
-      const err = execError as Error;
-      const stdout = execError.stdout ? execError.stdout.toString('utf8').trim() : undefined;
-      const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : undefined;
-
-      // Check if TWAIN is not available (exit code 2)
-      if (execError.status === 2) {
-        logger.info('TWAIN not available on this system, will use WIA fallback', {
-          outputPath,
-          options,
-        });
-        return { success: false, error: 'TWAIN not available' };
-      }
-
-      logger.error('TWAIN scan failed', {
-        error: err.message,
-        outputPath,
-        options,
-        stdout,
-        stderr,
-      });
-
-      let errorDetails = err.message;
-      if (stderr) {
-        errorDetails += ` | stderr: ${stderr}`;
-      }
-      if (stdout) {
-        errorDetails += ` | stdout: ${stdout}`;
-      }
-
-      return { success: false, error: errorDetails };
-    }
-  } catch (err) {
-    return { success: false, error: String(err) };
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Convert scanned image to PDF if needed
-// ─────────────────────────────────────────────────────────────────────────────
-// Main scanning function
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Scan a document using the best available method for the current platform.
- *
- * Windows strategy:
- *   1. Windows Image Acquisition (WIA) - most reliable
- *   2. TWAIN - alternative method
- */
-export const scanDocument = async (options: Partial<ScanOptions> = {}): Promise<ScanResult> => {
-  const scanId = `SCAN-${Date.now()}`;
-  const platform = os.platform();
-
-  const opts: ScanOptions = {
-    colorMode: options.colorMode || 'color',
-    dpi: options.dpi || 300,
-    paperSize: options.paperSize || 'A4',
-    outputFormat: options.outputFormat || 'pdf',
-    doubleSided: options.doubleSided || false,
-  };
-
-  logger.info('Scan document request', { scanId, options: opts });
-
-  if (platform !== 'win32') {
-    return {
-      success: false,
-      error: 'Scanning is only supported on Windows platforms',
-    };
-  }
-
-  const tempDir = os.tmpdir();
-  const tempImage = path.join(tempDir, `scan_${scanId}.jpg`);
-  const finalPath = path.join(tempDir, `scan_${scanId}.${opts.outputFormat}`);
-
-  try {
-    // 1. Try TWAIN first (with ADF configuration)
-    const twainResult = await scanWithTWAIN(tempImage, opts);
-    if (twainResult.success) {
-      logger.info('TWAIN scan successful', { scanId });
-    } else {
-      logger.warn('TWAIN scan failed, trying WIA', { scanId, error: twainResult.error });
-      // 2. Fall back to WIA
-      const wiaResult = await scanWithWIA(tempImage, opts);
-      if (!wiaResult.success) {
-        return { success: false, error: twainResult.error || wiaResult.error };
-      }
-    }
-
-    // 2. Convert to desired format if needed
-    if (opts.outputFormat === 'pdf') {
-      const convertResult = await convertImageToPdf(tempImage, finalPath);
-      if (!convertResult.success) {
-        logger.warn('PDF conversion failed, returning BMP', { scanId, error: convertResult.error });
-        // Return the BMP file as fallback
-        return { success: true, filePath: tempImage, method: 'wia-bmp' };
-      }
-    } else {
-      // Just rename/copy to final path
-      fs.copyFileSync(tempImage, finalPath);
-    }
-
-    logger.info('Document scanned successfully', { scanId, filePath: finalPath });
-    return { success: true, filePath: finalPath, method: 'wia' };
-  } catch (error) {
-    const err = error as Error;
-    logger.error('Scan error', { scanId, error: err.message });
-    return { success: false, error: err.message };
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper functions
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Convert image to PDF for printing
- */
-const convertImageToPdf = async (
-  imagePath: string,
-  pdfPath: string,
-): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const PDFDocument = require('pdfkit');
-    const fs = require('fs');
-
-    // Create a new PDF document
-    const doc = new PDFDocument({
-      size: 'A4', // Default size, will be resized by print service if needed
-      margin: 0,
-    });
-
-    // Pipe the PDF to a file
-    const stream = fs.createWriteStream(pdfPath);
-    doc.pipe(stream);
-
-    // Add the image to the PDF
-    // PDFKit supports JPG images directly
-    const imageBuffer = fs.readFileSync(imagePath);
-    doc.image(imageBuffer, 0, 0, {
-      width: doc.page.width,
-      height: doc.page.height,
-      align: 'center',
-      valign: 'center',
-    });
-
-    // Finalize the PDF
-    doc.end();
-
-    // Wait for the stream to finish
-    await new Promise((resolve, reject) => {
-      stream.on('finish', resolve);
-      stream.on('error', reject);
-    });
-
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: (error as Error).message };
-  }
-};
-
-/**
- * Get the appropriate tray for paper size
- */
-const getTrayForPaperSize = (paperSize: string): string => {
-  switch (paperSize.toLowerCase()) {
-    case 'folio':
-      return 'MPTray'; // Multi-purpose tray
-    case 'letter':
-      return 'Tray2';
-    case 'a4':
-    default:
-      return 'Tray1';
-  }
-};
 
 interface CopyOptions {
   copies?: number;
@@ -644,218 +41,671 @@ interface ADFStatus {
   error?: string;
 }
 
-/**
- * Check if the Brother MFC-J2730DW ADF (Automatic Document Feeder) is ready
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamsoft Web TWAIN (DWT) local service helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DWT_HOST = '127.0.0.1';
+const DWT_PORT = 18622;
+const DWT_DCP_PORT = 18625;
+const DWT_DCP_VERSION = 'dwasm2_19301028';
+const DWT_LICENSE = 't0200EQYAACdTxWAVwW/IIbkLSSWSboeM7i37QH6J75HEH8pOSydAno8ilBC40qlhRTQ37w7VY63TyF81OQumTpZk/m+MRFi215UTE5wy3pnEY508wYlHTiKXPm0+bZXGxQEIwJon+16HH8A1kNdyAjZ99F4ZCgA9QDqA9NbAPaC5C5981MmLv/85vXegLScmOGW8sy6QMU6e4MQjpy+QxZLa/W73XCBc35wCQA+QJpDmZWoUCJ0B9ABpAtupilEAZLQ2zhn7AZNyN6M=';
+
+function dwtRequest(
+  method: string,
+  urlPath: string,
+  body?: object,
+  timeoutMs = 30000,
+): Promise<{ status: number; data: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const bodyBuf = body ? Buffer.from(JSON.stringify(body), 'utf8') : undefined;
+    const req = http.request(
+      {
+        hostname: DWT_HOST,
+        port: DWT_PORT,
+        path: urlPath,
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(bodyBuf ? { 'Content-Length': bodyBuf.length } : {}),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, data: Buffer.concat(chunks) }),
+        );
+      },
+    );
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`DWT request timed out: ${method} ${urlPath}`));
+    });
+    req.on('error', reject);
+    if (bodyBuf) req.write(bodyBuf);
+    req.end();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DWT self-healing helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Returns true if DWT's HTTP server is alive (no TWAIN needed).
+function isDWTAlive(timeoutMs = 3000): Promise<boolean> {
+  const body = Buffer.from(
+    JSON.stringify({ id: 'hc', cmdId: 'hc', method: 'VersionInfo', version: 'dwt_19301028' }),
+    'utf8',
+  );
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: DWT_HOST,
+        port: DWT_PORT,
+        path: `/fa/VersionInfo?v=1&ts=${Date.now()}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
+      },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      },
+    );
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+    req.write(body);
+    req.end();
+  });
+}
+
+// Sends the DCP Reboot command via port 18625, then waits for the service to come back up.
+async function rebootDWT(): Promise<void> {
+  const body = Buffer.from(
+    JSON.stringify({ id: 'reboot', method: 'Reboot', parameter: [], version: DWT_DCP_VERSION }),
+    'utf8',
+  );
+  await new Promise<void>((resolve) => {
+    const req = http.request(
+      {
+        hostname: DWT_HOST,
+        port: DWT_DCP_PORT,
+        path: `/dcp/${DWT_DCP_VERSION}/admin`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
+      },
+      (res) => { res.resume(); resolve(); },
+    );
+    req.setTimeout(5000, () => { req.destroy(); resolve(); });
+    req.on('error', () => resolve());
+    req.write(body);
+    req.end();
+  });
+
+  // Wait for service to restart, then poll until alive
+  await new Promise((r) => setTimeout(r, 5000));
+  for (let i = 0; i < 15; i++) {
+    if (await isDWTAlive(3000)) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TWAIN scanning via DWT local service REST API
+// ─────────────────────────────────────────────────────────────────────────────
+
+const scanWithDWT = async (
+  outputPath: string,
+  options: ScanOptions,
+): Promise<{ success: boolean; error?: string }> => {
+  const tryGetScanners = async (timeoutMs: number) => dwtRequest('GET', '/DWTAPI/Scanners', undefined, timeoutMs);
+
+  let scannersResp!: { status: number; data: Buffer };
+  try {
+    // 1. List available TWAIN scanners (short timeout to detect hang fast)
+    scannersResp = await tryGetScanners(8000);
+  } catch (err) {
+    // TWAIN enumeration hung — check if DWT HTTP server is alive and reboot if so
+    logger.warn('DWT scanner list timed out, checking for TWAIN hang...');
+    const alive = await isDWTAlive();
+    if (alive) {
+      logger.info('DWT TWAIN hang detected, rebooting service and retrying...');
+      await rebootDWT();
+      try {
+        scannersResp = await tryGetScanners(15000);
+      } catch {
+        return { success: false, error: 'DWT TWAIN enumeration hung after reboot. Check scanner drivers.' };
+      }
+    } else {
+      return { success: false, error: 'DWT service is not responding. Ensure Dynamsoft Web TWAIN Service is running.' };
+    }
+  }
+
+  try {
+    if (scannersResp.status !== 200) {
+      return {
+        success: false,
+        error: `DWT service unavailable (HTTP ${scannersResp.status}). Ensure Dynamsoft Web TWAIN Service is running.`,
+      };
+    }
+
+    let scanners: Array<{ name: string; device: string; type?: number }>;
+    try {
+      scanners = JSON.parse(scannersResp.data.toString('utf8'));
+    } catch {
+      return { success: false, error: 'DWT returned an invalid scanner list.' };
+    }
+    if (!Array.isArray(scanners) || scanners.length === 0) {
+      return {
+        success: false,
+        error: 'No TWAIN scanners found. Ensure scanner is connected and TWAIN driver is installed.',
+      };
+    }
+
+    logger.info('DWT scanners available', { scanners: scanners.map((s) => s.name) });
+
+    // Prefer USB-connected Brother/MFC scanner; avoid LAN driver
+    const scanner =
+      scanners.find((s) => /brother|mfc/i.test(s.name) && /usb/i.test(s.name)) ??
+      scanners.find((s) => /brother|mfc/i.test(s.name) && !/lan/i.test(s.name)) ??
+      scanners.find((s) => /brother|mfc/i.test(s.name)) ??
+      scanners[0];
+    logger.info('DWT selected TWAIN scanner', { scanner: scanner.name });
+
+    // 2. Map color mode — DWT PixelType: 0=BW, 1=Gray, 2=Color
+    const pixelType = options.colorMode === 'bw' ? 0 : 2;
+
+    // 3. Create scan job
+    // XferCount:1  — scan exactly one page, then close the TWAIN source.
+    // IfFeederEnabled:true — force ADF; without it, some Brother TWAIN drivers
+    //   default to flatbed and NextDocument hangs forever if the flatbed is empty.
+    const jobBody = {
+      license: DWT_LICENSE,
+      device: scanner.device,
+      config: {
+        IfShowUI: false,
+        PixelType: pixelType,
+        Resolution: options.dpi ?? 300,
+        XferCount: 1,
+        IfFeederEnabled: true,
+        IfAutoFeed: true,
+      },
+    };
+
+    const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
+    if (jobResp.status !== 201) {
+      const detail = jobResp.data.toString('utf8').trim();
+      logger.error('DWT createJob failed', { status: jobResp.status, detail, scanner: scanner.name });
+      return {
+        success: false,
+        error: `DWT createJob failed (HTTP ${jobResp.status}): ${detail}`,
+      };
+    }
+
+    const jobId = jobResp.data.toString('utf8').replace(/^"|"$/g, '').trim();
+    logger.info('DWT scan job created', { jobId });
+
+    // 4. Poll for the scanned image
+    //    202 = still scanning, 200 = image ready, 410 = job done / no image
+    //    30 s per request: ADF feed + scan can take 15-25 s on a Brother MFC
+    let imageData: Buffer | null = null;
+    const maxAttempts = 60; // 60 × 2 s = 2 min max
+    for (let i = 0; i < maxAttempts; i++) {
+      const imgResp = await dwtRequest(
+        'GET',
+        `/DWTAPI/ScanJobs/${jobId}/NextDocument`,
+        undefined,
+        30000,
+      );
+      if (imgResp.status === 200) {
+        imageData = imgResp.data;
+        break;
+      } else if (imgResp.status === 202) {
+        await new Promise((r) => setTimeout(r, 2000));
+      } else if (imgResp.status === 410) {
+        break;
+      } else {
+        dwtRequest('DELETE', `/DWTAPI/ScanJobs/${jobId}`).catch(() => undefined);
+        return {
+          success: false,
+          error: `DWT NextDocument returned unexpected status ${imgResp.status}`,
+        };
+      }
+    }
+
+    // 5. Cleanup job — await so the TWAIN source fully closes before the next scan starts.
+    //    Fire-and-forget here left DWT in a mid-cleanup state when scan 2 arrived immediately.
+    await dwtRequest('DELETE', `/DWTAPI/ScanJobs/${jobId}`).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 500));
+
+    if (!imageData || imageData.length < 1024) {
+      return {
+        success: false,
+        error: 'DWT scan produced no image. Check that documents are loaded in the ADF.',
+      };
+    }
+
+    fs.writeFileSync(outputPath, imageData);
+    logger.info('DWT scan image saved', { outputPath, bytes: imageData.length });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: `DWT scan error: ${String(err)}` };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paper size map — PDF points [width, height]
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PAPER_SIZES: Record<string, [number, number]> = {
+  A4:     [595.28, 841.89],
+  Letter: [612,    792],
+  Folio:  [612,    936],   // 8.5 × 13 in
+  Legal:  [612,    1008],  // 8.5 × 14 in
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Convert scanned JPG to PDF — scales image to fit the target paper size.
+// The image is scaled proportionally to fill the paper width; any vertical
+// remainder is left white (standard "fit to page" behaviour).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const convertImageToPdf = async (
+  imagePath: string,
+  pdfPath: string,
+  targetPaperSize = 'A4',
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const PDFDocument = require('pdfkit');
+
+    const dims = PAPER_SIZES[targetPaperSize] ?? PAPER_SIZES['A4'];
+    const [paperW, paperH] = dims;
+
+    const doc = new PDFDocument({ size: [paperW, paperH], margin: 0 });
+    const stream = fs.createWriteStream(pdfPath);
+    doc.pipe(stream);
+
+    const imageBuffer = fs.readFileSync(imagePath);
+
+    // fit: scale to fill the target paper while preserving aspect ratio.
+    // The image is centered; short documents get white margins on the long axis.
+    doc.image(imageBuffer, 0, 0, {
+      fit: [paperW, paperH],
+      align: 'center',
+      valign: 'center',
+    });
+
+    doc.end();
+
+    await new Promise<void>((resolve, reject) => {
+      stream.on('finish', () => resolve());
+      stream.on('error', reject);
+    });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scan ALL pages from the ADF until it is empty.
+// Returns an ordered list of temp-file paths (one per page).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const scanAllADFPages = async (
+  options: ScanOptions,
+): Promise<{ success: boolean; pages: string[]; sessionId: string; error?: string }> => {
+  const sessionId = `SESSION-${Date.now()}`;
+  const pages: string[] = [];
+
+  // ── Get scanner list (with same DWT hang-recovery as scanWithDWT) ──────────
+  let scannersResp!: { status: number; data: Buffer };
+  try {
+    scannersResp = await dwtRequest('GET', '/DWTAPI/Scanners', undefined, 8000);
+  } catch {
+    logger.warn('DWT scanner list timed out during photocopy prepare, checking…');
+    const alive = await isDWTAlive();
+    if (alive) {
+      logger.info('DWT TWAIN hang — rebooting and retrying');
+      await rebootDWT();
+      try {
+        scannersResp = await dwtRequest('GET', '/DWTAPI/Scanners', undefined, 15000);
+      } catch {
+        return { success: false, pages, sessionId, error: 'DWT TWAIN hung after reboot.' };
+      }
+    } else {
+      return { success: false, pages, sessionId, error: 'DWT service not responding.' };
+    }
+  }
+
+  if (scannersResp.status !== 200) {
+    return { success: false, pages, sessionId, error: `DWT unavailable (HTTP ${scannersResp.status})` };
+  }
+
+  let scanners: Array<{ name: string; device: string }>;
+  try {
+    scanners = JSON.parse(scannersResp.data.toString('utf8'));
+  } catch {
+    return { success: false, pages, sessionId, error: 'DWT returned an invalid scanner list.' };
+  }
+  if (!Array.isArray(scanners) || scanners.length === 0) {
+    return { success: false, pages, sessionId, error: 'No TWAIN scanners found.' };
+  }
+
+  const scanner =
+    scanners.find((s) => /brother|mfc/i.test(s.name) && /usb/i.test(s.name)) ??
+    scanners.find((s) => /brother|mfc/i.test(s.name) && !/lan/i.test(s.name)) ??
+    scanners.find((s) => /brother|mfc/i.test(s.name)) ??
+    scanners[0];
+
+  // ── Create scan job — XferCount:-1 tells TWAIN to feed all ADF pages ───────
+  const jobBody = {
+    license: DWT_LICENSE,
+    device: scanner.device,
+    config: {
+      IfShowUI:       false,
+      PixelType:      options.colorMode === 'bw' ? 0 : 2,
+      Resolution:     options.dpi ?? 300,
+      XferCount:      -1,   // scan every page until ADF is empty
+      IfFeederEnabled: true,
+      IfAutoFeed:     true,
+    },
+  };
+
+  const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
+  if (jobResp.status !== 201) {
+    const detail = jobResp.data.toString('utf8').trim();
+    return { success: false, pages, sessionId, error: `createJob failed (HTTP ${jobResp.status}): ${detail}` };
+  }
+
+  const jobId = jobResp.data.toString('utf8').replace(/^"|"$/g, '').trim();
+  logger.info('Multi-page ADF scan job created', { jobId, sessionId });
+
+  // ── Poll NextDocument until ADF is empty (410) ────────────────────────────
+  const maxPages   = 100;
+  const maxWaitMs  = 7 * 60 * 1000;   // 7 minutes absolute ceiling
+  const startMs    = Date.now();
+
+  while (pages.length < maxPages && (Date.now() - startMs) < maxWaitMs) {
+    const imgResp = await dwtRequest(
+      'GET', `/DWTAPI/ScanJobs/${jobId}/NextDocument`, undefined, 30000,
+    );
+
+    if (imgResp.status === 200) {
+      const pagePath = path.join(os.tmpdir(), `${sessionId}_p${pages.length}.jpg`);
+      fs.writeFileSync(pagePath, imgResp.data);
+      pages.push(pagePath);
+      logger.info('ADF page received', { sessionId, page: pages.length, bytes: imgResp.data.length });
+    } else if (imgResp.status === 202) {
+      await new Promise((r) => setTimeout(r, 2000));  // still scanning
+    } else if (imgResp.status === 410) {
+      break;  // ADF empty — all done
+    } else {
+      logger.warn('Unexpected NextDocument status', { status: imgResp.status, sessionId });
+      break;
+    }
+  }
+
+  // ── Clean up scan job ─────────────────────────────────────────────────────
+  await dwtRequest('DELETE', `/DWTAPI/ScanJobs/${jobId}`).catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 500));
+
+  if (pages.length === 0) {
+    return { success: false, pages, sessionId, error: 'No pages scanned. Ensure documents are loaded in the ADF.' };
+  }
+
+  logger.info('Multi-page ADF scan complete', { sessionId, pageCount: pages.length });
+  return { success: true, pages, sessionId };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: scan one page via TWAIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const scanDocument = async (options: Partial<ScanOptions> = {}): Promise<ScanResult> => {
+  const scanId = `SCAN-${Date.now()}`;
+
+  if (os.platform() !== 'win32') {
+    return { success: false, error: 'Scanning is only supported on Windows.' };
+  }
+
+  const opts: ScanOptions = {
+    colorMode: options.colorMode ?? 'color',
+    dpi: options.dpi ?? 300,
+    paperSize: options.paperSize ?? 'A4',
+    outputFormat: options.outputFormat ?? 'jpg',
+  };
+
+  logger.info('Scan document request', { scanId, opts });
+
+  const tempDir = os.tmpdir();
+  const tempImage = path.join(tempDir, `scan_${scanId}.jpg`);
+  const finalPath = path.join(tempDir, `scan_${scanId}.${opts.outputFormat}`);
+
+  try {
+    const result = await scanWithDWT(tempImage, opts);
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    if (opts.outputFormat === 'pdf') {
+      const convertResult = await convertImageToPdf(tempImage, finalPath);
+      if (!convertResult.success) {
+        // Return raw JPG as fallback
+        return { success: true, filePath: tempImage, method: 'twain-jpg' };
+      }
+    } else {
+      fs.copyFileSync(tempImage, finalPath);
+    }
+
+    logger.info('Document scanned successfully via TWAIN', { scanId, filePath: finalPath });
+    return { success: true, filePath: finalPath, method: 'twain' };
+  } catch (error) {
+    logger.error('Scan error', { scanId, error: (error as Error).message });
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: ADF / scanner availability check via DWT
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const checkADFStatus = async (): Promise<ADFStatus> => {
   try {
-    const psScript = `
-      Add-Type -AssemblyName "WIA"
-      $deviceManager = New-Object -ComObject WIA.DeviceManager
-      
-      Write-Host "Checking ADF status..."
-      
-      # Find Brother scanner
-      $wiaDevice = $null
-      foreach ($deviceInfo in $deviceManager.DeviceInfos) {
-        $deviceName = $deviceInfo.Properties['Name'].Value
-        if ($deviceName -like "*Brother*" -and $deviceName -like "*MFC*") {
-          Write-Host "Found Brother MFC scanner: $deviceName"
-          $wiaDevice = $deviceInfo.Connect()
-          break
-        }
-      }
-      
-      if ($wiaDevice -eq $null) {
-        Write-Error "Brother MFC scanner not found"
-        exit 1
-      }
-
-      # Try to access ADF item (usually item 2 for Brother scanners)
-      $adfItem = $null
-      try {
-        $adfItem = $wiaDevice.Items[2]
-        Write-Host "Found ADF item"
-      } catch {
-        Write-Host "Item 2 not accessible, trying item 1..."
-        try {
-          $adfItem = $wiaDevice.Items[1]
-        } catch {
-          Write-Error "Could not access scanner items"
-          exit 1
-        }
-      }
-
-      # Check FEEDER_READY property (WIA property 3095)
-      $feederReady = $false
-      try {
-        $feederReadyProp = $adfItem.Properties.Item(3095)
-        $feederReady = $feederReadyProp.Value -eq 1
-        Write-Host "FEEDER_READY property: $($feederReadyProp.Value)"
-      } catch {
-        Write-Host "Could not read FEEDER_READY property: $($_.Exception.Message)"
-      }
-
-      # Check DOCUMENT_HANDLING_STATUS property (3098)
-      $docHandlingStatus = $null
-      try {
-        $statusProp = $adfItem.Properties.Item(3098)
-        $docHandlingStatus = $statusProp.Value
-        Write-Host "DOCUMENT_HANDLING_STATUS: $docHandlingStatus"
-      } catch {
-        Write-Host "Could not read DOCUMENT_HANDLING_STATUS: $($_.Exception.Message)"
-      }
-
-      # Return status
-      if ($feederReady) {
-        Write-Host "OKAY - ADF is ready for scanning"
-        exit 0
-      } else {
-        Write-Host "ADF not ready - waiting for documents"
-        exit 2
-      }
-    `;
-
-    try {
-      const execResult = execSync('powershell -NoProfile -NonInteractive -Command -', {
-        input: psScript,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 5000,
-        windowsHide: true,
-      });
-
-      logger.info('ADF Status Check', { output: execResult.toString('utf8') });
-      return { ready: true, status: 'OKAY - ADF Ready' };
-    } catch (execError: any) {
-      if (execError.status === 2) {
-        logger.info('ADF Not Ready', { message: 'No document in ADF yet' });
-        return { ready: false, status: 'Please place your document on the scanner, thank you.' };
-      }
-
-      const stderr = execError.stderr ? execError.stderr.toString('utf8').trim() : '';
-      logger.warn('ADF Status Check Failed', { stderr, error: execError.message });
-
-      // Default to not ready if unable to check
-      return { ready: false, status: 'Please place your document on the scanner, thank you.' };
+    const resp = await dwtRequest('GET', '/DWTAPI/Scanners', undefined, 5000);
+    if (resp.status !== 200) {
+      return {
+        ready: false,
+        status: 'DWT service not responding. Please ensure Dynamsoft Web TWAIN Service is running.',
+      };
     }
+
+    let scanners: Array<{ name: string }>;
+    try {
+      scanners = JSON.parse(resp.data.toString('utf8'));
+    } catch {
+      return { ready: false, status: 'DWT returned an invalid scanner list.' };
+    }
+
+    if (!Array.isArray(scanners) || scanners.length === 0) {
+      return {
+        ready: false,
+        status: 'No TWAIN scanners detected. Ensure scanner is on and TWAIN driver is installed.',
+      };
+    }
+
+    const scanner = scanners.find((s) => /brother|mfc/i.test(s.name)) ?? scanners[0];
+    logger.info('ADF status check: scanner found', { scanner: scanner.name });
+    return { ready: true, status: `OKAY — ${scanner.name} detected via TWAIN` };
   } catch (err) {
-    logger.error('ADF Status Check Error', { error: (err as Error).message });
+    logger.error('ADF status check error', { error: String(err) });
     return {
       ready: false,
       status: 'Please place your document on the scanner, thank you.',
-      error: (err as Error).message,
+      error: String(err),
     };
   }
 };
 
-/**
- * Perform photocopying using the scanner's ADF and printer.
- * This scans documents from the ADF and prints them.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: photocopy (scan + print N copies)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const photocopyDocument = async (
   options: Partial<CopyOptions> = {},
 ): Promise<CopyResult> => {
   const copyId = `COPY-${Date.now()}`;
 
+  if (os.platform() !== 'win32') {
+    return { success: false, error: 'Photocopying is only supported on Windows.' };
+  }
+
   const opts: CopyOptions = {
-    copies: options.copies || 1,
-    colorMode: options.colorMode || 'bw',
-    paperSize: options.paperSize || 'A4',
-    quality: options.quality || 'normal',
+    copies:    options.copies    ?? 1,
+    colorMode: options.colorMode ?? 'bw',
+    paperSize: options.paperSize ?? 'A4',
+    quality:   options.quality   ?? 'standard',
   };
 
-  logger.info('Photocopy request', { copyId, options: opts });
+  logger.info('Photocopy request', { copyId, opts });
 
   try {
-    // Create temporary directory for scanned images
-    const tempDir = path.join(os.tmpdir(), 'webdoc-photocopy');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    const dpi = opts.quality === 'high' ? 600 : opts.quality === 'draft' ? 150 : 300;
 
-    // Scan document using ADF
-    const scanFileName = `scan_${copyId}.jpg`;
-    const scanPath = path.join(tempDir, scanFileName);
-
-    logger.info('Starting photocopy scan', { copyId, scanPath });
-
-    const scanResult = await scanWithWIA(scanPath, {
-      colorMode: opts.colorMode,
-      dpi: opts.quality === 'high' ? 600 : opts.quality === 'low' ? 150 : 300,
-      paperSize: opts.paperSize,
-      outputFormat: 'jpg', // We'll convert to JPG for printing
+    // Scan every page in the ADF in one job
+    const scanResult = await scanAllADFPages({
+      colorMode:    opts.colorMode,
+      dpi,
+      outputFormat: 'jpg',
     });
 
     if (!scanResult.success) {
-      logger.error('Photocopy scan failed', { copyId, error: scanResult.error });
-      throw new Error(`Scan failed: ${scanResult.error}`);
+      return { success: false, error: scanResult.error };
     }
 
-    logger.info('Photocopy scan completed', { copyId, scanPath });
-
-    // Convert JPG to PDF for printing
-    const pdfPath = path.join(tempDir, `print_${copyId}.pdf`);
-    logger.info('Converting image to PDF', { copyId, scanPath, pdfPath });
-
-    const convertResult = await convertImageToPdf(scanPath, pdfPath);
-
-    if (!convertResult.success) {
-      logger.error('PDF conversion failed', { copyId, error: convertResult.error });
-      throw new Error(`PDF conversion failed: ${convertResult.error}`);
-    }
-
-    logger.info('PDF conversion completed', { copyId, pdfPath });
-
-    // Print the scanned document (multiple copies)
-    logger.info('Starting photocopy printing', { copyId, copies: opts.copies, pdfPath });
+    logger.info('All ADF pages scanned', { copyId, pages: scanResult.pages.length });
 
     const { printPdfFile } = await import('./print.service');
-    let printResult: { success: boolean; method: string; error?: string } = {
-      success: true,
-      method: 'none',
-    };
 
-    for (let i = 0; i < opts.copies; i++) {
-      logger.info('Printing copy', { copyId, copyNumber: i + 1 });
-      const result = await printPdfFile(
-        pdfPath,
-        `${copyId}_copy${i + 1}`,
-        opts.paperSize,
-        opts.colorMode,
-        opts.quality,
-      );
-      if (!result.success) {
-        logger.error('Print copy failed', { copyId, copyNumber: i + 1, error: result.error });
-        printResult = result;
-        break; // Stop on first failure
+    // Print collated: one full set per copy
+    for (let copy = 1; copy <= (opts.copies ?? 1); copy++) {
+      for (let pi = 0; pi < scanResult.pages.length; pi++) {
+        const pdfPath = scanResult.pages[pi].replace('.jpg', `_${copyId}_c${copy}.pdf`);
+
+        const cv = await convertImageToPdf(scanResult.pages[pi], pdfPath, opts.paperSize);
+        if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+
+        const pr = await printPdfFile(
+          pdfPath,
+          `${copyId}_p${pi + 1}_c${copy}`,
+          opts.paperSize,
+          opts.colorMode,
+          opts.quality,
+        );
+
+        try { fs.unlinkSync(pdfPath); } catch { /* best-effort */ }
+
+        if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
       }
-      printResult = result; // Keep the last successful result
     }
 
-    if (!printResult.success) {
-      logger.error('Photocopy printing failed', { copyId, error: printResult.error });
-      throw new Error(`Print failed: ${printResult.error}`);
-    }
+    // Clean up session scan files
+    for (const p of scanResult.pages) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
 
-    logger.info('Photocopy printing completed', { copyId });
-
-    // Clean up temporary files
-    try {
-      fs.unlinkSync(scanPath);
-      fs.unlinkSync(pdfPath);
-    } catch (cleanupError) {
-      logger.warn('Failed to clean up temporary files', {
-        copyId,
-        error: (cleanupError as Error).message,
-      });
-    }
-
-    logger.info('Photocopy job completed', { copyId, jobId: copyId });
-
+    logger.info('Photocopy job completed', { copyId, pages: scanResult.pages.length, copies: opts.copies });
     return { success: true, jobId: copyId };
   } catch (error) {
-    const err = error as Error;
-    logger.error('Photocopy error', { copyId, error: err.message });
-    return { success: false, error: err.message };
+    logger.error('Photocopy error', { copyId, error: (error as Error).message });
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: Phase 1 — scan all ADF pages and store as a session on disk.
+// Call this BEFORE the payment screen.  Returns sessionId + pageCount.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const createPhotocopySession = async (
+  options: { colorMode?: 'color' | 'bw'; quality?: string },
+): Promise<{ success: boolean; sessionId?: string; pageCount?: number; error?: string }> => {
+  const dpi = options.quality === 'high' ? 600
+            : options.quality === 'draft'  ? 150
+            : 300;
+
+  const result = await scanAllADFPages({
+    colorMode: options.colorMode ?? 'color',
+    dpi,
+    outputFormat: 'jpg',
+  });
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  return { success: true, sessionId: result.sessionId, pageCount: result.pages.length };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public: Phase 2 — print from a previously created session.
+// Call this AFTER payment succeeds.
+// Each page is resized to fit the chosen paper before printing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const executePhotocopySession = async (options: {
+  sessionId: string;
+  copies:    number;
+  paperSize: string;
+  colorMode: string;
+  quality:   string;
+}): Promise<{ success: boolean; jobId?: string; error?: string }> => {
+  const { sessionId, copies, paperSize, colorMode, quality } = options;
+  const jobId = `COPY-${Date.now()}`;
+
+  // Collect session page paths  (SESSION-xxx_p0.jpg, _p1.jpg, …)
+  const pages: string[] = [];
+  for (let i = 0; ; i++) {
+    const p = path.join(os.tmpdir(), `${sessionId}_p${i}.jpg`);
+    if (!fs.existsSync(p)) break;
+    pages.push(p);
+  }
+
+  if (pages.length === 0) {
+    return { success: false, error: `Session "${sessionId}" not found or already consumed.` };
+  }
+
+  logger.info('Executing photocopy session', { jobId, sessionId, pages: pages.length, copies, paperSize, colorMode, quality });
+
+  try {
+    const { printPdfFile } = await import('./print.service');
+
+    // Print collated: one full set of pages per copy.
+    for (let copy = 1; copy <= copies; copy++) {
+      for (let pi = 0; pi < pages.length; pi++) {
+        const pdfPath = pages[pi].replace('.jpg', `_${jobId}_c${copy}.pdf`);
+
+        const cv = await convertImageToPdf(pages[pi], pdfPath, paperSize);
+        if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+
+        const pr = await printPdfFile(
+          pdfPath,
+          `${jobId}_p${pi + 1}_c${copy}`,
+          paperSize, colorMode, quality,
+        );
+
+        try { fs.unlinkSync(pdfPath); } catch { /* best-effort */ }
+
+        if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
+      }
+    }
+
+    // Clean up session scan files
+    for (const p of pages) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+
+    logger.info('Photocopy session executed', { jobId, pages: pages.length, copies });
+    return { success: true, jobId };
+  } catch (error) {
+    logger.error('executePhotocopySession error', { jobId, error: (error as Error).message });
+    return { success: false, error: (error as Error).message };
   }
 };

@@ -53,7 +53,11 @@
       "Read(//d/Projects-Shem/Thesis/2026/**)",
       "WebFetch(domain:heroui.com)",
       "WebFetch(domain:www.heroui.com)",
-      "WebFetch(domain:v2.heroui.com)"
+      "WebFetch(domain:v2.heroui.com)",
+      "Bash(cmd /c \"taskkill /F /PID 15292\")",
+      "Bash(netstat -ano)",
+      "Bash(cmd /c \"wmic process where ProcessId=15292 get Name,CommandLine 2>&1\")",
+      "Bash(cmd /c \"wmic process where \\\\\"ProcessId=15292\\\\\" get Name,CommandLine\")"
     ]
   }
 }

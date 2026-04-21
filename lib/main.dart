@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'services.dart';
 import 'about.dart';
 import 'pages/payment_page.dart';
-import 'dart:io';
+import 'pages/paper_tracker_page.dart';
 
 void main() {
   runApp(const MainApp());
@@ -75,6 +75,7 @@ class _HeaderState extends State<Header> {
   final List<Map<String, String>> navItems = [
     {'id': 'home', 'label': 'Home'},
     {'id': 'services', 'label': 'Services'},
+    {'id': 'paper-tracker', 'label': 'Paper Tracker'},
     {'id': 'about', 'label': 'About'},
   ];
 
@@ -390,6 +391,8 @@ class _HomePageState extends State<HomePage> {
         return PAYMONGOPaymentPage(onNavigate: widget.onNavigate);
       case 'services':
         return ServicesPage(onNavigate: widget.onNavigate);
+      case 'paper-tracker':
+        return PaperTrackerPage(onNavigate: widget.onNavigate);
       case 'about':
         return const AboutPage();
       default:

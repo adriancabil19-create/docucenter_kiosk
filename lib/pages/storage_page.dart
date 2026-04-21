@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../storage_service.dart';
 import '../transfer_service.dart';
 
@@ -34,65 +35,11 @@ class StorageInterface extends StatefulWidget {
 class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
   bool _isLoading = false;
-  bool _isUploading = false;
-  bool _isExporting = false;
 
   List<LocalBluetoothDevice> _bluetoothDevices = [];
   LocalBluetoothDevice? _connectedBluetoothDevice;
   bool _isBluetoothScanning = false;
-  bool _isWifiTransferring = false;
   String _wifiStatusMessage = '';
-
-  // ── Upload from file picker ──────────────────────────────────────────────
-  Future<void> _uploadFromFile() async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _isUploading = true);
-    try {
-      final paths = await openFiles();
-      if (paths.isEmpty) {
-        setState(() => _isUploading = false);
-        return;
-      }
-      int uploaded = 0;
-      for (final xFile in paths) {
-        try {
-          final bytes = await xFile.readAsBytes();
-          final mimeType = StorageService.getMimeType(xFile.name);
-          final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
-          if (doc != null) uploaded++;
-        } catch (e) {
-          debugPrint('Failed to upload file: $e');
-        }
-      }
-      messenger.showSnackBar(SnackBar(
-        content: Text('Uploaded $uploaded file(s)'),
-        backgroundColor: uploaded > 0 ? Colors.green : Colors.orange,
-      ));
-      widget.onUpload?.call();
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Upload failed: $e')));
-    } finally {
-      setState(() => _isUploading = false);
-    }
-  }
-
-  // ── Export selected docs to USB ──────────────────────────────────────────
-  Future<void> _exportToUsb() async {
-    if (widget.transferManager == null) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final docsToExport = _selectedDocs.isNotEmpty
-        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
-        : widget.documents;
-    if (docsToExport.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('No documents to export')));
-      return;
-    }
-    setState(() => _isExporting = true);
-    messenger.showSnackBar(const SnackBar(content: Text('Exporting to USB...')));
-    final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToExport);
-    setState(() => _isExporting = false);
-    messenger.showSnackBar(SnackBar(content: Text(result.message)));
-  }
 
   Future<void> _refreshDocuments() async {
     setState(() => _isLoading = true);
@@ -181,6 +128,94 @@ class _StorageInterfaceState extends State<StorageInterface> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting selected documents to USB...')));
     final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _connectBluetoothDevice(LocalBluetoothDevice device) =>
+      _connectAndSendBluetooth(device);
+
+  Future<void> _shareViaWifi() async {
+    if (widget.transferManager == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    final docsToSend = _selectedDocs.isNotEmpty
+        ? widget.documents.where((d) => _selectedDocs.contains(d.id)).toList()
+        : widget.documents;
+
+    if (docsToSend.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('No documents to transfer')));
+      return;
+    }
+
+    setState(() => _wifiStatusMessage = 'Starting WiFi transfer server...');
+
+    try {
+      await widget.transferManager!.wifiHotspot.initialize();
+      final result = await widget.transferManager!.transferDocuments(
+          TransferMethod.wifiHotspot, docsToSend);
+
+      if (!result.success) {
+        setState(() => _wifiStatusMessage = result.message);
+        messenger.showSnackBar(SnackBar(content: Text(result.message)));
+        return;
+      }
+
+      final url = await widget.transferManager!.wifiHotspot
+          .generateTransferLink(docsToSend);
+
+      setState(() => _wifiStatusMessage = 'Serving at $url');
+
+      if (!context.mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('WiFi File Transfer'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Scan this QR code with your phone (must be on the same network) to download your files:',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                QrImageView(
+                  data: url,
+                  version: QrVersions.auto,
+                  size: 240,
+                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  url,
+                  style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'The server stays open until you tap Stop.',
+                  style: TextStyle(fontSize: 11, color: Colors.orange),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                widget.transferManager!.wifiHotspot.cancel();
+                setState(() => _wifiStatusMessage = 'Transfer stopped');
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Stop & Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() => _wifiStatusMessage = 'Transfer failed: $e');
+      messenger.showSnackBar(SnackBar(content: Text('WiFi transfer failed: $e')));
+    }
   }
 
   void _toggleDocumentSelection(String docId, bool selected) {
@@ -322,14 +357,9 @@ class _StorageInterfaceState extends State<StorageInterface> {
                                   label: const Text('Connect Bluetooth'),
                                 ),
                                 ElevatedButton.icon(
-                                  onPressed: _initWifiHotspot,
-                                  icon: const Icon(Icons.wifi),
-                                  label: const Text('Init WiFi Hotspot'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _isWifiActive ? _startWifiTransfer : null,
+                                  onPressed: _shareViaWifi,
                                   icon: const Icon(Icons.wifi_tethering),
-                                  label: const Text('Start WiFi Transfer'),
+                                  label: const Text('Share via WiFi'),
                                 ),
                               ],
                             ),

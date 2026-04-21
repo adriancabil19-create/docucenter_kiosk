@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../payment_service.dart';
 import '../config.dart';
+import '../print_service.dart';
 
 // ============================================================================
 // PAYMONGO Payment Page — top-level page shown when user navigates to 'payment'
@@ -38,10 +39,17 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   /// after payment succeeds (e.g., photocopying receipt). Cleared on return.
   static String pendingReceiptContent = '';
 
+  /// Optional async job to run after payment succeeds (e.g., backend scan+print).
+  static Future<void> Function()? pendingJob;
+
   bool _showReceiptScreen = false;
   String _receiptDisplayText = '';
   int _receiptSecondsLeft = 15;
   Timer? _receiptTimer;
+
+  bool _showCancelScreen = false;
+  int _cancelSecondsLeft = 5;
+  Timer? _cancelTimer;
 
   void _clearPaymentState() {
     PAYMONGOPaymentPageState.printFiles = [];
@@ -50,6 +58,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
     PAYMONGOPaymentPageState.quality = 'standard';
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
     PAYMONGOPaymentPageState.printContent = '';
+    PAYMONGOPaymentPageState.pendingJob = null;
   }
 
   void _cancelReceiptTimer() {
@@ -57,15 +66,42 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
     _receiptTimer = null;
   }
 
+  void _cancelCancelTimer() {
+    _cancelTimer?.cancel();
+    _cancelTimer = null;
+  }
+
   void _returnToHome() {
     _cancelReceiptTimer();
+    _cancelCancelTimer();
     _clearPaymentState();
     if (mounted) {
       setState(() {
         _showReceiptScreen = false;
+        _showCancelScreen = false;
       });
       widget.onNavigate('services');
     }
+  }
+
+  void _startCancelTimer() {
+    _cancelCancelTimer();
+    setState(() {
+      _cancelSecondsLeft = 5;
+    });
+    _cancelTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _cancelSecondsLeft--;
+      });
+      if (_cancelSecondsLeft <= 0) {
+        timer.cancel();
+        _returnToHome();
+      }
+    });
   }
 
   void _startReceiptTimer() {
@@ -89,39 +125,102 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   }
 
   @override
+  void dispose() {
+    _cancelReceiptTimer();
+    _cancelCancelTimer();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
-          ),
-          child: Row(
-            children: [
-              ElevatedButton.icon(
-                onPressed: () => widget.onNavigate('services'),
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back to Services'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[300],
-                  foregroundColor: Colors.black,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'PAYMONGO Payment',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: const Color(0xFF003D99),
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
-          child: _showReceiptScreen
+          child: _showCancelScreen
+              ? GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _returnToHome,
+                  child: Container(
+                    color: const Color(0xFFFFF7F7),
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 96,
+                              height: 96,
+                              decoration: BoxDecoration(
+                                color: Colors.red[50],
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.cancel_outlined,
+                                  size: 56, color: Colors.red),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'Payment Cancelled',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red[700],
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Your payment was not completed.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: Colors.grey[600]),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 32),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.red[50],
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.red[200]!),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Returning to services in $_cancelSecondsLeft seconds...',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.red[700],
+                                        ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Tap anywhere to return now',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(color: Colors.grey[600]),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : _showReceiptScreen
               ? GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: _returnToHome,
@@ -254,18 +353,37 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                     amount: pendingAmount,
                     onPaymentComplete: (success, receiptText) async {
                       if (success) {
+                        // Fire any pending backend job (e.g. photocopy scan+print) async
+                        if (pendingJob != null) {
+                          final messenger = ScaffoldMessenger.of(context);
+                          pendingJob!().then((_) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Job completed successfully!'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }).catchError((e) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Job error: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          });
+                        }
                         if (printFiles.isNotEmpty) {
                           try {
                             bool printSuccess;
                             if (printFiles.first is Uint8List) {
-                              printSuccess = await PrintService.printScannedImages(
+                              printSuccess = await PrintingService.printScannedImages(
                                 List<Uint8List>.from(printFiles),
                                 paperSize: paperSize,
                                 colorMode: colorMode,
                                 quality: quality,
                               );
                             } else {
-                              printSuccess = await PrintService.printFromStorage(
+                              printSuccess = await PrintingService.printFromStorage(
                                 List<String>.from(printFiles),
                                 paperSize: paperSize,
                                 colorMode: colorMode,
@@ -305,12 +423,9 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                         });
                         _startReceiptTimer();
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Payment failed. Please try again.'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        _clearPaymentState();
+                        setState(() => _showCancelScreen = true);
+                        _startCancelTimer();
                       }
                     },
                     onTimeout: () {

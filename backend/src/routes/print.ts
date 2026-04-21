@@ -12,6 +12,7 @@ import {
 } from '../services/print.service';
 import { logger } from '../utils/logger';
 import { insertPrintJob } from '../database';
+import { PaperTrackerService } from '../services/paperTracker.service';
 
 const router = Router();
 
@@ -199,6 +200,19 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         message: 'Print job submitted (from storage)',
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
+
+      // Add paper tracking: decrement from default tray (Tray 1) for each file printed
+      // Assuming 1 sheet per file for now - this can be enhanced later
+      try {
+        const sheetsUsed = filenames.length; // 1 sheet per file
+        const defaultTray = 'Tray 1'; // Default tray for printing
+        await PaperTrackerService.usePaper(defaultTray, sheetsUsed);
+        logger.info('Paper tracking updated after print', { tray: defaultTray, sheets: sheetsUsed });
+      } catch (paperError) {
+        logger.warn('Failed to update paper tracking after print', { error: String(paperError) });
+        // Don't fail the print job if paper tracking fails
+      }
+
       res.json(resp);
     } else {
       res.status(500).json({ success: false, error: result.error });

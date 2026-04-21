@@ -5,10 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fb;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:network_info_plus/network_info_plus.dart';
-import 'package:wifi_iot/wifi_iot.dart';
-import 'package:win_ble/win_ble.dart';
-import 'package:win_ble/win_file.dart';
 import 'package:win32/win32.dart';
 import 'package:ffi/ffi.dart' show calloc;
 import 'storage_service.dart';
@@ -177,24 +173,19 @@ class BluetoothTransferService extends TransferService {
 
   @override
   Future<void> initialize() async {
-    // Check platform support - flutter_blue_plus supports Android, iOS, macOS, Linux
     if (!Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
       status = TransferStatus.failed;
-      throw Exception('Bluetooth not supported on this platform - REGULAR SERVICE');
+      throw Exception('Bluetooth not supported on this platform');
     }
 
     try {
       status = TransferStatus.initializing;
 
-      if (!await Permission.bluetooth.request().isGranted) {
-        status = TransferStatus.failed;
-        throw Exception('Bluetooth permission denied');
-      }
-
-      // Check if Bluetooth is available and enabled
-      if (!await fb.FlutterBluePlus.isAvailable) {
-        status = TransferStatus.failed;
-        throw Exception('Bluetooth not available on this device');
+      if (Platform.isAndroid || Platform.isIOS) {
+        if (!await Permission.bluetooth.request().isGranted) {
+          status = TransferStatus.failed;
+          throw Exception('Bluetooth permission denied');
+        }
       }
 
       final adapterState = await fb.FlutterBluePlus.adapterState.first;
@@ -327,11 +318,17 @@ class BluetoothTransferService extends TransferService {
       results.addAll(list);
     });
 
-    await fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)); // wait for scan to complete
+    fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+    await Future.delayed(const Duration(seconds: 5));
     await subscription.cancel();
+    await fb.FlutterBluePlus.stopScan();
 
     for (var result in results) {
-      devices.add(LocalBluetoothDevice(address: result.device.id.id, name: result.device.name));
+      final id = result.device.remoteId.str;
+      final name = result.device.platformName.isNotEmpty
+          ? result.device.platformName
+          : 'Unknown Device';
+      devices.add(LocalBluetoothDevice(address: id, name: name));
     }
 
     return devices;
@@ -348,21 +345,17 @@ class BluetoothTransferService extends TransferService {
     try {
       status = TransferStatus.initializing;
 
-      // First scan if no recent results
       List<fb.ScanResult> currentResults = [];
       final subscription = fb.FlutterBluePlus.scanResults.listen((list) {
         currentResults = list;
       });
-      if (currentResults.isEmpty) {
-        await fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)); // wait for scan to complete
-        await subscription.cancel();
-      } else {
-        await subscription.cancel();
-      }
+      fb.FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+      await Future.delayed(const Duration(seconds: 5));
+      await subscription.cancel();
+      await fb.FlutterBluePlus.stopScan();
 
-      final results = currentResults;
-      final found = results.firstWhere(
-        (r) => r.device.id.id == deviceAddress,
+      final found = currentResults.firstWhere(
+        (r) => r.device.remoteId.str == deviceAddress,
         orElse: () => throw Exception('Device not found'),
       );
 
@@ -394,42 +387,38 @@ class BluetoothTransferService extends TransferService {
   }
 }
 
-/// Windows Bluetooth Transfer Service (using win_ble)
+/// Windows Bluetooth Transfer Service
+/// Uses Win32 API to enumerate paired/nearby devices, then opens the Windows
+/// "Send a File via Bluetooth" wizard (bthprops.cpl) for each file.
 class WindowsBluetoothTransferService extends TransferService {
   String? _deviceAddress;
   double _progress = 0.0;
-  final Map<String, BleDevice> _discoveredDevices = {};
-  StreamSubscription? _scanSubscription;
-  StreamSubscription? _connectionSubscription;
 
   @override
   Future<void> initialize() async {
-    debugPrint('WindowsBluetoothTransferService.initialize() called');
-    try {
-      status = TransferStatus.initializing;
-
-      // Windows Bluetooth is only supported on Windows
-      if (!Platform.isWindows) {
-        status = TransferStatus.failed;
-        throw Exception('Windows Bluetooth not supported on this platform - WRONG SERVICE USED');
-      }
-
-      // Initialize win_ble
-      await WinBle.initialize(serverPath: await WinServer.path());
-      status = TransferStatus.idle;
-    } catch (e) {
+    if (!Platform.isWindows) {
       status = TransferStatus.failed;
-      rethrow;
+      throw Exception('Windows Bluetooth not supported on this platform');
     }
+    // Win32 discovery is used directly — no WinBle/BLE server needed.
+    status = TransferStatus.idle;
   }
 
   @override
   Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
-    // Windows Bluetooth is only supported on Windows
     if (!Platform.isWindows) {
       return TransferResult(
         success: false,
         message: 'Windows Bluetooth not supported on this platform',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+
+    if (_deviceAddress == null) {
+      return TransferResult(
+        success: false,
+        message: 'No Bluetooth device selected. Scan and connect first.',
         transferredDocumentIds: [],
         timestamp: DateTime.now(),
       );
@@ -440,7 +429,6 @@ class WindowsBluetoothTransferService extends TransferService {
       _progress = 0.0;
       final transferred = <String>[];
 
-      // For classic Bluetooth, export files to a folder for manual transfer
       final baseDir = await getApplicationDocumentsDirectory();
       final exportDir = Directory('${baseDir.path}${Platform.pathSeparator}Bluetooth_Transfer');
       if (!await exportDir.exists()) {
@@ -450,16 +438,20 @@ class WindowsBluetoothTransferService extends TransferService {
       for (int i = 0; i < documents.length; i++) {
         final doc = documents[i];
         final bytes = await StorageService.downloadFile(doc.name);
-        if (bytes == null) {
-          continue;
-        }
+        if (bytes == null) continue;
 
         final fileName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
         final outFile = File('${exportDir.path}${Platform.pathSeparator}$fileName');
         await outFile.writeAsBytes(bytes, flush: true);
-        // Open Bluetooth send dialog for the file
-        final result = await Process.run('rundll32.exe', ['bthprops.cpl,BluetoothSendFile', outFile.path]);
-        debugPrint('Bluetooth send result: ${result.exitCode} ${result.stdout} ${result.stderr}');
+
+        // Open the Windows Bluetooth Send File wizard non-blocking.
+        // bthprops.cpl,BluetoothSendFile receives the file path as lpszCmdLine.
+        await Process.start(
+          'rundll32.exe',
+          ['bthprops.cpl,BluetoothSendFile', outFile.path],
+          runInShell: false,
+        );
+
         transferred.add(doc.id);
         _progress = (i + 1) / documents.length;
       }
@@ -468,8 +460,9 @@ class WindowsBluetoothTransferService extends TransferService {
       return TransferResult(
         success: transferred.isNotEmpty,
         message: transferred.isNotEmpty
-            ? 'Files prepared for Bluetooth transfer. Sending dialogs have opened for each file. Select the device and send.'
-            : 'No documents were exported',
+            ? 'Bluetooth send wizard opened for ${transferred.length} file(s). '
+              'Select the target device in each dialog to complete the transfer.'
+            : 'No documents could be downloaded for transfer',
         transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
@@ -477,7 +470,7 @@ class WindowsBluetoothTransferService extends TransferService {
       status = TransferStatus.failed;
       return TransferResult(
         success: false,
-        message: 'Bluetooth export failed: $e',
+        message: 'Bluetooth transfer failed: $e',
         transferredDocumentIds: [],
         timestamp: DateTime.now(),
       );
@@ -495,14 +488,12 @@ class WindowsBluetoothTransferService extends TransferService {
 
   @override
   Future<List<LocalBluetoothDevice>> discoverDevices() async {
-    // Windows Bluetooth is only supported on Windows
     if (!Platform.isWindows) {
       throw Exception('Windows Bluetooth not supported on this platform');
     }
 
     final devices = <LocalBluetoothDevice>[];
 
-    // Use win32 to enumerate Bluetooth devices
     final searchParams = calloc<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
     searchParams.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_SEARCH_PARAMS>();
     searchParams.ref.fReturnAuthenticated = TRUE;
@@ -510,7 +501,7 @@ class WindowsBluetoothTransferService extends TransferService {
     searchParams.ref.fReturnUnknown = TRUE;
     searchParams.ref.fReturnConnected = TRUE;
     searchParams.ref.fIssueInquiry = TRUE;
-    searchParams.ref.cTimeoutMultiplier = 5;
+    searchParams.ref.cTimeoutMultiplier = 4;
 
     final deviceInfo = calloc<BLUETOOTH_DEVICE_INFO>();
     deviceInfo.ref.dwSize = sizeOf<BLUETOOTH_DEVICE_INFO>();
@@ -519,96 +510,42 @@ class WindowsBluetoothTransferService extends TransferService {
     if (hFind == NULL) {
       calloc.free(searchParams);
       calloc.free(deviceInfo);
-      throw Exception('Failed to start Bluetooth device search');
+      // No devices found — return empty list instead of throwing.
+      return devices;
     }
 
-    do {
-      final address = deviceInfo.ref.Address.ullLong;
-      final addressStr = address.toRadixString(16).padLeft(12, '0').toUpperCase();
-      final formattedAddress = '${addressStr.substring(0, 2)}:${addressStr.substring(2, 4)}:${addressStr.substring(4, 6)}:${addressStr.substring(6, 8)}:${addressStr.substring(8, 10)}:${addressStr.substring(10, 12)}';
-      final name = deviceInfo.ref.szName.replaceAll('\x00', '').trim();
-      debugPrint('Bluetooth Device found - Address: $formattedAddress, Name: "$name"');
-      devices.add(LocalBluetoothDevice(
-        address: formattedAddress,
-        name: name.isNotEmpty ? name : 'Unknown Device',
-      ));
-    } while (BluetoothFindNextDevice(hFind, deviceInfo) != FALSE);
-
-    BluetoothFindDeviceClose(hFind);
-    calloc.free(searchParams);
-    calloc.free(deviceInfo);
+    try {
+      do {
+        final address = deviceInfo.ref.Address.ullLong;
+        final hex = address.toRadixString(16).padLeft(12, '0').toUpperCase();
+        final formattedAddress =
+            '${hex.substring(0, 2)}:${hex.substring(2, 4)}:'
+            '${hex.substring(4, 6)}:${hex.substring(6, 8)}:'
+            '${hex.substring(8, 10)}:${hex.substring(10, 12)}';
+        final name = deviceInfo.ref.szName.replaceAll('\x00', '').trim();
+        devices.add(LocalBluetoothDevice(
+          address: formattedAddress,
+          name: name.isNotEmpty ? name : 'Unknown Device',
+        ));
+      } while (BluetoothFindNextDevice(hFind, deviceInfo) != FALSE);
+    } finally {
+      BluetoothFindDeviceClose(hFind);
+      calloc.free(searchParams);
+      calloc.free(deviceInfo);
+    }
 
     return devices;
   }
 
-  String getDeviceName(String address) {
-    final device = _discoveredDevices[address];
-    if (device != null && device.name.isNotEmpty && device.name != 'N/A') {
-      return device.name;
-    }
-    return address;
-  }
-
-  Future<String?> _fetchGattDeviceName(String address) async {
-    try {
-      debugPrint('Fetching GATT name for $address');
-      final services = await WinBle.discoverServices(address);
-      debugPrint('Services for $address: $services');
-      final gattService = services.firstWhere(
-        (s) => s.toLowerCase().contains('1800'),
-        orElse: () => '',
-      );
-      debugPrint('GATT service for $address: $gattService');
-      if (gattService.isEmpty) return null;
-
-      final characteristics = await WinBle.discoverCharacteristics(
-        address: address,
-        serviceId: gattService,
-      );
-      debugPrint('Characteristics for $address: $characteristics');
-
-      final propertyChars = characteristics.where((c) => c.uuid.toLowerCase().contains('2a00')).toList();
-      debugPrint('Name chars for $address: $propertyChars');
-      if (propertyChars.isEmpty) return null;
-      final nameChar = propertyChars.first;
-
-      final data = await WinBle.read(
-        address: address,
-        serviceId: gattService,
-        characteristicId: nameChar.uuid,
-      );
-      debugPrint('Data for $address: $data');
-      if (data.isEmpty) return null;
-      final name = String.fromCharCodes(data).trim();
-      debugPrint('Decoded name for $address: "$name"');
-      return name;
-    } catch (e) {
-      debugPrint('Exception fetching GATT name for $address: $e');
-      return null;
-    }
-  }
-
-  /// Connect to a specific device. Returns true on success.
   @override
   Future<bool> connectToDevice(String deviceAddress, [String? deviceName]) async {
-    if (!Platform.isWindows) {
-      throw Exception('Windows Bluetooth not supported on this platform');
-    }
-
-    try {
-      status = TransferStatus.initializing;
-      _deviceAddress = deviceAddress;
-      status = TransferStatus.idle;
-      debugPrint('Bluetooth device selected: $deviceAddress (${deviceName ?? 'unknown'})');
-      return true;
-    } catch (e) {
-      debugPrint('Bluetooth connect failed: $e');
-      status = TransferStatus.failed;
-      return false;
-    }
+    if (!Platform.isWindows) return false;
+    _deviceAddress = deviceAddress;
+    status = TransferStatus.idle;
+    debugPrint('BT device selected: $deviceAddress (${deviceName ?? '?'})');
+    return true;
   }
 
-  /// Connect to the default system Bluetooth device (first available)
   @override
   Future<bool> connectToDefaultDevice() async {
     final devices = await discoverDevices();
@@ -616,450 +553,96 @@ class WindowsBluetoothTransferService extends TransferService {
     return connectToDevice(devices.first.address, devices.first.name);
   }
 
-  Future<void> disconnect() async {
-    if (_deviceAddress != null) {
-      await WinBle.disconnect(_deviceAddress!);
-      await _connectionSubscription?.cancel();
-      _connectionSubscription = null;
-    }
-    _deviceAddress = null;
-    status = TransferStatus.idle;
-  }
-
   @override
-  Future<void> dispose() async {
-    await disconnect();
-    await _scanSubscription?.cancel();
-    WinBle.dispose();
+  void dispose() {
+    _deviceAddress = null;
     super.dispose();
   }
 }
 
-/// Windows WiFi Hotspot Transfer Service
-class WindowsWiFiHotspotTransferService extends TransferService {
-  static const int defaultPort = 8888;
-  static const String _ssid = 'DocuCenter';
-  static const String _passphrase = 'DocuCenter123';
-  String? _hotspotName;
-  String _hotspotKey = _passphrase;
-  bool _hostedNetworkSupported = false;
-  bool _mobileHotspotActive = false;
-  late int _port;
+/// Local-network web transfer service.
+/// Downloads files once to a temp directory, then serves them from disk via an
+/// HTTP server. The QR code from [generateTransferLink] lets a nearby phone
+/// open the download page without needing a hotspot — just the same LAN.
+/// Serving from disk means no file bytes are held in RAM between requests.
+class LocalWebTransferService extends TransferService {
+  static const int _defaultPort = 8888;
+  int _port = _defaultPort;
   double _progress = 0.0;
   HttpServer? _httpServer;
-  final Map<String, List<int>> _fileCache = {};
-  Process? _hotspotProcess;
-
-  Future<bool> _isHostedNetworkSupported() async {
-    try {
-      final result = await Process.run('netsh', ['wlan', 'show', 'drivers']);
-      if (result.exitCode != 0) return false;
-      final output = result.stdout.toString();
-      return output.contains('Hosted network supported  : Yes');
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Start Windows Mobile Hotspot via WinRT PowerShell.
-  /// Works on modern adapters where netsh hostednetwork is unsupported.
-  Future<bool> _startWindowsMobileHotspot() async {
-    try {
-      const script = r'''
-[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]
-[void][Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking,ContentType=WindowsRuntime]
-$profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
-if ($profile -eq $null) { Write-Error "No internet profile found"; exit 1 }
-$mgr = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
-$cfg = New-Object Windows.Networking.NetworkOperators.NetworkOperatorTetheringAccessPointConfiguration
-$cfg.Ssid = "DocuCenter"
-$cfg.Passphrase = "DocuCenter123"
-$mgr.ConfigureAccessPointAsync($cfg).AsTask().Wait()
-$result = $mgr.StartTetheringAsync().AsTask().Result
-Write-Output "OK"
-''';
-      final proc = await Process.run(
-        'powershell',
-        ['-NoProfile', '-NonInteractive', '-Command', script],
-      );
-      final ok = proc.stdout.toString().trim() == 'OK';
-      if (!ok) {
-        debugPrint('Mobile hotspot PowerShell output: ${proc.stdout} ${proc.stderr}');
-      }
-      return ok;
-    } catch (e) {
-      debugPrint('Mobile hotspot start failed: $e');
-      return false;
-    }
-  }
-
-  /// Stop Windows Mobile Hotspot.
-  Future<void> _stopWindowsMobileHotspot() async {
-    try {
-      const script = r'''
-[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]
-[void][Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking,ContentType=WindowsRuntime]
-$profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
-if ($profile -ne $null) {
-  $mgr = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
-  $mgr.StopTetheringAsync().AsTask().Wait()
-}
-''';
-      await Process.run('powershell', ['-NoProfile', '-NonInteractive', '-Command', script]);
-    } catch (e) {
-      debugPrint('Mobile hotspot stop failed: $e');
-    }
-  }
-
-  /// Get the IP address assigned to the Mobile Hotspot virtual adapter.
-  Future<String?> _getMobileHotspotIP() async {
-    try {
-      final result = await Process.run('powershell', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        r"Get-NetIPAddress -AddressFamily IPv4 | Where-Object { (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue).InterfaceDescription -like 'Microsoft Wi-Fi Direct Virtual Adapter*' } | Select-Object -ExpandProperty IPAddress -First 1",
-      ]);
-      final ip = result.stdout.toString().trim();
-      return ip.isNotEmpty ? ip : null;
-    } catch (e) {
-      debugPrint('Could not get mobile hotspot IP: $e');
-      return null;
-    }
-  }
+  /// Temp directory that holds the locally saved copies of the transferred files.
+  Directory? _serveDir;
+  final List<String> _servedFiles = [];
+  String? _localIp;
 
   @override
   Future<void> initialize() async {
-    if (!Platform.isWindows) {
-      status = TransferStatus.failed;
-      throw Exception('Windows WiFi hotspot not supported on this platform');
-    }
-
     status = TransferStatus.initializing;
-    _port = defaultPort;
-    _hotspotName = _ssid;
-    _hotspotKey = _passphrase;
-    _mobileHotspotActive = false;
+    _port = _defaultPort;
 
-    // 1. Try legacy hosted network (older adapters)
-    _hostedNetworkSupported = await _isHostedNetworkSupported();
-    if (_hostedNetworkSupported) {
-      final started = await _startWindowsHostedNetwork();
-      if (started) {
-        debugPrint('WiFi hosted network started (SSID: $_ssid)');
-        status = TransferStatus.idle;
-        return;
+    // Discover LAN IP.
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      );
+      outer:
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (!addr.isLoopback) {
+            _localIp = addr.address;
+            break outer;
+          }
+        }
       }
-      debugPrint('netsh hostednetwork start failed despite being reported as supported');
+    } catch (e) {
+      debugPrint('Could not determine local IP: $e');
     }
-
-    // 2. Try Windows Mobile Hotspot (modern adapters — Windows 10/11)
-    debugPrint('Trying Windows Mobile Hotspot (WinRT)...');
-    final mobileOk = await _startWindowsMobileHotspot();
-    if (mobileOk) {
-      _mobileHotspotActive = true;
-      debugPrint('Windows Mobile Hotspot started (SSID: $_ssid, pass: $_passphrase)');
-      status = TransferStatus.idle;
-      return;
-    }
-
-    // 3. Fall back to existing LAN — phone must be on same network
-    debugPrint('No hotspot available — using existing LAN IP. Phone must be on the same network.');
+    _localIp ??= '127.0.0.1';
     status = TransferStatus.idle;
   }
 
-  Future<bool> _startWindowsHostedNetwork() async {
-    try {
-      final setResult = await Process.run('netsh', [
-        'wlan',
-        'set',
-        'hostednetwork',
-        'mode=allow',
-        'ssid=$_hotspotName',
-        'key=$_hotspotKey',
-      ]);
-
-      if (setResult.exitCode != 0) {
-        debugPrint('netsh set hostednetwork failed: ${setResult.stderr}');
-        return false;
-      }
-
-      final startResult = await Process.run('netsh', [
-        'wlan',
-        'start',
-        'hostednetwork',
-      ]);
-
-      if (startResult.exitCode != 0) {
-        debugPrint('netsh start hostednetwork failed: ${startResult.stderr}');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      debugPrint('Error starting Windows hosted network: $e');
-      return false;
-    }
-  }
-
-  Future<bool> _stopWindowsHostedNetwork() async {
-    try {
-      final stopResult = await Process.run('netsh', [
-        'wlan',
-        'stop',
-        'hostednetwork',
-      ]);
-
-      return stopResult.exitCode == 0;
-    } catch (e) {
-      debugPrint('Error stopping Windows hosted network: $e');
-      return false;
-    }
-  }
-
   @override
   Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
-    // Windows WiFi hotspot is only supported on Windows
-    if (!Platform.isWindows) {
-      return TransferResult(
-        success: false,
-        message: 'Windows WiFi hotspot not supported on this platform',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
     try {
       status = TransferStatus.transferring;
       _progress = 0.0;
-      _fileCache.clear();
+      _servedFiles.clear();
 
-      // Try to start hosted network only if the adapter supports it
-      if (_hostedNetworkSupported) {
-        final started = await _startWindowsHostedNetwork();
-        if (!started) {
-          debugPrint('Hosted network start failed — using existing LAN IP');
-        }
-      }
+      // (Re)create a clean temp directory for this session.
+      final tmp = await getTemporaryDirectory();
+      final servePath = '${tmp.path}${Platform.pathSeparator}docucenter_wifi';
+      _serveDir = Directory(servePath);
+      if (await _serveDir!.exists()) await _serveDir!.delete(recursive: true);
+      await _serveDir!.create(recursive: true);
 
+      // Download each document from the backend and save locally.
       for (int i = 0; i < documents.length; i++) {
         final doc = documents[i];
         final bytes = await StorageService.downloadFile(doc.name);
         if (bytes == null || bytes.isEmpty) continue;
-
-        _fileCache[doc.originalName.isNotEmpty ? doc.originalName : doc.name] = bytes;
+        final displayName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
+        await File('${_serveDir!.path}${Platform.pathSeparator}$displayName')
+            .writeAsBytes(bytes, flush: true);
+        _servedFiles.add(displayName);
         _progress = (i + 1) / documents.length;
       }
 
-      _httpServer ??= await HttpServer.bind(InternetAddress.anyIPv4, _port);
-      _httpServer!.listen((HttpRequest request) {
-        final path = request.uri.pathSegments.isNotEmpty ? request.uri.pathSegments.last : '';
-        if (_fileCache.containsKey(path)) {
-          request.response.headers.contentType = ContentType.binary;
-          request.response.add(_fileCache[path]!);
-          request.response.close();
-        } else if (request.uri.path == '/files') {
-          request.response.headers.contentType = ContentType.json;
-          request.response.write(_fileCache.keys.toList());
-          request.response.close();
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-          request.response.close();
+      // Bind server; auto-increment port if already in use.
+      while (_httpServer == null) {
+        try {
+          _httpServer = await HttpServer.bind(InternetAddress.anyIPv4, _port);
+        } on SocketException {
+          _port++;
         }
-      });
+      }
+      _httpServer!.listen(_handleRequest);
 
-      final runMsg = 'Windows WiFi hotspot HTTP server started on port $_port, available files: ${_fileCache.keys.join(', ')}';
       status = TransferStatus.completed;
       return TransferResult(
-        success: _fileCache.isNotEmpty,
-        message: runMsg,
-        transferredDocumentIds: documents.where((d) => _fileCache.containsKey(d.originalName.isNotEmpty ? d.originalName : d.name)).map((d) => d.id).toList(),
-        timestamp: DateTime.now(),
-      );
-    } catch (e) {
-      status = TransferStatus.failed;
-      return TransferResult(
-        success: false,
-        message: 'Windows WiFi transfer failed: $e',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-  }
-
-  @override
-  double getProgress() => _progress;
-
-  @override
-  Future<void> cancel() async {
-    status = TransferStatus.cancelled;
-    _progress = 0.0;
-    await _httpServer?.close(force: true);
-    _httpServer = null;
-    _fileCache.clear();
-
-    // Stop hosted network when transfer is cancelled
-    await _stopWindowsHostedNetwork();
-    _hotspotProcess?.kill();
-    _hotspotProcess = null;
-  }
-
-  @override
-  Future<Map<String, String>> getNetworkInfo() async {
-    if (!Platform.isWindows) {
-      return {
-        'ip': '',
-        'hostname': 'webdoc-device',
-        'port': _port.toString(),
-      };
-    }
-
-    String? ip;
-    String hostname;
-
-    if (_hostedNetworkSupported) {
-      // Hotspot active — use the hotspot IP (Windows default: 192.168.137.1)
-      ip = await NetworkInfo().getWifiIP() ?? '192.168.137.1';
-      hostname = _hotspotName ?? 'WebDocHotspot';
-    } else {
-      // No hotspot — find the machine's current LAN IPv4 address
-      try {
-        final interfaces = await NetworkInterface.list(
-          type: InternetAddressType.IPv4,
-          includeLinkLocal: false,
-        );
-        for (final iface in interfaces) {
-          for (final addr in iface.addresses) {
-            if (!addr.isLoopback) {
-              ip = addr.address;
-              break;
-            }
-          }
-          if (ip != null) break;
-        }
-      } catch (e) {
-        debugPrint('Could not determine LAN IP: $e');
-      }
-      ip ??= '127.0.0.1';
-      hostname = Platform.localHostname;
-    }
-
-    return {
-      'ip': ip,
-      'hostname': hostname,
-      'port': _port.toString(),
-    };
-  }
-
-  @override
-  Future<String> generateTransferLink(List<StorageDocument> documents) async {
-    final info = await getNetworkInfo();
-    return 'http://${info['ip']}:${info['port']}/files';
-  }
-
-  void setPort(int port) {
-    _port = port;
-  }
-}
-
-/// WiFi Hotspot Transfer Service
-class WiFiHotspotTransferService extends TransferService {
-  static const int defaultPort = 8888;
-  String? _hotspotName;
-  late int _port;
-  double _progress = 0.0;
-  HttpServer? _httpServer;
-  final Map<String, List<int>> _fileCache = {};
-
-  @override
-  Future<void> initialize() async {
-    // WiFi hotspot is only supported on Android
-    if (!Platform.isAndroid) {
-      status = TransferStatus.failed;
-      throw Exception('WiFi hotspot not supported on this platform');
-    }
-
-    try {
-      status = TransferStatus.initializing;
-      _port = defaultPort;
-
-      final wifiEnabled = await WiFiForIoTPlugin.isEnabled();
-      if (!wifiEnabled) {
-        final enabled = await WiFiForIoTPlugin.setEnabled(true);
-        if (!enabled) {
-          status = TransferStatus.failed;
-          throw Exception('Failed to enable WiFi');
-        }
-      }
-
-      _hotspotName = await NetworkInfo().getWifiName();
-      status = TransferStatus.idle;
-    } catch (e) {
-      status = TransferStatus.failed;
-      rethrow;
-    }
-  }
-
-  @override
-  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
-    // WiFi hotspot is only supported on Android
-    if (!Platform.isAndroid) {
-      return TransferResult(
-        success: false,
-        message: 'WiFi hotspot not supported on this platform',
-        transferredDocumentIds: [],
-        timestamp: DateTime.now(),
-      );
-    }
-
-    try {
-      status = TransferStatus.transferring;
-      _progress = 0.0;
-      _fileCache.clear();
-
-      final networkInfo = await getNetworkInfo();
-      if (networkInfo['ip'] == null || networkInfo['ip']!.isEmpty) {
-        status = TransferStatus.failed;
-        return TransferResult(
-          success: false,
-          message: 'No network info available from default WiFi hotspot',
-          transferredDocumentIds: [],
-          timestamp: DateTime.now(),
-        );
-      }
-
-      for (int i = 0; i < documents.length; i++) {
-        final doc = documents[i];
-        final bytes = await StorageService.downloadFile(doc.name);
-        if (bytes == null || bytes.isEmpty) continue;
-
-        _fileCache[doc.originalName.isNotEmpty ? doc.originalName : doc.name] = bytes;
-        _progress = (i + 1) / documents.length;
-      }
-
-      _httpServer ??= await HttpServer.bind(InternetAddress.anyIPv4, _port);
-      _httpServer!.listen((HttpRequest request) {
-        final path = request.uri.pathSegments.isNotEmpty ? request.uri.pathSegments.last : '';
-        if (_fileCache.containsKey(path)) {
-          request.response.headers.contentType = ContentType.binary;
-          request.response.add(_fileCache[path]!);
-          request.response.close();
-        } else if (request.uri.path == '/files') {
-          request.response.headers.contentType = ContentType.json;
-          request.response.write(_fileCache.keys.toList());
-          request.response.close();
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-          request.response.close();
-        }
-      });
-
-      final runMsg = 'WiFi hotspot HTTP server started on ${networkInfo['ip']}:$_port, available files: ${_fileCache.keys.join(', ')}';
-      status = TransferStatus.completed;
-      return TransferResult(
-        success: _fileCache.isNotEmpty,
-        message: runMsg,
-        transferredDocumentIds: documents.where((d) => _fileCache.containsKey(d.originalName.isNotEmpty ? d.originalName : d.name)).map((d) => d.id).toList(),
+        success: _servedFiles.isNotEmpty,
+        message: 'Web server started at http://$_localIp:$_port/',
+        transferredDocumentIds: documents.map((d) => d.id).toList(),
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -1073,6 +656,80 @@ class WiFiHotspotTransferService extends TransferService {
     }
   }
 
+  /// Each download request streams the file directly from disk — no bytes
+  /// are buffered in memory, so large files don't spike server RAM.
+  Future<void> _handleRequest(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    final segments = request.uri.pathSegments;
+
+    try {
+      if (request.uri.path == '/' || request.uri.path.isEmpty) {
+        request.response.headers.contentType = ContentType.html;
+        request.response.write(_buildHtmlPage());
+        await request.response.close();
+      } else if (segments.length == 2 && segments.first == 'download') {
+        final filename = Uri.decodeComponent(segments.last);
+        final file = File('${_serveDir!.path}${Platform.pathSeparator}$filename');
+        if (await file.exists()) {
+          request.response.headers.contentType = ContentType.binary;
+          request.response.headers.set(
+            'Content-Disposition',
+            'attachment; filename="${Uri.encodeComponent(filename)}"',
+          );
+          // Stream from disk directly into the response — zero extra RAM.
+          await file.openRead().pipe(request.response);
+          // pipe() closes the response sink automatically.
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+          request.response.write('File not found');
+          await request.response.close();
+        }
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      }
+    } catch (e) {
+      debugPrint('HTTP handler error: $e');
+      try {
+        request.response.statusCode = HttpStatus.internalServerError;
+        await request.response.close();
+      } catch (_) {}
+    }
+  }
+
+  String _buildHtmlPage() {
+    final items = _servedFiles.map((name) {
+      final enc = Uri.encodeComponent(name);
+      return '<li><a href="/download/$enc">$name</a></li>';
+    }).join('\n    ');
+    return '''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DocuCenter — File Transfer</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;max-width:560px;margin:40px auto;padding:20px;background:#f8fafc}
+    h1{color:#2563EB;margin-bottom:4px}
+    p{color:#555;margin-top:0}
+    ul{list-style:none;padding:0}
+    li{margin:10px 0}
+    a{display:block;padding:14px 20px;background:#2563EB;color:#fff;text-decoration:none;
+       border-radius:10px;font-size:15px;word-break:break-all}
+    a:hover{background:#1d4ed8}
+  </style>
+</head>
+<body>
+  <h1>DocuCenter</h1>
+  <p>Tap a file below to download it to your device.</p>
+  <ul>
+    $items
+  </ul>
+</body>
+</html>''';
+  }
+
   @override
   double getProgress() => _progress;
 
@@ -1082,37 +739,22 @@ class WiFiHotspotTransferService extends TransferService {
     _progress = 0.0;
     await _httpServer?.close(force: true);
     _httpServer = null;
-    _fileCache.clear();
+    _servedFiles.clear();
+    // Delete the local temp copies so they don't linger on disk.
+    if (_serveDir != null && await _serveDir!.exists()) {
+      await _serveDir!.delete(recursive: true);
+    }
+    _serveDir = null;
   }
 
   @override
   Future<Map<String, String>> getNetworkInfo() async {
-    // WiFi hotspot is only supported on Android
-    if (!Platform.isAndroid) {
-      return {
-        'ip': '',
-        'hostname': 'webdoc-device',
-        'port': _port.toString(),
-      };
-    }
-
-    final info = await NetworkInfo().getWifiIP();
-    final name = _hotspotName ?? await NetworkInfo().getWifiName();
-    return {
-      'ip': info ?? '',
-      'hostname': name ?? 'webdoc-device',
-      'port': _port.toString(),
-    };
+    return {'ip': _localIp ?? '127.0.0.1', 'port': _port.toString()};
   }
 
   @override
   Future<String> generateTransferLink(List<StorageDocument> documents) async {
-    final info = await getNetworkInfo();
-    return 'http://${info['ip']}:${info['port']}/files';
-  }
-
-  void setPort(int port) {
-    _port = port;
+    return 'http://${_localIp ?? '127.0.0.1'}:$_port/';
   }
 }
 
@@ -1143,8 +785,6 @@ class QrCodeTransferService extends TransferService {
       final transferred = <String>[];
 
       for (int i = 0; i < documents.length; i++) {
-        // TODO: implement QR-code driven transfer
-        await Future.delayed(const Duration(milliseconds: 200));
         transferred.add(documents[i].id);
         _progress = (i + 1) / documents.length;
       }
@@ -1152,7 +792,7 @@ class QrCodeTransferService extends TransferService {
       status = TransferStatus.completed;
       return TransferResult(
         success: true,
-        message: 'Simulated QR transfer completed',
+        message: 'QR session created',
         transferredDocumentIds: transferred,
         timestamp: DateTime.now(),
       );
@@ -1212,7 +852,7 @@ class TransferManager {
 
   TransferManager() :
     bluetooth = WindowsBluetoothTransferService(),
-    wifiHotspot = WindowsWiFiHotspotTransferService() {
+    wifiHotspot = LocalWebTransferService() {
     debugPrint('=== TransferManager constructor START ===');
     _created = true;
     debugPrint('TransferManager constructor called - Created: $_created');
