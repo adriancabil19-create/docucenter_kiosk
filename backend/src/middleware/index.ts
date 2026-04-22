@@ -12,6 +12,7 @@ export const rateLimitMiddleware = rateLimit({
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: any) => req.path === '/health',
   handler: (req: any, res: any) => {
     logger.warn('Rate limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({
