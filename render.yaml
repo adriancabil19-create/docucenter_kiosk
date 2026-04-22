@@ -18,10 +18,8 @@ services:
         value: "true"
       - key: ENABLE_HELMET
         value: "true"
-      # Set ALLOWED_ORIGINS to include your admin console URL after first deploy:
-      #   http://localhost:3000,https://docucenter-kiosk-admin.onrender.com
       - key: ALLOWED_ORIGINS
-        value: "http://localhost:3000"
+        value: "http://localhost:3000,https://docucenter-admin.onrender.com"
       # SQLite — use Render Disk (paid) or leave blank for ephemeral storage:
       #   DATABASE_PATH=/data/docucenter.db
       - key: DATABASE_PATH

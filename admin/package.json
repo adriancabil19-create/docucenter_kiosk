@@ -5,10 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start --port 3000",
     "lint": "next lint",
-    "lint:fix": "next lint --fix",
+    "lint:fix": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,json}\""
   },
