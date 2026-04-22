@@ -6,7 +6,17 @@ import { sessionOptions, SessionData } from '@/lib/session';
 export async function POST(request: NextRequest) {
   const { username, password } = await request.json();
 
-  if (username !== process.env.ADMIN_USERNAME || password !== process.env.ADMIN_PASSWORD) {
+  const expectedUser = (process.env.ADMIN_USERNAME ?? '').trim();
+  const expectedPass = (process.env.ADMIN_PASSWORD ?? '').trim();
+
+  if (!expectedUser || !expectedPass) {
+    return NextResponse.json(
+      { error: 'Server misconfigured: ADMIN_USERNAME or ADMIN_PASSWORD not set' },
+      { status: 500 },
+    );
+  }
+
+  if (username.trim() !== expectedUser || password !== expectedPass) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }
 
