@@ -307,7 +307,11 @@ export const updatePaperTray = (
       WHERE tray_name = @trayName
     `);
     update.run({ trayName, currentCount, maxCapacity });
-    syncEvent('paper-tray', { tray_name: trayName, current_count: currentCount, max_capacity: maxCapacity });
+    syncEvent('paper-tray', {
+      tray_name: trayName,
+      current_count: currentCount,
+      max_capacity: maxCapacity,
+    });
   } catch (err) {
     logger.warn('Failed to update paper tray', { trayName, error: String(err) });
   }

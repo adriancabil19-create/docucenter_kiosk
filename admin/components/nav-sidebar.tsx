@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '📊' },
@@ -16,6 +16,13 @@ const NAV_ITEMS = [
 
 export function NavSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  };
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white shadow-sm">
@@ -50,8 +57,14 @@ export function NavSidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 px-4 py-3">
+      <div className="border-t border-gray-200 px-4 py-3 space-y-2">
         <p className="text-xs text-gray-400">DocuCenter Kiosk v1.0</p>
+        <button
+          onClick={handleLogout}
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+        >
+          <span>🚪</span> Sign out
+        </button>
       </div>
     </aside>
   );

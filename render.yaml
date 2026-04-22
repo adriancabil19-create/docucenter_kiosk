@@ -47,3 +47,13 @@ services:
       # Set this to the backend's Render URL after first deploy:
       - key: NEXT_PUBLIC_API_URL
         value: "https://docucenter-kiosk-backend.onrender.com"
+      # ── Auth — fill these in the Render Dashboard ─────────
+      # ADMIN_USERNAME: the login username (e.g. admin)
+      # ADMIN_PASSWORD: a strong password
+      # SESSION_SECRET: random 32+ char string (openssl rand -base64 32)
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false

@@ -61,10 +61,15 @@ export class PayMongoService {
       const description =
         paymentRequest.description ??
         `Payment for ${paymentRequest.serviceType ?? 'document service'}`;
+
+      // Dynamic QR embeds the exact amount so the customer's GCash/Maya app
+      // pre-fills the payment value — no manual entry needed.
       const payload = {
         data: {
           attributes: {
-            kind: 'instore',
+            kind: 'dynamic',
+            amount: Math.round(paymentRequest.amount * 100), // centavos
+            currency: paymentRequest.currency ?? 'PHP',
             description,
           },
         },
