@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (username.trim() !== expectedUser || password !== expectedPass) {
+  if (username.trim() !== expectedUser || password.trim() !== expectedPass) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }
 
