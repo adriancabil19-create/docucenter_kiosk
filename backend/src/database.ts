@@ -13,6 +13,7 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from './utils/logger';
+import { syncEvent } from './services/sync.service';
 
 // ─── Database location ────────────────────────────────────────────────────────
 // Override with DATABASE_PATH env var for persistent disk on Render:
@@ -112,6 +113,7 @@ export const insertTransaction = (row: Omit<TransactionRow, 'created_at'>): void
     `,
       )
       .run(row);
+    syncEvent('transaction', row);
   } catch (err) {
     logger.warn('Failed to insert transaction', { id: row.id, error: String(err) });
   }
@@ -128,6 +130,7 @@ export const updateTransactionStatus = (id: string, status: string, completedAt?
     `,
       )
       .run({ id, status, completedAt: completedAt ?? null });
+    syncEvent('transaction-status', { id, status, completedAt });
   } catch (err) {
     logger.warn('Failed to update transaction status', { id, error: String(err) });
   }
@@ -162,6 +165,7 @@ export const insertPrintJob = (row: PrintJobRow): void => {
         method: row.method ?? null,
         simulated: row.simulated ? 1 : 0,
       });
+    syncEvent('print-job', row);
   } catch (err) {
     logger.warn('Failed to insert print job', { id: row.id, error: String(err) });
   }
@@ -303,6 +307,7 @@ export const updatePaperTray = (
       WHERE tray_name = @trayName
     `);
     update.run({ trayName, currentCount, maxCapacity });
+    syncEvent('paper-tray', { tray_name: trayName, current_count: currentCount, max_capacity: maxCapacity });
   } catch (err) {
     logger.warn('Failed to update paper tray', { trayName, error: String(err) });
   }

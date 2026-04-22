@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'services.dart';
 import 'about.dart';
 import 'pages/payment_page.dart';
-import 'pages/paper_tracker_page.dart';
 
 void main() {
   runApp(const MainApp());
@@ -28,6 +27,7 @@ class _MainAppState extends State<MainApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'DOCUCENTER Kiosk',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2563EB),
@@ -75,7 +75,6 @@ class _HeaderState extends State<Header> {
   final List<Map<String, String>> navItems = [
     {'id': 'home', 'label': 'Home'},
     {'id': 'services', 'label': 'Services'},
-    {'id': 'paper-tracker', 'label': 'Paper Tracker'},
     {'id': 'about', 'label': 'About'},
   ];
 
@@ -391,8 +390,6 @@ class _HomePageState extends State<HomePage> {
         return PAYMONGOPaymentPage(onNavigate: widget.onNavigate);
       case 'services':
         return ServicesPage(onNavigate: widget.onNavigate);
-      case 'paper-tracker':
-        return PaperTrackerPage(onNavigate: widget.onNavigate);
       case 'about':
         return const AboutPage();
       default:

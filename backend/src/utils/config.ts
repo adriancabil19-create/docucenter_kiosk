@@ -58,6 +58,14 @@ export const config = {
     printerName: process.env.PRINTER_NAME || '',
   },
 
+  // Render sync — set on the LOCAL kiosk backend only.
+  // RENDER_SYNC_URL  = https://docucenter-api.onrender.com
+  // RENDER_SYNC_SECRET = any random secret string (same value on both sides)
+  renderSync: {
+    url: (process.env.RENDER_SYNC_URL || '').replace(/\/$/, ''),
+    secret: process.env.RENDER_SYNC_SECRET || '',
+  },
+
   // Aiven / External DB (optional)
   aiven: {
     databaseUrl: process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '',
