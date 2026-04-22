@@ -117,13 +117,19 @@ class _StorageInterfaceState extends State<StorageInterface> {
 
       setState(() => _wifiStatusMessage = 'Serving at $url');
 
+      // Grab hotspot credentials if the service created its own AP.
+      final svc = widget.transferManager!.wifiHotspot;
+      final hotspotSsid = (svc is LocalWebTransferService) ? svc.hotspotSsid : null;
+      final hotspotPw   = (svc is LocalWebTransferService) ? svc.hotspotPassword : null;
+      final usingHotspot = hotspotSsid != null;
+
       if (!context.mounted) return;
       await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => Dialog(
           child: SizedBox(
-            width: 360,
+            width: 400,
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -134,11 +140,59 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Scan this QR code with your phone (must be on the same network) to download your files:',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
+
+                  // Step 1: connect to hotspot (only shown when hotspot mode active)
+                  if (usingHotspot) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF2563EB)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Step 1 — Connect your phone to this WiFi:',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(children: [
+                            const Icon(Icons.wifi, size: 16, color: Color(0xFF2563EB)),
+                            const SizedBox(width: 6),
+                            const Text('Network: ', style: TextStyle(fontSize: 13)),
+                            Text(hotspotSsid,
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.bold)),
+                          ]),
+                          const SizedBox(height: 2),
+                          Row(children: [
+                            const Icon(Icons.lock, size: 16, color: Color(0xFF2563EB)),
+                            const SizedBox(width: 6),
+                            const Text('Password: ', style: TextStyle(fontSize: 13)),
+                            Text(hotspotPw!,
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.bold)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Step 2 — Scan the QR code to download your files:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else ...[
+                    const Text(
+                      'Scan this QR code with your phone (same network) to download your files:',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
                   SizedBox(
                     width: 240,
                     height: 240,

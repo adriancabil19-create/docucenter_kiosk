@@ -145,13 +145,27 @@ class USBTransferService extends TransferService {
   }
 }
 
-/// Local-network web transfer service.
-/// Downloads files once to a temp directory, then serves them from disk via an
-/// HTTP server. The QR code from [generateTransferLink] lets a nearby phone
-/// open the download page without needing a hotspot — just the same LAN.
-/// Serving from disk means no file bytes are held in RAM between requests.
+/// Local-network / Windows-hotspot web transfer service.
+///
+/// When [useWindowsHotspot] is true (default on Windows) the service runs
+/// `netsh wlan hostednetwork` to create a dedicated WiFi access point with
+/// SSID "DocuCenter". The HTTP server binds to 0.0.0.0 and the QR code URL
+/// uses the hotspot gateway IP (192.168.137.1) so the user's phone can
+/// connect directly without needing to be on the same corporate LAN.
+///
+/// Falls back to LAN IP discovery if the hotspot cannot be started
+/// (e.g. incompatible WiFi adapter).
 class LocalWebTransferService extends TransferService {
   static const int _defaultPort = 8888;
+
+  // Windows hosted-network constants
+  static const String _hotspotSsid = 'DocuCenter';
+  static const String _hotspotKey  = 'docucenter1';   // min 8 chars
+  static const String _hotspotGateway = '192.168.137.1';
+
+  final bool useWindowsHotspot;
+  bool _hotspotActive = false;
+
   int _port = _defaultPort;
   double _progress = 0.0;
   HttpServer? _httpServer;
@@ -160,30 +174,101 @@ class LocalWebTransferService extends TransferService {
   final List<String> _servedFiles = [];
   String? _localIp;
 
+  LocalWebTransferService({this.useWindowsHotspot = true});
+
+  // Exposed so the dialog can show connect instructions.
+  String? get hotspotSsid     => _hotspotActive ? _hotspotSsid    : null;
+  String? get hotspotPassword => _hotspotActive ? _hotspotKey     : null;
+
+  Future<bool> _startHotspot() async {
+    try {
+      // Configure the hosted network SSID/key.
+      final setup = await Process.run('netsh', [
+        'wlan', 'set', 'hostednetwork',
+        'mode=allow',
+        'ssid=$_hotspotSsid',
+        'key=$_hotspotKey',
+      ]);
+      if (setup.exitCode != 0) {
+        debugPrint('Hotspot setup failed: ${setup.stderr}');
+        return false;
+      }
+
+      // First attempt to start.
+      var start = await Process.run('netsh', ['wlan', 'start', 'hostednetwork']);
+      if (_hotspotStarted(start)) return true;
+
+      // "Not in correct state" usually means the Microsoft Hosted Network
+      // Virtual Adapter is disabled in Device Manager — enable it and retry.
+      debugPrint('Hosted network start failed — enabling virtual adapter...');
+      await Process.run('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        r'Get-PnpDevice -Class Net | '
+        r'Where-Object { $_.FriendlyName -match "Hosted Network" } | '
+        r'Enable-PnpDevice -Confirm:$false',
+      ]);
+      // Give Windows a moment to bring the adapter up.
+      await Future.delayed(const Duration(seconds: 2));
+
+      start = await Process.run('netsh', ['wlan', 'start', 'hostednetwork']);
+      if (_hotspotStarted(start)) return true;
+
+      debugPrint('Hotspot start output: ${start.stdout} ${start.stderr}');
+      return false;
+    } catch (e) {
+      debugPrint('Could not start Windows hotspot: $e');
+      return false;
+    }
+  }
+
+  bool _hotspotStarted(ProcessResult r) =>
+      r.exitCode == 0 && r.stdout.toString().toLowerCase().contains('started');
+
+  Future<void> _stopHotspot() async {
+    try {
+      await Process.run('netsh', ['wlan', 'stop', 'hostednetwork']);
+    } catch (_) {}
+    _hotspotActive = false;
+  }
+
   @override
   Future<void> initialize() async {
     status = TransferStatus.initializing;
     _port = _defaultPort;
+    _hotspotActive = false;
 
-    // Discover LAN IP.
-    try {
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLinkLocal: false,
-      );
-      outer:
-      for (final iface in interfaces) {
-        for (final addr in iface.addresses) {
-          if (!addr.isLoopback) {
-            _localIp = addr.address;
-            break outer;
+    if (useWindowsHotspot && Platform.isWindows) {
+      _hotspotActive = await _startHotspot();
+      if (_hotspotActive) {
+        _localIp = _hotspotGateway;
+        debugPrint('Windows hotspot started — serving at $_hotspotGateway');
+      } else {
+        debugPrint('Hotspot unavailable, falling back to LAN IP');
+      }
+    }
+
+    // Fall back to LAN IP discovery if hotspot is off or not on Windows.
+    if (!_hotspotActive) {
+      try {
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLinkLocal: false,
+        );
+        outer:
+        for (final iface in interfaces) {
+          for (final addr in iface.addresses) {
+            if (!addr.isLoopback) {
+              _localIp = addr.address;
+              break outer;
+            }
           }
         }
+      } catch (e) {
+        debugPrint('Could not determine local IP: $e');
       }
-    } catch (e) {
-      debugPrint('Could not determine local IP: $e');
+      _localIp ??= '127.0.0.1';
     }
-    _localIp ??= '127.0.0.1';
+
     status = TransferStatus.idle;
   }
 
@@ -330,6 +415,7 @@ class LocalWebTransferService extends TransferService {
       await _serveDir!.delete(recursive: true);
     }
     _serveDir = null;
+    if (_hotspotActive) await _stopHotspot();
   }
 
   @override
