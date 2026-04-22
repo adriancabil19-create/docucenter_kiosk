@@ -121,48 +121,62 @@ class _StorageInterfaceState extends State<StorageInterface> {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('WiFi File Transfer'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Scan this QR code with your phone (must be on the same network) to download your files:',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                QrImageView(
-                  data: url,
-                  version: QrVersions.auto,
-                  size: 240,
-                  errorCorrectionLevel: QrErrorCorrectLevel.M,
-                ),
-                const SizedBox(height: 10),
-                SelectableText(
-                  url,
-                  style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'The server stays open until you tap Stop.',
-                  style: TextStyle(fontSize: 11, color: Colors.orange),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+        builder: (ctx) => Dialog(
+          child: SizedBox(
+            width: 360,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'WiFi File Transfer',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Scan this QR code with your phone (must be on the same network) to download your files:',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: 240,
+                    height: 240,
+                    child: QrImageView(
+                      data: url,
+                      version: QrVersions.auto,
+                      size: 240,
+                      errorCorrectionLevel: QrErrorCorrectLevel.M,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SelectableText(
+                    url,
+                    style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'The server stays open until you tap Stop.',
+                    style: TextStyle(fontSize: 11, color: Colors.orange),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                        widget.transferManager!.wifiHotspot.cancel();
+                        setState(() => _wifiStatusMessage = 'Transfer stopped');
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Stop & Close'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                widget.transferManager!.wifiHotspot.cancel();
-                setState(() => _wifiStatusMessage = 'Transfer stopped');
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Stop & Close'),
-            ),
-          ],
         ),
       );
     } catch (e) {
