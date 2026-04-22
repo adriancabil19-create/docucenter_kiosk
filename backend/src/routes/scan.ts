@@ -257,7 +257,7 @@ router.get('/scan/status', async (req: Request, res: Response) => {
 router.post('/combine-pdf', upload.array('images'), async (req: Request, res: Response) => {
   try {
     const { documentName } = req.body;
-    const files = req.files as Express.Multer.File[];
+    const files = req.files as Array<{ path: string }>;
 
     if (!files || files.length === 0) {
       res.status(400).json({ success: false, error: 'No images provided' });
