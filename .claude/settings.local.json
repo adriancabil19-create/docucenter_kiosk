@@ -57,7 +57,10 @@
       "Bash(cmd /c \"taskkill /F /PID 15292\")",
       "Bash(netstat -ano)",
       "Bash(cmd /c \"wmic process where ProcessId=15292 get Name,CommandLine 2>&1\")",
-      "Bash(cmd /c \"wmic process where \\\\\"ProcessId=15292\\\\\" get Name,CommandLine\")"
+      "Bash(cmd /c \"wmic process where \\\\\"ProcessId=15292\\\\\" get Name,CommandLine\")",
+      "Bash(git -C /c/Users/Administrator/Desktop/docucenter_kiosk ls-files --error-unmatch backend/package-lock.json)",
+      "Bash(git -C /c/Users/Administrator/Desktop/docucenter_kiosk ls-files --error-unmatch admin/package-lock.json)",
+      "Bash(npx next *)"
     ]
   }
 }
