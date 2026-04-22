@@ -45,6 +45,7 @@ export class PayMongoService {
       const response = await this.axiosInstance.post('/qrph/generate', {
         data: {
           attributes: {
+            amount: Math.round(amount * 100), // Convert to centavos
             kind: 'instore',
             description,
           },
