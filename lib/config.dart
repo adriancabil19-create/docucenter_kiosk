@@ -18,7 +18,7 @@ const String flutterAppVersion = '1.0.0';
 /// Production:   https://api.yourdomain.com
 class BackendConfig {
   /// Root server URL (no trailing slash)
-  static const String serverUrl = 'http://localhost:5000';
+  static const String serverUrl = 'https://docucenter-api.onrender.com';
 
   static const String baseUrl = '$serverUrl/api/paymongo';
   static const String printApiUrl = '$serverUrl/api/print';
@@ -78,7 +78,7 @@ class PaymentConfig {
 class UiConfig {
   /// Show development/testing tools
   /// Set to false in production builds
-  static const bool showDevelopmentTools = true;
+  static const bool showDevelopmentTools = false;
 
   /// Enable debug logging
   static const bool enableDebugLogging = false;
