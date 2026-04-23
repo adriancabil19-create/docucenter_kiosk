@@ -8,18 +8,25 @@ import { transferStore } from '../services/transfer.service';
 import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 
-interface UploadedFile {
+interface DiskFile {
   originalname: string;
   path: string;
   mimetype: string;
 }
 
+interface MemFile {
+  originalname: string;
+  buffer: Buffer;
+  mimetype: string;
+}
+
 const router = Router();
 
+// Kiosk → phone: disk storage (files can be large)
 const uploadDir = path.join(os.tmpdir(), 'docucenter_transfer');
 fs.mkdirSync(uploadDir, { recursive: true });
 
-const upload = multer({
+const diskUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir),
     filename: (_req, file, cb) => cb(null, `${uuidv4()}_${file.originalname}`),
@@ -27,14 +34,20 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
+// Phone → kiosk: memory storage (avoids disk I/O issues on Render)
+const memUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
 /**
  * POST /api/transfer/upload
  * Kiosk uploads files — returns a session download URL for the QR code.
  */
-router.post('/api/transfer/upload', upload.array('files', 20), (req: Request, res: Response): void => {
-  const files = (req.files ?? []) as UploadedFile[];
+router.post('/api/transfer/upload', diskUpload.array('files', 20), (req: Request, res: Response): void => {
+  const files = (req.files ?? []) as DiskFile[];
 
-  if (!files || files.length === 0) {
+  if (files.length === 0) {
     res.status(400).json({ success: false, error: 'No files uploaded' });
     return;
   }
@@ -203,15 +216,10 @@ h1{color:#16a34a}p{color:#555;font-size:15px}</style>
     body{font-family:Arial,sans-serif;max-width:480px;margin:40px auto;padding:20px;background:#f8fafc}
     h1{color:#2563EB;margin-bottom:4px}
     p{color:#555;margin-top:0}
-    label.pick{display:flex;flex-direction:column;align-items:center;justify-content:center;
-               border:2px dashed #2563EB;border-radius:12px;padding:32px 20px;
-               background:#eff6ff;cursor:pointer;margin:16px 0;color:#2563EB}
-    label.pick:hover{background:#dbeafe}
-    label.pick span{font-weight:bold;font-size:16px;margin:8px 0}
-    label.pick small{font-size:12px;color:#6b7280}
-    input[type=file]{width:100%;margin:8px 0;font-size:14px}
+    input[type=file]{width:100%;margin:16px 0;font-size:14px;padding:8px;
+                     border:1px solid #d1d5db;border-radius:8px}
     button[type=submit]{width:100%;padding:14px;background:#2563EB;color:#fff;border:none;
-                        border-radius:10px;font-size:16px;cursor:pointer;margin-top:12px}
+                        border-radius:10px;font-size:16px;cursor:pointer;margin-top:8px}
     button[type=submit]:hover{background:#1d4ed8}
   </style>
 </head>
@@ -229,25 +237,27 @@ h1{color:#16a34a}p{color:#555;font-size:15px}</style>
 
 /**
  * POST /transfer/receive/:sessionId
- * Phone submits files via the upload form.
+ * Phone submits files via the upload form — uses memory storage.
  */
-router.post('/transfer/receive/:sessionId', upload.array('files', 20), (req: Request, res: Response): void => {
+router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: Request, res: Response): void => {
   const session = transferStore.getReceive(req.params.sessionId);
 
   if (!session) {
-    res.status(404).json({ error: 'Session expired or not found' });
+    res.status(404).setHeader('Content-Type', 'text/html');
+    res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">Session expired. Please scan the QR code again.</h1>');
     return;
   }
 
-  const files = (req.files ?? []) as UploadedFile[];
+  const files = (req.files ?? []) as MemFile[];
   if (files.length === 0) {
-    res.status(400).json({ error: 'No files received' });
+    res.status(400).setHeader('Content-Type', 'text/html');
+    res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">No files selected. Please go back and choose files.</h1>');
     return;
   }
 
   transferStore.addFilesToReceive(
     req.params.sessionId,
-    files.map((f) => ({ name: f.originalname, path: f.path, mimeType: f.mimetype })),
+    files.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),
   );
 
   logger.info('Files received from phone', {
@@ -255,7 +265,6 @@ router.post('/transfer/receive/:sessionId', upload.array('files', 20), (req: Req
     fileCount: files.length,
   });
 
-  // Return HTML so the plain form gets a visual confirmation page
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -291,7 +300,7 @@ router.get('/api/transfer/receive-session/:sessionId/status', (req: Request, res
 
 /**
  * GET /api/transfer/receive-session/:sessionId/file/:filename
- * Kiosk downloads a specific file that the phone uploaded.
+ * Kiosk downloads a specific file the phone uploaded (served from memory).
  */
 router.get('/api/transfer/receive-session/:sessionId/file/:filename', (req: Request, res: Response): void => {
   const session = transferStore.getReceive(req.params.sessionId);
@@ -311,9 +320,7 @@ router.get('/api/transfer/receive-session/:sessionId/file/:filename', (req: Requ
 
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
   res.setHeader('Content-Type', entry.mimeType || 'application/octet-stream');
-  res.sendFile(entry.path, (err) => {
-    if (err) logger.error('Receive file send error', { filename, error: String(err) });
-  });
+  res.send(entry.buffer);
 });
 
 /**

@@ -1,22 +1,30 @@
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 
-interface TransferFile {
+// Send sessions (kiosk → phone): files live on disk
+interface DiskFile {
   name: string;
   path: string;
   mimeType: string;
 }
 
+// Receive sessions (phone → kiosk): files held in memory to avoid disk I/O
+export interface MemoryFile {
+  name: string;
+  buffer: Buffer;
+  mimeType: string;
+}
+
 interface TransferSession {
   id: string;
-  files: TransferFile[];
+  files: DiskFile[];
   expiresAt: Date;
 }
 
 interface ReceiveSession {
   id: string;
-  files: TransferFile[];
-  ready: boolean; // true once phone has submitted files
+  files: MemoryFile[];
+  ready: boolean;
   expiresAt: Date;
 }
 
@@ -30,7 +38,7 @@ class TransferSessionStore {
 
   // ── Download sessions (kiosk → phone) ────────────────────────────────────
 
-  create(files: TransferFile[]): TransferSession {
+  create(files: DiskFile[]): TransferSession {
     const session: TransferSession = {
       id: uuidv4(),
       files,
@@ -73,7 +81,7 @@ class TransferSessionStore {
     return session;
   }
 
-  addFilesToReceive(id: string, files: TransferFile[]): boolean {
+  addFilesToReceive(id: string, files: MemoryFile[]): boolean {
     const session = this.receiveSessions.get(id);
     if (!session) return false;
     session.files.push(...files);
@@ -97,11 +105,7 @@ class TransferSessionStore {
   }
 
   private deleteReceiveSession(id: string): void {
-    const session = this.receiveSessions.get(id);
-    if (!session) return;
-    for (const file of session.files) {
-      try { fs.unlinkSync(file.path); } catch { /* already gone */ }
-    }
+    // Memory-only files — nothing to unlink
     this.receiveSessions.delete(id);
   }
 
