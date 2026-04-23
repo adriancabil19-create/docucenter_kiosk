@@ -28,7 +28,9 @@ const isWindowsOfficeAvailable = (): boolean => {
   return OFFICE_CANDIDATES.some((p) => fs.existsSync(p));
 };
 
-const psEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "''");
+// In PS single-quoted strings only ' needs escaping ('' = literal quote).
+// Backslashes are literal — do NOT double them.
+const psEscape = (s: string) => s.replace(/'/g, "''");
 
 const convertWithWindowsOffice = (
   inputPath: string,
@@ -321,18 +323,7 @@ export const convertToPdf = async (
   }
 
   if (OFFICE_EXTS.has(ext)) {
-    // ── 1. Windows: Microsoft Office COM (best quality) ──────────────────────
-    if (isWindowsOfficeAvailable()) {
-      try {
-        convertWithWindowsOffice(inputPath, outputPath, ext);
-        logger.info('Converted with Microsoft Office COM', { outputPath });
-        return outputPath;
-      } catch (err) {
-        logger.warn('Office COM conversion failed, trying next method', { error: String(err) });
-      }
-    }
-
-    // ── 2. LibreOffice (Linux/Docker or Windows if installed) ─────────────────
+    // ── 1. LibreOffice — pixel-perfect, works on Windows + Linux/Docker ───────
     const soffice = getLibreOfficeBin();
     if (soffice) {
       try {
@@ -340,11 +331,22 @@ export const convertToPdf = async (
         logger.info('Converted with LibreOffice', { outputPath });
         return outputPath;
       } catch (err) {
-        logger.warn('LibreOffice conversion failed, falling back to pdfkit', { error: String(err) });
+        logger.warn('LibreOffice conversion failed, trying Office COM', { error: String(err) });
       }
     }
 
-    // ── 3. Fallback: mammoth/xlsx/pdfkit ─────────────────────────────────────
+    // ── 2. Windows fallback: Microsoft Office COM ─────────────────────────────
+    if (isWindowsOfficeAvailable()) {
+      try {
+        convertWithWindowsOffice(inputPath, outputPath, ext);
+        logger.info('Converted with Microsoft Office COM', { outputPath });
+        return outputPath;
+      } catch (err) {
+        logger.warn('Office COM conversion failed, falling back to pdfkit', { error: String(err) });
+      }
+    }
+
+    // ── 3. Last resort: mammoth/xlsx/pdfkit ───────────────────────────────────
     if (DOCX_EXTS.has(ext)) {
       await convertDocToPdfFallback(inputPath, outputPath);
       logger.info('DOCX converted via mammoth+pdfkit fallback', { outputPath });
