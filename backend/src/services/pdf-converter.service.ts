@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { execSync, spawnSync } from 'child_process';
 import PDFDocument from 'pdfkit';
 import * as cheerio from 'cheerio';
 import { logger } from '../utils/logger';
@@ -9,14 +11,21 @@ const mammoth = require('mammoth') as typeof import('mammoth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx') as typeof import('xlsx');
 
-export const isLibreOfficeAvailable = (): boolean => false;
+// ---------------------------------------------------------------------------
+// LibreOffice detection + conversion (primary path)
+// ---------------------------------------------------------------------------
 
-const DOCX_EXTS = new Set(['.doc', '.docx', '.odt']);
-const XLSX_EXTS = new Set(['.xls', '.xlsx', '.ods', '.csv']);
-const PPTX_EXTS = new Set(['.ppt', '.pptx', '.odp']);
+export const isLibreOfficeAvailable = (): boolean => {
+  try {
+    execSync('which soffice', { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 // ---------------------------------------------------------------------------
-// DOCX → PDF (mammoth HTML + cheerio + pdfkit, images preserved)
+// Fallback: mammoth HTML + cheerio + pdfkit (DOCX only, images preserved)
 // ---------------------------------------------------------------------------
 
 function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): void {
@@ -54,15 +63,13 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
 
     if (tag === 'p') {
       const imgs = $(el).find('img');
-      // Render images first (they sit above the text block)
       imgs.each((_j, img) => addImage($(img).attr('src') ?? ''));
-      // Render paragraph text as a single call — avoids per-node splitting
       const text = $(el).text().trim();
       if (text) {
         doc.font('Helvetica').fontSize(11).text(text, { lineGap: 2 });
         doc.moveDown(0.2);
       } else if (!imgs.length) {
-        doc.moveDown(0.1); // blank paragraph spacing
+        doc.moveDown(0.1);
       }
       return;
     }
@@ -87,7 +94,6 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
       return;
     }
 
-    // Fallback — any other block element
     const text = $(el).text().trim();
     if (text) {
       doc.font('Helvetica').fontSize(11).text(text, { lineGap: 2 });
@@ -96,7 +102,7 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
   });
 }
 
-const convertDocToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+const convertDocToPdfFallback = async (inputPath: string, outputPath: string): Promise<void> => {
   const result = await mammoth.convertToHtml(
     { path: inputPath },
     {
@@ -112,24 +118,18 @@ const convertDocToPdf = async (inputPath: string, outputPath: string): Promise<v
     const out = fs.createWriteStream(outputPath);
     doc.pipe(out);
     doc.fontSize(11).font('Helvetica');
-
     try {
       renderHtmlToPdf(doc, result.value);
     } catch (err) {
       logger.warn('renderHtmlToPdf partial error', { error: String(err) });
     }
-
     doc.end();
     out.on('finish', resolve);
     out.on('error', reject);
   });
 };
 
-// ---------------------------------------------------------------------------
-// XLSX → PDF
-// ---------------------------------------------------------------------------
-
-const convertXlsToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+const convertXlsToPdfFallback = async (inputPath: string, outputPath: string): Promise<void> => {
   const workbook = XLSX.readFile(inputPath);
 
   await new Promise<void>((resolve, reject) => {
@@ -161,48 +161,28 @@ const convertXlsToPdf = async (inputPath: string, outputPath: string): Promise<v
   });
 };
 
-// ---------------------------------------------------------------------------
-// PPTX → PDF (best-effort text extraction)
-// ---------------------------------------------------------------------------
-
-const convertPptToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
-  try {
-    const wb = XLSX.readFile(inputPath);
-    const texts: string[] = [];
-    for (const name of wb.SheetNames) {
-      const sheet = wb.Sheets[name];
-      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
-      texts.push(`--- ${name} ---`);
-      for (const row of rows) {
-        texts.push((row as unknown[]).map((c) => String(c ?? '')).join(' '));
-      }
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 72, size: 'A4' });
-      const out = fs.createWriteStream(outputPath);
-      doc.pipe(out);
-      doc.fontSize(11).font('Helvetica').text(texts.join('\n') || '(no text content)');
-      doc.end();
-      out.on('finish', resolve);
-      out.on('error', reject);
-    });
-  } catch {
-    await new Promise<void>((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 72, size: 'A4' });
-      const out = fs.createWriteStream(outputPath);
-      doc.pipe(out);
-      doc.fontSize(12).text(`Presentation: ${path.basename(inputPath)}\n\nFull conversion requires LibreOffice.`);
-      doc.end();
-      out.on('finish', resolve);
-      out.on('error', reject);
-    });
-  }
+const convertPptToPdfFallback = async (inputPath: string, outputPath: string): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 72, size: 'A4' });
+    const out = fs.createWriteStream(outputPath);
+    doc.pipe(out);
+    doc.fontSize(12).text(
+      `Presentation: ${path.basename(inputPath)}\n\nFull conversion requires LibreOffice.`,
+    );
+    doc.end();
+    out.on('finish', resolve);
+    out.on('error', reject);
+  });
 };
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+const DOCX_EXTS = new Set(['.doc', '.docx', '.odt']);
+const XLSX_EXTS = new Set(['.xls', '.xlsx', '.ods', '.csv']);
+const PPTX_EXTS = new Set(['.ppt', '.pptx', '.odp']);
+const OFFICE_EXTS = new Set([...DOCX_EXTS, ...XLSX_EXTS, ...PPTX_EXTS]);
 
 export const convertToPdf = async (
   inputPath: string,
@@ -222,25 +202,62 @@ export const convertToPdf = async (
     return outputPath;
   }
 
+  // Try LibreOffice first (pixel-perfect)
+  if (OFFICE_EXTS.has(ext) && isLibreOfficeAvailable()) {
+    try {
+      // LibreOffice needs a writable home dir (Render/Docker may not have one)
+      const tmpHome = path.join(os.tmpdir(), `lo-home-${process.pid}`);
+      fs.mkdirSync(tmpHome, { recursive: true });
+
+      const result = spawnSync(
+        'soffice',
+        ['--headless', '--convert-to', 'pdf', '--outdir', outputDir, inputPath],
+        {
+          timeout: 120_000,
+          stdio: 'pipe',
+          env: { ...process.env, HOME: tmpHome, UserInstallation: `file://${tmpHome}` },
+        },
+      );
+
+      if (result.status === 0) {
+        const inputBaseName = path.parse(inputPath).name;
+        const loPdfPath = path.join(outputDir, `${inputBaseName}.pdf`);
+        if (loPdfPath !== outputPath && fs.existsSync(loPdfPath)) {
+          fs.renameSync(loPdfPath, outputPath);
+        }
+        if (fs.existsSync(outputPath)) {
+          logger.info('Converted with LibreOffice', { outputPath });
+          return outputPath;
+        }
+      }
+
+      const stderr = result.stderr?.toString().trim();
+      logger.warn('LibreOffice conversion failed, falling back', { stderr });
+    } catch (err) {
+      logger.warn('LibreOffice exception, falling back', { error: String(err) });
+    }
+  }
+
+  // Fallback: mammoth/xlsx/pdfkit
   if (DOCX_EXTS.has(ext)) {
-    await convertDocToPdf(inputPath, outputPath);
-    logger.info('DOCX converted to PDF', { outputPath });
+    await convertDocToPdfFallback(inputPath, outputPath);
+    logger.info('DOCX converted via fallback', { outputPath });
     return outputPath;
   }
 
   if (XLSX_EXTS.has(ext)) {
-    await convertXlsToPdf(inputPath, outputPath);
-    logger.info('XLSX converted to PDF', { outputPath });
+    await convertXlsToPdfFallback(inputPath, outputPath);
+    logger.info('XLSX converted via fallback', { outputPath });
     return outputPath;
   }
 
   if (PPTX_EXTS.has(ext)) {
-    await convertPptToPdf(inputPath, outputPath);
-    logger.info('PPTX converted to PDF', { outputPath });
+    await convertPptToPdfFallback(inputPath, outputPath);
+    logger.info('PPTX converted via fallback', { outputPath });
     return outputPath;
   }
 
-  // Images / unknown formats — copy as-is
+  // Images / unknown — copy as-is
   fs.copyFileSync(inputPath, outputPath);
   return outputPath;
 };

@@ -23,7 +23,7 @@ import {
   notFoundMiddleware,
   rateLimitMiddleware,
 } from './middleware';
-import { cancelStalePendingTransactions, insertLog } from './database';
+import { cancelStalePendingTransactions, insertLog, getDb } from './database';
 
 // Initialize Express app
 const app: Express = express();
@@ -134,6 +134,15 @@ app.use(errorHandlingMiddleware);
 // ============================================================================
 
 const PORT = config.port;
+
+// Eagerly open the DB so any init errors appear in startup logs
+try {
+  getDb();
+  logger.info('Database initialized', { path: process.env.DATABASE_PATH || 'default' });
+} catch (err) {
+  logger.error('Database initialization failed — exiting', { error: String(err) });
+  process.exit(1);
+}
 
 const server = app.listen(PORT, () => {
   logger.info(`Server started`, {

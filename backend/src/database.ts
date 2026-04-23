@@ -11,15 +11,16 @@
 
 import Database from 'better-sqlite3';
 import * as path from 'path';
-import * as fs from 'fs';
 import { logger } from './utils/logger';
 import { syncEvent } from './services/sync.service';
 
 // ─── Database location ────────────────────────────────────────────────────────
 // Override with DATABASE_PATH env var for persistent disk on Render:
 //   DATABASE_PATH=/data/docucenter.db
-const dbDir = path.resolve(__dirname, '../..'); // backend/ parent = project root
-const dbPath = process.env.DATABASE_PATH || path.join(dbDir, 'docucenter.db');
+// process.cwd() is the working directory when the server is started:
+//   - local dev (npm run dev from backend/):  backend/docucenter.db
+//   - Docker (WORKDIR /app):                 /app/docucenter.db
+const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'docucenter.db');
 
 // ─── Singleton connection ─────────────────────────────────────────────────────
 let _db: Database.Database | null = null;

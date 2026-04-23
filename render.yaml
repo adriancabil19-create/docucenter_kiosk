@@ -4,10 +4,9 @@ services:
   # ──────────────────────────────────────────────────────────
   - type: web
     name: docucenter-kiosk-backend
-    runtime: node
+    runtime: docker
     rootDir: backend
-    buildCommand: npm ci --include=dev && npm run build
-    startCommand: node dist/index.js
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
