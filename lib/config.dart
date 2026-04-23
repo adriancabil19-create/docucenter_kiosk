@@ -18,11 +18,19 @@ const String flutterAppVersion = '1.0.0';
 /// Production:   https://api.yourdomain.com
 class BackendConfig {
   /// Root server URL (no trailing slash)
-  static const String serverUrl = 'http://localhost:5000';
+  static const String serverUrl = 'https://docucenter-api.onrender.com';
+
+  /// Render-hosted transfer relay URL (no trailing slash).
+  /// Set this to your Render service URL once deployed,
+  /// e.g. 'https://docucenter-api.onrender.com'
+  static const String transferServerUrl = 'https://docucenter-api.onrender.com';
 
   static const String baseUrl = '$serverUrl/api/paymongo';
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
+
+  /// Upload endpoint on the Render transfer relay
+  static const String transferUploadUrl = '$transferServerUrl/api/transfer/upload';
   
   // Endpoint paths
   static const String createPaymentPath = '/create-payment';

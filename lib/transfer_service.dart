@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/http.dart' show MediaType;
 import 'package:path_provider/path_provider.dart';
 import 'storage_service.dart';
+import 'config.dart';
 
 /// Transfer method types
 enum TransferMethod { usb, wifiHotspot, qrCode }
@@ -429,6 +433,110 @@ class LocalWebTransferService extends TransferService {
   }
 }
 
+/// Cloud transfer service — uploads files to the Render relay and returns
+/// a download URL the kiosk shows as a QR code. The phone opens that URL
+/// in any browser to download the files; no shared WiFi needed.
+class CloudTransferService extends TransferService {
+  double _progress = 0.0;
+  String? _downloadUrl;
+
+  @override
+  Future<void> initialize() async {
+    status = TransferStatus.idle;
+  }
+
+  @override
+  Future<TransferResult> startTransfer(List<StorageDocument> documents) async {
+    try {
+      status = TransferStatus.transferring;
+      _progress = 0.0;
+      _downloadUrl = null;
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(BackendConfig.transferUploadUrl),
+      );
+
+      int uploaded = 0;
+      for (final doc in documents) {
+        final bytes = await StorageService.downloadFile(doc.name);
+        if (bytes == null || bytes.isEmpty) continue;
+
+        final displayName = doc.originalName.isNotEmpty ? doc.originalName : doc.name;
+        final mime = doc.mimeType.isNotEmpty ? doc.mimeType : 'application/octet-stream';
+
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            bytes,
+            filename: displayName,
+            contentType: MediaType.parse(mime),
+          ),
+        );
+
+        uploaded++;
+        _progress = uploaded / documents.length * 0.8;
+      }
+
+      if (request.files.isEmpty) {
+        status = TransferStatus.failed;
+        return TransferResult(
+          success: false,
+          message: 'No files could be read from local storage',
+          transferredDocumentIds: [],
+          timestamp: DateTime.now(),
+        );
+      }
+
+      final streamed = await request.send().timeout(const Duration(minutes: 5));
+      final body = await streamed.stream.bytesToString();
+
+      if (streamed.statusCode != 200) {
+        throw Exception('Server returned ${streamed.statusCode}');
+      }
+
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      if (json['success'] != true) {
+        throw Exception(json['error'] ?? 'Upload failed');
+      }
+
+      _downloadUrl = json['downloadUrl'] as String;
+      _progress = 1.0;
+      status = TransferStatus.completed;
+
+      return TransferResult(
+        success: true,
+        message: _downloadUrl!,
+        transferredDocumentIds: documents.map((d) => d.id).toList(),
+        timestamp: DateTime.now(),
+      );
+    } catch (e) {
+      status = TransferStatus.failed;
+      return TransferResult(
+        success: false,
+        message: 'Cloud transfer failed: $e',
+        transferredDocumentIds: [],
+        timestamp: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  double getProgress() => _progress;
+
+  @override
+  Future<void> cancel() async {
+    status = TransferStatus.cancelled;
+    _progress = 0.0;
+    _downloadUrl = null;
+  }
+
+  @override
+  Future<String> generateTransferLink(List<StorageDocument> documents) async {
+    return _downloadUrl ?? '';
+  }
+}
+
 /// QR Code Transfer Service
 class QrCodeTransferService extends TransferService {
   String? _transferToken;
@@ -521,7 +629,7 @@ class TransferManager {
   final QrCodeTransferService qrCode = QrCodeTransferService();
 
   TransferManager() :
-    wifiHotspot = LocalWebTransferService() {
+    wifiHotspot = CloudTransferService() {
     debugPrint('=== TransferManager constructor START ===');
     _created = true;
     debugPrint('TransferManager constructor called - Created: $_created');
