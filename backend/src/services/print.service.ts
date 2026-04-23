@@ -317,6 +317,7 @@ export const printPdfFile = async (
   paperSize?: string,
   colorMode?: string,
   quality?: string,
+  copies?: number,
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
@@ -355,6 +356,7 @@ export const printPdfFile = async (
       else if (colorMode === 'color') parts.push('color');
       if (quality === 'high') parts.push('nHires');
       else if (quality === 'draft') parts.push('draft');
+      if (copies && copies > 1) parts.push(`copies=${copies}`);
       return parts.join(',');
     };
 
@@ -442,13 +444,15 @@ export const printPdfFile = async (
   // ── Linux / macOS — use lp ─────────────────────────────────────────────────
   try {
     const printerArg = config.print.printerName ? `-d "${config.print.printerName}"` : '';
-    execSync(`lp ${printerArg} "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
+    const copiesArg = copies && copies > 1 ? `-n ${copies}` : '';
+    execSync(`lp ${printerArg} ${copiesArg} "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
     logger.info('PDF printed via lp', { jobID, platform });
     return { success: true, method: 'lp' };
   } catch (err) {
     logger.warn('lp failed, trying lpr', { jobID, error: String(err).substring(0, 200) });
     try {
-      execSync(`lpr "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
+      const copiesArg = copies && copies > 1 ? `-#${copies}` : '';
+      execSync(`lpr ${copiesArg} "${filePath}"`, { stdio: 'pipe', timeout: 10000 });
       return { success: true, method: 'lpr' };
     } catch (lprErr) {
       return { success: false, method: 'lp-failed', error: String(lprErr) };
@@ -573,6 +577,7 @@ export const printFilesFromStorage = async (
   paperSize?: string,
   colorMode?: string,
   quality?: string,
+  copies?: number,
 ): Promise<PrintResult> => {
   if (!fs.existsSync(uploadsDir)) {
     logger.warn('Uploads directory does not exist', { uploadsDir });
@@ -607,7 +612,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await resizePdfToPaperSize(filePath, tempResizedPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality);
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('PDF print failed', { filename, error: result.error });
@@ -629,7 +634,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await convertImageToPdf(filePath, tempPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality);
+          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality, copies);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('Image PDF print failed', { filename, error: result.error });

@@ -198,7 +198,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       colorMode,
       quality,
     });
-    const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality);
+    const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
 
     // Log to SQLite regardless of outcome
     insertPrintJob({
