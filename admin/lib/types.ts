@@ -54,6 +54,7 @@ export interface PaperTray {
   current_count: number;
   max_capacity: number;
   threshold: number;
+  paper_size: string;
   updated_at: string;
 }
 

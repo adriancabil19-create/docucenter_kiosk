@@ -4,6 +4,7 @@ import {
   decrementPaperTray,
   incrementPaperTray,
   setPaperTrayCount,
+  updatePaperTrayPaperSize,
   getLowPaperAlerts,
   PaperTrayRow,
 } from '../database';
@@ -92,6 +93,20 @@ export class PaperTrackerService {
     } catch (error) {
       logger.error('Failed to get low paper alerts', { error: String(error) });
       return [];
+    }
+  }
+
+  /**
+   * Set the paper size loaded in a tray (e.g. 'A4', 'LETTER', 'FOLIO')
+   */
+  static setPaperSize(trayName: string, paperSize: string): boolean {
+    try {
+      updatePaperTrayPaperSize(trayName, paperSize);
+      logger.info('Paper tray paper size updated', { trayName, paperSize });
+      return true;
+    } catch (error) {
+      logger.error('Failed to set tray paper size', { trayName, paperSize, error: String(error) });
+      return false;
     }
   }
 

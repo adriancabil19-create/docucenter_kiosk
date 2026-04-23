@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Button, Input } from '@heroui/react';
+import { Button } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { PaperTray } from '@/lib/types';
 import { getPaperTrays, setTrayCount } from '@/lib/api';
@@ -26,6 +26,7 @@ export function PaperTraysManager({ initialData }: Props) {
   const [editingTray, setEditingTray] = useState<string | null>(null);
   const [formCount, setFormCount] = useState('');
   const [formThreshold, setFormThreshold] = useState('');
+  const [formPaperSize, setFormPaperSize] = useState('A4');
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -49,12 +50,14 @@ export function PaperTraysManager({ initialData }: Props) {
     setEditingTray(tray.tray_name);
     setFormCount(String(tray.current_count));
     setFormThreshold(String(tray.threshold));
+    setFormPaperSize(tray.paper_size ?? 'A4');
   }, []);
 
   const cancelEdit = useCallback(() => {
     setEditingTray(null);
     setFormCount('');
     setFormThreshold('');
+    setFormPaperSize('A4');
   }, []);
 
   const save = useCallback(async (trayName: string) => {
@@ -72,22 +75,22 @@ export function PaperTraysManager({ initialData }: Props) {
 
     setSaving(true);
     try {
-      await setTrayCount(trayName, count, thr);
+      await setTrayCount(trayName, count, thr, formPaperSize);
       setTrays((prev) =>
         prev.map((t) =>
           t.tray_name !== trayName
             ? t
-            : { ...t, current_count: count, threshold: thr, updated_at: new Date().toISOString() },
+            : { ...t, current_count: count, threshold: thr, paper_size: formPaperSize, updated_at: new Date().toISOString() },
         ),
       );
-      addToast({ title: 'Saved', description: `${trayName} updated to ${count} sheets.`, color: 'success' });
+      addToast({ title: 'Saved', description: `${trayName} updated to ${count} sheets (${formPaperSize}).`, color: 'success' });
       setEditingTray(null);
     } catch (err) {
       addToast({ title: 'Save failed', description: (err as Error).message, color: 'danger' });
     } finally {
       setSaving(false);
     }
-  }, [formCount, formThreshold]);
+  }, [formCount, formThreshold, formPaperSize]);
 
   return (
     <div>
@@ -158,6 +161,21 @@ export function PaperTraysManager({ initialData }: Props) {
                     />
                     <p className="mt-1 text-xs text-gray-400">Alert when sheets drop to this number.</p>
                   </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      Paper size loaded
+                    </label>
+                    <select
+                      value={formPaperSize}
+                      onChange={(e) => setFormPaperSize(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="A4">A4</option>
+                      <option value="LETTER">Letter</option>
+                      <option value="FOLIO">Folio</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-400">Used to match the correct tray when printing.</p>
+                  </div>
                   <div className="flex gap-2 pt-1">
                     <Button
                       size="sm"
@@ -189,7 +207,8 @@ export function PaperTraysManager({ initialData }: Props) {
                     />
                   </div>
                   <p className="mt-2 text-xs text-gray-400">
-                    Alert threshold: {tray.threshold} sheets &middot; Updated{' '}
+                    <span className="font-medium text-gray-500">{tray.paper_size ?? 'A4'}</span>
+                    {' · '}Alert at {tray.threshold} sheets{' · '}Updated{' '}
                     {new Date(tray.updated_at).toLocaleString('en-PH', {
                       dateStyle: 'short',
                       timeStyle: 'short',

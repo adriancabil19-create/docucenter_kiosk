@@ -13,6 +13,23 @@ import {
 import { logger } from '../utils/logger';
 import { insertPrintJob } from '../database';
 import { PaperTrackerService } from '../services/paperTracker.service';
+import { PDFDocument as PDFLib } from 'pdf-lib';
+
+/** Uploads directory — mirrors the path used in print.service.ts */
+const uploadsDir = path.resolve(__dirname, '../../../Uploads');
+
+/** Count pages in a PDF file; returns 1 for non-PDFs or on error. */
+async function countPages(filename: string): Promise<number> {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext !== '.pdf') return 1;
+  try {
+    const bytes = fs.readFileSync(path.join(uploadsDir, filename));
+    const doc = await PDFLib.load(bytes, { ignoreEncryption: true });
+    return Math.max(1, doc.getPageCount());
+  } catch {
+    return 1;
+  }
+}
 
 const router = Router();
 
@@ -203,20 +220,35 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
 
-      // Decrement the tray that actually has paper (most current_count wins)
+      // Decrement the correct tray: match by paper size, then by most paper available
       try {
-        const sheetsUsed = filenames.length * numCopies;
+        // Sum actual page counts across all files
+        const pageCounts = await Promise.all(filenames.map(countPages));
+        const totalPages = pageCounts.reduce((s, p) => s + p, 0);
+        const sheetsUsed = totalPages * numCopies;
+
+        const normalizedSize = (paperSize ?? 'A4').toUpperCase();
         const allTrays = PaperTrackerService.getTrays();
-        const activeTray = allTrays
-          .filter((t) => t.current_count > 0)
+        const withPaper = allTrays.filter((t) => t.current_count > 0);
+
+        // Prefer a tray loaded with the matching paper size
+        const sizeMatch = withPaper
+          .filter((t) => (t.paper_size ?? 'A4').toUpperCase() === normalizedSize)
           .sort((a, b) => b.current_count - a.current_count)[0];
-        const trayName = activeTray?.tray_name ?? 'Tray 1';
+
+        // Fall back to whatever tray has the most paper
+        const fallback = withPaper.sort((a, b) => b.current_count - a.current_count)[0];
+
+        const tray = sizeMatch ?? fallback;
+        const trayName = tray?.tray_name ?? 'Tray 1';
+
         await PaperTrackerService.usePaper(trayName, sheetsUsed);
         logger.info('Paper tracking updated after print', {
           tray: trayName,
-          sheets: sheetsUsed,
-          files: filenames.length,
+          paperSize: normalizedSize,
+          totalPages,
           copies: numCopies,
+          sheets: sheetsUsed,
         });
       } catch (paperError) {
         logger.warn('Failed to update paper tracking after print', { error: String(paperError) });

@@ -23,11 +23,12 @@ router.get('/paper-trays', (_req, res) => {
 router.put('/paper-trays/:trayName', (req, res) => {
   try {
     const { trayName } = req.params;
-    const { maxCapacity, threshold, sheetsAdded, currentCount } = req.body as {
+    const { maxCapacity, threshold, sheetsAdded, currentCount, paperSize } = req.body as {
       maxCapacity?: number;
       threshold?: number;
       sheetsAdded?: number;
       currentCount?: number;
+      paperSize?: string;
     };
 
     if (currentCount !== undefined) {
@@ -69,6 +70,15 @@ router.put('/paper-trays/:trayName', (req, res) => {
       }
       updatePaperTrayThreshold(trayName, threshold);
       insertLog('info', 'paper', `Tray "${trayName}" threshold updated`, { trayName, threshold });
+    }
+
+    if (paperSize !== undefined) {
+      if (typeof paperSize !== 'string' || !paperSize.trim()) {
+        return res.status(400).json({ success: false, error: 'Invalid paperSize' });
+      }
+      const ok = PaperTrackerService.setPaperSize(trayName, paperSize.trim().toUpperCase());
+      if (!ok) return res.status(500).json({ success: false, error: 'Failed to set paper size' });
+      insertLog('info', 'paper', `Tray "${trayName}" paper size set to ${paperSize.toUpperCase()}`, { trayName, paperSize });
     }
 
     return res.json({ success: true, message: `Tray "${trayName}" updated` });
