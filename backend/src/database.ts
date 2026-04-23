@@ -39,6 +39,7 @@ export const getDb = (): Database.Database => {
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const initSchema = (db: Database.Database): void => {
+  // ── Step 1: Create tables (no INSERTs yet) ──────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
       id              TEXT    PRIMARY KEY,
@@ -53,12 +54,12 @@ const initSchema = (db: Database.Database): void => {
     CREATE TABLE IF NOT EXISTS print_jobs (
       id              TEXT    PRIMARY KEY,
       transaction_id  TEXT,
-      filenames       TEXT    NOT NULL,   -- JSON array of filenames
+      filenames       TEXT    NOT NULL,
       paper_size      TEXT    NOT NULL DEFAULT 'A4',
       copies          INTEGER NOT NULL DEFAULT 1,
       status          TEXT    NOT NULL DEFAULT 'submitted',
       method          TEXT,
-      simulated       INTEGER NOT NULL DEFAULT 0,  -- 1 = simulation, 0 = real print
+      simulated       INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
@@ -66,16 +67,9 @@ const initSchema = (db: Database.Database): void => {
       tray_name       TEXT    PRIMARY KEY,
       current_count   INTEGER NOT NULL DEFAULT 0,
       max_capacity    INTEGER NOT NULL DEFAULT 0,
-      threshold       INTEGER NOT NULL DEFAULT 20,  -- sheets remaining before low alert
-      paper_size      TEXT             DEFAULT 'A4',
+      threshold       INTEGER NOT NULL DEFAULT 20,
       updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
-
-    -- Insert default trays if not exist
-    INSERT OR IGNORE INTO paper_trays (tray_name, current_count, max_capacity, threshold, paper_size) VALUES
-      ('MP Tray', 0, 0, 20, 'A4'),
-      ('Tray 1',  0, 0, 20, 'A4'),
-      ('Tray 2',  0, 0, 20, 'A4');
 
     CREATE TABLE IF NOT EXISTS activity_logs (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,13 +87,21 @@ const initSchema = (db: Database.Database): void => {
     CREATE INDEX IF NOT EXISTS idx_logs_created          ON activity_logs(created_at);
   `);
 
-  // Migration: add paper_size column to existing paper_trays tables
-  // Uses nullable (no NOT NULL) so ALTER TABLE works on all SQLite versions
+  // ── Step 2: Migrations — run before any INSERT that references new columns ──
+  // ALTER TABLE silently no-ops if the column already exists (caught below).
   try {
     db.exec(`ALTER TABLE paper_trays ADD COLUMN paper_size TEXT DEFAULT 'A4'`);
   } catch {
-    // Column already exists — safe to ignore
+    // Column already exists on fresh or previously-migrated databases — safe to ignore
   }
+
+  // ── Step 3: Seed default rows (paper_size column is guaranteed to exist now) ─
+  db.exec(`
+    INSERT OR IGNORE INTO paper_trays (tray_name, current_count, max_capacity, threshold, paper_size) VALUES
+      ('MP Tray', 0, 0, 20, 'A4'),
+      ('Tray 1',  0, 0, 20, 'A4'),
+      ('Tray 2',  0, 0, 20, 'A4');
+  `);
 };
 
 // ─── Transaction helpers ──────────────────────────────────────────────────────
