@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Table,
   TableHeader,
@@ -34,24 +34,25 @@ export function PaymentsTable({ initialData }: Props) {
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [selected, setSelected] = useState<Transaction | null>(null);
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await getTransactions(200);
       setData(res.transactions);
-      addToast({
-        title: 'Refreshed',
-        description: `${res.count} transaction(s) loaded.`,
-        color: 'success',
-      });
+      if (!silent) addToast({ title: 'Refreshed', description: `${res.count} transaction(s) loaded.`, color: 'success' });
     } catch (err) {
-      addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      if (!silent) addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => refresh(true), 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const openCancel = useCallback(
     (tx: Transaction) => {
@@ -106,7 +107,7 @@ export function PaymentsTable({ initialData }: Props) {
             </span>
           )}
         </div>
-        <Button size="sm" variant="flat" onPress={refresh} isLoading={loading}>
+        <Button size="sm" variant="flat" onPress={() => refresh()} isLoading={loading}>
           Refresh
         </Button>
       </div>
@@ -148,7 +149,7 @@ export function PaymentsTable({ initialData }: Props) {
         </TableBody>
       </Table>
 
-      <Modal isOpen={isOpen} onClose={onClose}>
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
         <ModalContent>
           <ModalHeader>Cancel Transaction</ModalHeader>
           <ModalBody>

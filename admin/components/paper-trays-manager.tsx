@@ -35,7 +35,7 @@ export function PaperTraysManager({ initialData }: Props) {
   const [selected, setSelected] = useState<PaperTray | null>(null);
   const [formCount, setFormCount] = useState('');
   const [formThreshold, setFormThreshold] = useState('');
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -160,7 +160,7 @@ export function PaperTraysManager({ initialData }: Props) {
         })}
       </div>
 
-      <Modal isOpen={isOpen} onClose={onClose}>
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
         <ModalContent>
           <ModalHeader>Update Paper Count — {selected?.tray_name}</ModalHeader>
           <ModalBody className="space-y-4">
