@@ -497,7 +497,7 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
       });
 
       final transaction = await _paymentService.createPayment(
-        amount: widget.amount,
+        amount: PAYMONGOPaymentPageState.pendingAmount,
         serviceType: 'document_service',
         documentCount: 1,
       );
