@@ -551,7 +551,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                                   icon: const Icon(Icons.upload_file),
                                   label: const Text('Receive from Phone'),
                                   style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.deepPurple),
+                                      backgroundColor: Colors.green),
                                 ),
                               ],
                             ),
