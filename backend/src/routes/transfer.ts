@@ -240,33 +240,43 @@ h1{color:#16a34a}p{color:#555;font-size:15px}</style>
  * Phone submits files via the upload form — uses memory storage.
  */
 router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: Request, res: Response): void => {
-  const session = transferStore.getReceive(req.params.sessionId);
+  try {
+    const session = transferStore.getReceive(req.params.sessionId);
 
-  if (!session) {
-    res.status(404).setHeader('Content-Type', 'text/html');
-    res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">Session expired. Please scan the QR code again.</h1>');
-    return;
-  }
+    if (!session) {
+      res.status(404).setHeader('Content-Type', 'text/html');
+      res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">Session expired. Please scan the QR code again.</h1>');
+      return;
+    }
 
-  const files = (req.files ?? []) as MemFile[];
-  if (files.length === 0) {
-    res.status(400).setHeader('Content-Type', 'text/html');
-    res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">No files selected. Please go back and choose files.</h1>');
-    return;
-  }
+    const files = (req.files ?? []) as MemFile[];
+    if (files.length === 0) {
+      res.status(400).setHeader('Content-Type', 'text/html');
+      res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">No files selected. Please go back and choose files.</h1>');
+      return;
+    }
 
-  transferStore.addFilesToReceive(
-    req.params.sessionId,
-    files.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),
-  );
+    const added = transferStore.addFilesToReceive(
+      req.params.sessionId,
+      files.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),
+    );
 
-  logger.info('Files received from phone', {
-    sessionId: req.params.sessionId,
-    fileCount: files.length,
-  });
+    if (!added) {
+      logger.warn('Receive session not found while storing uploaded files', {
+        sessionId: req.params.sessionId,
+      });
+      res.status(404).setHeader('Content-Type', 'text/html');
+      res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">Session expired while uploading. Please scan the QR code again.</h1>');
+      return;
+    }
 
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    logger.info('Files received from phone', {
+      sessionId: req.params.sessionId,
+      fileCount: files.length,
+    });
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DocuCenter — Sent!</title>
 <style>body{font-family:Arial,sans-serif;text-align:center;margin-top:80px;background:#f8fafc}
@@ -276,6 +286,12 @@ h1{color:#16a34a}p{color:#555;font-size:15px}</style>
 <p>Your files have been received by the kiosk and are ready for printing.</p>
 <p style="font-size:13px;color:#999">You can close this page.</p>
 </body></html>`);
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Receive upload route error', { sessionId: req.params.sessionId, error: err.message });
+    res.status(500).setHeader('Content-Type', 'text/html');
+    res.send('<h1 style="font-family:sans-serif;text-align:center;margin-top:60px">Upload failed due to a server error. Please try again.</h1>');
+  }
 });
 
 /**
