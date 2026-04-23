@@ -2,6 +2,7 @@ import {
   getPaperTrays,
   updatePaperTray,
   decrementPaperTray,
+  incrementPaperTray,
   getLowPaperAlerts,
   PaperTrayRow,
 } from '../database';
@@ -31,6 +32,20 @@ export class PaperTrackerService {
       return true;
     } catch (error) {
       logger.error('Failed to set tray capacity', { trayName, maxCapacity, error: String(error) });
+      return false;
+    }
+  }
+
+  /**
+   * Add sheets to a tray (incremental refill, capped at max_capacity)
+   */
+  static refillTray(trayName: string, sheetsAdded: number): boolean {
+    try {
+      incrementPaperTray(trayName, sheetsAdded);
+      logger.info('Paper tray refilled', { trayName, sheetsAdded });
+      return true;
+    } catch (error) {
+      logger.error('Failed to refill tray', { trayName, sheetsAdded, error: String(error) });
       return false;
     }
   }

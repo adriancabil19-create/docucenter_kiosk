@@ -66,6 +66,16 @@ export const updatePaperTray = (
     body: JSON.stringify({ maxCapacity, ...(threshold !== undefined ? { threshold } : {}) }),
   });
 
+export const refillPaperTray = (
+  trayName: string,
+  sheetsAdded: number,
+  threshold?: number,
+): Promise<{ success: boolean; message: string }> =>
+  apiFetch(`/api/paper-tracker/paper-trays/${encodeURIComponent(trayName)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ sheetsAdded, ...(threshold !== undefined ? { threshold } : {}) }),
+  });
+
 export const updatePaperTrayThreshold = (
   trayName: string,
   threshold: number,

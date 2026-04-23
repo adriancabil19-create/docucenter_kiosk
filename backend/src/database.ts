@@ -422,3 +422,44 @@ export const getRecentLogs = (limit = 50): ActivityLogRow[] => {
     )
     .all(limit) as ActivityLogRow[];
 };
+
+// ─── Auto-cancel stale transactions ──────────────────────────────────────────
+
+export const cancelStalePendingTransactions = (olderThanMinutes: number): string[] => {
+  const db = getDb();
+  const stale = db
+    .prepare(
+      `SELECT id FROM transactions
+       WHERE status IN ('PENDING', 'PROCESSING')
+         AND created_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-' || ? || ' minutes')`,
+    )
+    .all(olderThanMinutes) as { id: string }[];
+
+  if (stale.length === 0) return [];
+
+  db.prepare(
+    `UPDATE transactions
+     SET status = 'CANCELLED', completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+     WHERE status IN ('PENDING', 'PROCESSING')
+       AND created_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-' || ? || ' minutes')`,
+  ).run(olderThanMinutes);
+
+  return stale.map((r) => r.id);
+};
+
+// ─── Incremental paper tray refill ───────────────────────────────────────────
+
+export const incrementPaperTray = (trayName: string, sheetsAdded: number): void => {
+  try {
+    getDb()
+      .prepare(
+        `UPDATE paper_trays
+         SET current_count = MIN(max_capacity, current_count + @sheetsAdded),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+         WHERE tray_name = @trayName`,
+      )
+      .run({ trayName, sheetsAdded });
+  } catch (err) {
+    logger.warn('Failed to increment paper tray', { trayName, sheetsAdded, error: String(err) });
+  }
+};

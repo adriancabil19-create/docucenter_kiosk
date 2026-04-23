@@ -101,6 +101,15 @@ export class PayMongoController {
         return;
       }
 
+      // Persist terminal statuses to SQLite so the admin dashboard reflects reality
+      if (['SUCCESS', 'FAILED', 'EXPIRED'].includes(transaction.status)) {
+        updateTransactionStatus(
+          transactionId,
+          transaction.status,
+          transaction.completedAt ? transaction.completedAt.toISOString() : new Date().toISOString(),
+        );
+      }
+
       logger.info('Payment status checked', {
         transactionId,
         status: transaction.status,
@@ -154,6 +163,9 @@ export class PayMongoController {
         } as ApiResponse<null>);
         return;
       }
+
+      // Persist cancellation to SQLite
+      updateTransactionStatus(transactionId, 'CANCELLED', new Date().toISOString());
 
       logger.info('Payment cancelled', { transactionId, reason });
 

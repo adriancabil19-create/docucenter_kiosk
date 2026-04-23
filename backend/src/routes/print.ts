@@ -166,7 +166,8 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { filenames, paperSize, colorMode, quality } = req.body;
+    const { filenames, paperSize, colorMode, quality, copies } = req.body;
+    const numCopies: number = typeof copies === 'number' && copies > 0 ? copies : 1;
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
@@ -175,6 +176,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
 
     logger.info('Print from storage request received', {
       count: filenames.length,
+      copies: numCopies,
       paperSize,
       colorMode,
       quality,
@@ -186,7 +188,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       id: result.jobID ?? randomUUID(),
       filenames,
       paper_size: paperSize ?? 'A4',
-      copies: 1,
+      copies: numCopies,
       status: result.success ? 'submitted' : 'failed',
       method: result.method,
       simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
@@ -201,19 +203,19 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
 
-      // Add paper tracking: decrement from default tray (Tray 1) for each file printed
-      // Assuming 1 sheet per file for now - this can be enhanced later
+      // Decrement paper by filenames.length * copies (one sheet per file per copy)
       try {
-        const sheetsUsed = filenames.length; // 1 sheet per file
-        const defaultTray = 'Tray 1'; // Default tray for printing
+        const sheetsUsed = filenames.length * numCopies;
+        const defaultTray = 'Tray 1';
         await PaperTrackerService.usePaper(defaultTray, sheetsUsed);
         logger.info('Paper tracking updated after print', {
           tray: defaultTray,
           sheets: sheetsUsed,
+          files: filenames.length,
+          copies: numCopies,
         });
       } catch (paperError) {
         logger.warn('Failed to update paper tracking after print', { error: String(paperError) });
-        // Don't fail the print job if paper tracking fails
       }
 
       res.json(resp);

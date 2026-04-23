@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Table,
   TableHeader,
@@ -31,26 +31,36 @@ export function StorageTable({ initialData }: Props) {
   const [pendingDelete, setPendingDelete] = useState<StorageDocument | null>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await getDocuments();
       setRows(res.documents);
-      addToast({
-        title: 'Refreshed',
-        description: `${res.count} file(s) in storage.`,
-        color: 'success',
-      });
+      if (!silent) {
+        addToast({
+          title: 'Refreshed',
+          description: `${res.count} file(s) in storage.`,
+          color: 'success',
+        });
+      }
     } catch (err) {
-      addToast({
-        title: 'Refresh failed',
-        description: err instanceof Error ? err.message : 'Could not reach the server.',
-        color: 'danger',
-      });
+      if (!silent) {
+        addToast({
+          title: 'Refresh failed',
+          description: err instanceof Error ? err.message : 'Could not reach the server.',
+          color: 'danger',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  // Auto-refresh every 30 seconds so newly uploaded files appear without manual action
+  useEffect(() => {
+    const id = setInterval(() => refresh(true), 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const confirmDelete = useCallback(
     (doc: StorageDocument) => {
@@ -89,7 +99,7 @@ export function StorageTable({ initialData }: Props) {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">{rows.length} file(s)</p>
-          <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={refresh}>
+          <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={() => refresh()}>
             Refresh
           </Button>
         </div>

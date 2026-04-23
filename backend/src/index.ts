@@ -23,6 +23,7 @@ import {
   notFoundMiddleware,
   rateLimitMiddleware,
 } from './middleware';
+import { cancelStalePendingTransactions, insertLog } from './database';
 
 // Initialize Express app
 const app: Express = express();
@@ -148,6 +149,19 @@ const server = app.listen(PORT, () => {
     apiStatus: `http://localhost:${PORT}/api/status`,
   });
 });
+
+// Auto-cancel transactions that have been PENDING/PROCESSING for more than 5 minutes
+setInterval(() => {
+  try {
+    const cancelled = cancelStalePendingTransactions(5);
+    cancelled.forEach((id) => {
+      insertLog('info', 'payment', 'Auto-cancelled stale pending transaction', { transactionId: id });
+      logger.info('Auto-cancelled stale transaction', { transactionId: id });
+    });
+  } catch (err) {
+    logger.error('Auto-cancel interval error', { error: String(err) });
+  }
+}, 60_000);
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

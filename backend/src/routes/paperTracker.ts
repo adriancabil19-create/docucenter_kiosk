@@ -17,11 +17,28 @@ router.get('/paper-trays', (_req, res) => {
 });
 
 // PUT /api/paper-tracker/paper-trays/:trayName
-// Body: { maxCapacity: number, threshold?: number }
+// Body: { sheetsAdded?: number, maxCapacity?: number, threshold?: number }
+// sheetsAdded = incremental refill (adds to current_count, capped at max_capacity)
+// maxCapacity = full reset (sets current_count = max_capacity = value)
 router.put('/paper-trays/:trayName', (req, res) => {
   try {
     const { trayName } = req.params;
-    const { maxCapacity, threshold } = req.body as { maxCapacity?: number; threshold?: number };
+    const { maxCapacity, threshold, sheetsAdded } = req.body as {
+      maxCapacity?: number;
+      threshold?: number;
+      sheetsAdded?: number;
+    };
+
+    if (sheetsAdded !== undefined) {
+      if (typeof sheetsAdded !== 'number' || sheetsAdded <= 0) {
+        return res.status(400).json({ success: false, error: 'Invalid sheetsAdded' });
+      }
+      const ok = PaperTrackerService.refillTray(trayName, sheetsAdded);
+      if (!ok) {
+        return res.status(500).json({ success: false, error: 'Failed to refill tray' });
+      }
+      insertLog('info', 'paper', `Tray "${trayName}" refilled with ${sheetsAdded} sheets`, { trayName, sheetsAdded });
+    }
 
     if (maxCapacity !== undefined) {
       if (typeof maxCapacity !== 'number' || maxCapacity < 0) {
@@ -31,7 +48,7 @@ router.put('/paper-trays/:trayName', (req, res) => {
       if (!ok) {
         return res.status(500).json({ success: false, error: 'Failed to update tray capacity' });
       }
-      insertLog('info', 'paper', `Tray "${trayName}" refilled`, { trayName, maxCapacity });
+      insertLog('info', 'paper', `Tray "${trayName}" capacity set to ${maxCapacity}`, { trayName, maxCapacity });
     }
 
     if (threshold !== undefined) {

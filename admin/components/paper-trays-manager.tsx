@@ -13,7 +13,7 @@ import {
 } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { PaperTray } from '@/lib/types';
-import { getPaperTrays, updatePaperTray } from '@/lib/api';
+import { getPaperTrays, refillPaperTray, updatePaperTray } from '@/lib/api';
 
 interface Props {
   initialData: PaperTray[];
@@ -33,7 +33,7 @@ export function PaperTraysManager({ initialData }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<PaperTray | null>(null);
-  const [formCapacity, setFormCapacity] = useState('');
+  const [formSheets, setFormSheets] = useState('');
   const [formThreshold, setFormThreshold] = useState('');
   const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -53,7 +53,7 @@ export function PaperTraysManager({ initialData }: Props) {
   const openEdit = useCallback(
     (tray: PaperTray) => {
       setSelected(tray);
-      setFormCapacity(String(tray.max_capacity));
+      setFormSheets('');
       setFormThreshold(String(tray.threshold));
       onOpen();
     },
@@ -62,26 +62,33 @@ export function PaperTraysManager({ initialData }: Props) {
 
   const save = useCallback(async () => {
     if (!selected) return;
-    const cap = parseInt(formCapacity, 10);
+    const sheets = parseInt(formSheets, 10);
     const thr = parseInt(formThreshold, 10);
-    if (isNaN(cap) || cap < 0 || isNaN(thr) || thr < 0) {
+    if (isNaN(sheets) || sheets <= 0) {
       addToast({
         title: 'Invalid input',
-        description: 'Capacity and threshold must be non-negative numbers.',
+        description: 'Sheets to add must be a positive number.',
+        color: 'warning',
+      });
+      return;
+    }
+    if (isNaN(thr) || thr < 0) {
+      addToast({
+        title: 'Invalid input',
+        description: 'Alert threshold must be a non-negative number.',
         color: 'warning',
       });
       return;
     }
     setSaving(true);
     try {
-      await updatePaperTray(selected.tray_name, cap, thr);
+      await refillPaperTray(selected.tray_name, sheets, thr);
       setTrays((prev) =>
         prev.map((t) =>
           t.tray_name === selected.tray_name
             ? {
                 ...t,
-                max_capacity: cap,
-                current_count: cap,
+                current_count: Math.min(t.max_capacity, t.current_count + sheets),
                 threshold: thr,
                 updated_at: new Date().toISOString(),
               }
@@ -89,8 +96,8 @@ export function PaperTraysManager({ initialData }: Props) {
         ),
       );
       addToast({
-        title: 'Updated',
-        description: `${selected.tray_name} set to ${cap} sheets.`,
+        title: 'Refilled',
+        description: `${selected.tray_name} +${sheets} sheets.`,
         color: 'success',
       });
       onClose();
@@ -99,7 +106,7 @@ export function PaperTraysManager({ initialData }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [selected, formCapacity, formThreshold, onClose]);
+  }, [selected, formSheets, formThreshold, onClose]);
 
   return (
     <>
@@ -162,13 +169,18 @@ export function PaperTraysManager({ initialData }: Props) {
         <ModalContent>
           <ModalHeader>Refill — {selected?.tray_name}</ModalHeader>
           <ModalBody className="space-y-4">
+            <p className="text-xs text-gray-500">
+              Current: <span className="font-semibold">{selected?.current_count}</span> /{' '}
+              {selected?.max_capacity} sheets
+            </p>
             <Input
-              label="Paper count (sheets loaded)"
+              label="Sheets to add"
               type="number"
-              min={0}
-              value={formCapacity}
-              onValueChange={setFormCapacity}
-              description="Sets both current count and max capacity to this value."
+              min={1}
+              value={formSheets}
+              onValueChange={setFormSheets}
+              placeholder="e.g. 100"
+              description="Number of sheets you are physically loading into this tray."
             />
             <Input
               label="Low-paper alert threshold"
@@ -184,7 +196,7 @@ export function PaperTraysManager({ initialData }: Props) {
               Cancel
             </Button>
             <Button color="primary" onPress={save} isLoading={saving}>
-              Save
+              Confirm Refill
             </Button>
           </ModalFooter>
         </ModalContent>
