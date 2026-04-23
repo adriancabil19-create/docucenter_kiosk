@@ -23,11 +23,23 @@ router.get('/paper-trays', (_req, res) => {
 router.put('/paper-trays/:trayName', (req, res) => {
   try {
     const { trayName } = req.params;
-    const { maxCapacity, threshold, sheetsAdded } = req.body as {
+    const { maxCapacity, threshold, sheetsAdded, currentCount } = req.body as {
       maxCapacity?: number;
       threshold?: number;
       sheetsAdded?: number;
+      currentCount?: number;
     };
+
+    if (currentCount !== undefined) {
+      if (typeof currentCount !== 'number' || currentCount < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid currentCount' });
+      }
+      const ok = PaperTrackerService.setCurrentCount(trayName, currentCount);
+      if (!ok) {
+        return res.status(500).json({ success: false, error: 'Failed to set tray count' });
+      }
+      insertLog('info', 'paper', `Tray "${trayName}" count set to ${currentCount}`, { trayName, currentCount });
+    }
 
     if (sheetsAdded !== undefined) {
       if (typeof sheetsAdded !== 'number' || sheetsAdded <= 0) {

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import '../config.dart';
@@ -48,47 +47,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
     await Future.delayed(const Duration(milliseconds: 500));
     widget.onUpload?.call();
     setState(() => _isLoading = false);
-  }
-
-  Future<void> _importFromUSB() async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      messenger.showSnackBar(const SnackBar(content: Text('Selecting files from USB...')));
-      final paths = await openFiles();
-      if (paths.isEmpty) return;
-      int uploaded = 0;
-      for (final xFile in paths) {
-        try {
-          final bytes = await xFile.readAsBytes();
-          final mimeType = StorageService.getMimeType(xFile.name);
-          final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
-          if (doc != null) uploaded++;
-        } catch (e) {
-          debugPrint('Failed to upload file: $e');
-        }
-      }
-      messenger.showSnackBar(SnackBar(content: Text('Imported $uploaded file(s) from USB')));
-      widget.onUpload?.call();
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('USB import failed: $e')));
-    }
-  }
-
-  Future<void> _exportToUSB() async {
-    if (widget.transferManager == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transfer manager not available')));
-      return;
-    }
-
-    final docsToTransfer = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
-    if (docsToTransfer.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select document(s) to export to USB')));
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting selected documents to USB...')));
-    final result = await widget.transferManager!.transferDocuments(TransferMethod.usb, docsToTransfer);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _shareViaWifi() async {
@@ -510,20 +468,6 @@ class _StorageInterfaceState extends State<StorageInterface> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _isLoading ? Colors.grey : const Color(0xFF2563EB),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: _importFromUSB,
-                          icon: const Icon(Icons.usb),
-                          label: const Text('Import from USB'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: _exportToUSB,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Export to USB'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                         ),
                       ],
                     ),

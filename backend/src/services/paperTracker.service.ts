@@ -3,6 +3,7 @@ import {
   updatePaperTray,
   decrementPaperTray,
   incrementPaperTray,
+  setPaperTrayCount,
   getLowPaperAlerts,
   PaperTrayRow,
 } from '../database';
@@ -32,6 +33,20 @@ export class PaperTrackerService {
       return true;
     } catch (error) {
       logger.error('Failed to set tray capacity', { trayName, maxCapacity, error: String(error) });
+      return false;
+    }
+  }
+
+  /**
+   * Set the current sheet count directly (absolute value entered by admin)
+   */
+  static setCurrentCount(trayName: string, count: number): boolean {
+    try {
+      setPaperTrayCount(trayName, count);
+      logger.info('Paper tray count set', { trayName, count });
+      return true;
+    } catch (error) {
+      logger.error('Failed to set tray count', { trayName, count, error: String(error) });
       return false;
     }
   }

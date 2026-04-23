@@ -447,6 +447,24 @@ export const cancelStalePendingTransactions = (olderThanMinutes: number): string
   return stale.map((r) => r.id);
 };
 
+// ─── Absolute paper count setter ─────────────────────────────────────────────
+
+export const setPaperTrayCount = (trayName: string, currentCount: number): void => {
+  try {
+    getDb()
+      .prepare(
+        `UPDATE paper_trays
+         SET current_count = @currentCount,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+         WHERE tray_name = @trayName`,
+      )
+      .run({ trayName, currentCount });
+    syncEvent('paper-tray', { tray_name: trayName, current_count: currentCount });
+  } catch (err) {
+    logger.warn('Failed to set paper tray count', { trayName, currentCount, error: String(err) });
+  }
+};
+
 // ─── Incremental paper tray refill ───────────────────────────────────────────
 
 export const incrementPaperTray = (trayName: string, sheetsAdded: number): void => {

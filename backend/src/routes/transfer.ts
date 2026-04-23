@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { transferStore } from '../services/transfer.service';
 import { config } from '../utils/config';
 import { logger } from '../utils/logger';
+import { convertToPdf } from '../services/pdf-converter.service';
 
 interface DiskFile {
   originalname: string;
@@ -21,6 +22,38 @@ interface MemFile {
 }
 
 const router = Router();
+
+const CONVERTIBLE_EXTS = new Set(['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp']);
+
+/**
+ * Convert a memory-buffer file to PDF if it's a convertible document type.
+ * Returns the original file unchanged if conversion is not needed or fails.
+ */
+function maybeConvertToPdf(file: MemFile): MemFile {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!CONVERTIBLE_EXTS.has(ext)) return file;
+
+  const tmpInput = path.join(os.tmpdir(), `${uuidv4()}${ext}`);
+  const tmpDir = os.tmpdir();
+  try {
+    fs.writeFileSync(tmpInput, file.buffer);
+    const pdfPath = convertToPdf(tmpInput, tmpDir, file.originalname);
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const newName = `${path.parse(file.originalname).name}.pdf`;
+    logger.info('Converted uploaded file to PDF', { original: file.originalname, pdf: newName });
+    // clean up temp files
+    try { fs.unlinkSync(tmpInput); } catch { /* ignore */ }
+    if (pdfPath !== tmpInput) try { fs.unlinkSync(pdfPath); } catch { /* ignore */ }
+    return { originalname: newName, buffer: pdfBuffer, mimetype: 'application/pdf' };
+  } catch (err) {
+    logger.warn('PDF conversion failed for uploaded file, keeping original', {
+      file: file.originalname,
+      error: String(err),
+    });
+    try { fs.unlinkSync(tmpInput); } catch { /* ignore */ }
+    return file;
+  }
+}
 
 // Kiosk → phone: disk storage (files can be large)
 const uploadDir = path.join(os.tmpdir(), 'docucenter_transfer');
@@ -256,9 +289,10 @@ router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: 
       return;
     }
 
+    const converted = files.map((f) => maybeConvertToPdf({ ...f, originalname: decodeURIComponent(f.originalname) }));
     const added = transferStore.addFilesToReceive(
       req.params.sessionId,
-      files.map((f) => ({ name: decodeURIComponent(f.originalname), buffer: f.buffer, mimeType: f.mimetype })),
+      converted.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),
     );
 
     if (!added) {

@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { href: '/payments', label: 'Payments', icon: '💰' },
   { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️' },
   { href: '/paper', label: 'Paper Trays', icon: '📄' },
-  { href: '/storage', label: 'Storage', icon: '📁' },
   { href: '/logs', label: 'Activity Logs', icon: '📋' },
   { href: '/kiosk', label: 'Kiosk Status', icon: '🖥️' },
 ];
