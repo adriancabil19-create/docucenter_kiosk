@@ -203,13 +203,17 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
 
-      // Decrement paper by filenames.length * copies (one sheet per file per copy)
+      // Decrement the tray that actually has paper (most current_count wins)
       try {
         const sheetsUsed = filenames.length * numCopies;
-        const defaultTray = 'Tray 1';
-        await PaperTrackerService.usePaper(defaultTray, sheetsUsed);
+        const allTrays = PaperTrackerService.getTrays();
+        const activeTray = allTrays
+          .filter((t) => t.current_count > 0)
+          .sort((a, b) => b.current_count - a.current_count)[0];
+        const trayName = activeTray?.tray_name ?? 'Tray 1';
+        await PaperTrackerService.usePaper(trayName, sheetsUsed);
         logger.info('Paper tracking updated after print', {
-          tray: defaultTray,
+          tray: trayName,
           sheets: sheetsUsed,
           files: filenames.length,
           copies: numCopies,

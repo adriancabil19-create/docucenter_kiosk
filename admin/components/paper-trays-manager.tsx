@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button, Input } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { PaperTray } from '@/lib/types';
@@ -27,18 +27,23 @@ export function PaperTraysManager({ initialData }: Props) {
   const [formCount, setFormCount] = useState('');
   const [formThreshold, setFormThreshold] = useState('');
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await getPaperTrays();
       setTrays(res.data);
-      addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
+      if (!silent) addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
     } catch (err) {
-      addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      if (!silent) addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => refresh(true), 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const startEdit = useCallback((tray: PaperTray) => {
     setEditingTray(tray.tray_name);
@@ -88,7 +93,7 @@ export function PaperTraysManager({ initialData }: Props) {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-gray-500">{trays.length} tray(s) tracked</p>
-        <Button size="sm" variant="flat" onPress={refresh} isLoading={loading}>
+        <Button size="sm" variant="flat" onPress={() => refresh()} isLoading={loading}>
           Refresh
         </Button>
       </div>

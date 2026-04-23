@@ -33,58 +33,7 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
       const buf = Buffer.from(b64, 'base64');
       doc.image(buf, { fit: [pageWidth, 600] });
       doc.moveDown(0.5);
-    } catch {
-      // unsupported image format — skip silently
-    }
-  }
-
-  function renderChildren(el: Node) {
-    const children = $(el).contents().toArray();
-    let pendingText = '';
-
-    const flushText = (opts?: { bold?: boolean; size?: number }) => {
-      const t = pendingText.trim();
-      if (!t) { pendingText = ''; return; }
-      if (opts?.bold) doc.font('Helvetica-Bold');
-      if (opts?.size) doc.fontSize(opts.size);
-      doc.text(t, { lineGap: 2, continued: false });
-      doc.font('Helvetica').fontSize(11);
-      pendingText = '';
-    };
-
-    for (const child of children) {
-      if (child.type === 'text') {
-        pendingText += (child.data as string) ?? '';
-        continue;
-      }
-      if (child.type !== 'tag') continue;
-
-      const tag = (child.name as string).toLowerCase();
-
-      if (tag === 'img') {
-        flushText();
-        addImage($(child).attr('src') ?? '');
-        continue;
-      }
-
-      if (tag === 'strong' || tag === 'b' || tag === 'em' || tag === 'i') {
-        flushText();
-        const inner = $(child).text().trim();
-        if (inner) {
-          doc.font(tag === 'em' || tag === 'i' ? 'Helvetica-Oblique' : 'Helvetica-Bold')
-            .fontSize(11)
-            .text(inner, { lineGap: 2, continued: false });
-          doc.font('Helvetica').fontSize(11);
-        }
-        continue;
-      }
-
-      // Nested inline content
-      flushText();
-      renderChildren(child);
-    }
-
-    flushText();
+    } catch { /* unsupported format — skip */ }
   }
 
   $('body').children().each((_i, el) => {
@@ -104,14 +53,16 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
     }
 
     if (tag === 'p') {
-      // Check for images inside this paragraph
       const imgs = $(el).find('img');
-      if (imgs.length && !$(el).text().trim()) {
-        // image-only paragraph
-        imgs.each((_j, img) => addImage($(img).attr('src') ?? ''));
-      } else {
-        renderChildren(el);
+      // Render images first (they sit above the text block)
+      imgs.each((_j, img) => addImage($(img).attr('src') ?? ''));
+      // Render paragraph text as a single call — avoids per-node splitting
+      const text = $(el).text().trim();
+      if (text) {
+        doc.font('Helvetica').fontSize(11).text(text, { lineGap: 2 });
         doc.moveDown(0.2);
+      } else if (!imgs.length) {
+        doc.moveDown(0.1); // blank paragraph spacing
       }
       return;
     }
@@ -136,7 +87,7 @@ function renderHtmlToPdf(doc: InstanceType<typeof PDFDocument>, html: string): v
       return;
     }
 
-    // Fallback
+    // Fallback — any other block element
     const text = $(el).text().trim();
     if (text) {
       doc.font('Helvetica').fontSize(11).text(text, { lineGap: 2 });

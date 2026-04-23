@@ -349,7 +349,7 @@ export const printPdfFile = async (
     // Build -print-settings — comma-separated, no spaces in values
     // SumatraPDF 3.x uses 'mono' for B&W (not 'color=no')
     const buildSettings = (): string => {
-      const parts: string[] = [];
+      const parts: string[] = ['fitPage']; // always scale content to fill the paper
       if (paperSize) parts.push(`paper=${paperSize.toLowerCase()}`);
       if (colorMode === 'bw') parts.push('mono');
       else if (colorMode === 'color') parts.push('color');
