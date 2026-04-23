@@ -17,10 +17,11 @@ import { syncEvent } from './services/sync.service';
 // ─── Database location ────────────────────────────────────────────────────────
 // Override with DATABASE_PATH env var for persistent disk on Render:
 //   DATABASE_PATH=/data/docucenter.db
-// process.cwd() is the working directory when the server is started:
-//   - local dev (npm run dev from backend/):  backend/docucenter.db
-//   - Docker (WORKDIR /app):                 /app/docucenter.db
-const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'docucenter.db');
+// __dirname resolves to:
+//   - ts-node (backend/src):  ../../ = project root
+//   - compiled  (backend/dist): ../../ = project root
+// This keeps the DB at the project root in all cases.
+const dbPath = process.env.DATABASE_PATH || path.join(path.resolve(__dirname, '../..'), 'docucenter.db');
 
 // ─── Singleton connection ─────────────────────────────────────────────────────
 let _db: Database.Database | null = null;
