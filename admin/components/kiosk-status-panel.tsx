@@ -59,8 +59,10 @@ function TrayRow({ tray }: { tray: PaperTray }) {
 export function KioskStatusPanel({ initialData }: Props) {
   const [status, setStatus] = useState<KioskStatus | null>(initialData);
   const [loading, setLoading] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
 
   useEffect(() => {
+    setRefreshedAt(new Date().toLocaleTimeString('en-PH'));
     if (!status) refresh();
   }, []);
 
@@ -69,6 +71,7 @@ export function KioskStatusPanel({ initialData }: Props) {
     try {
       const res = await getKioskStatus();
       setStatus(res.status);
+      setRefreshedAt(new Date().toLocaleTimeString('en-PH'));
       addToast({
         title: 'Status updated',
         description: 'Kiosk status refreshed.',
@@ -97,9 +100,9 @@ export function KioskStatusPanel({ initialData }: Props) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-400">
-          Last refreshed: {new Date().toLocaleTimeString('en-PH')}
-        </p>
+        {refreshedAt && (
+          <p className="text-xs text-gray-400">Last refreshed: {refreshedAt}</p>
+        )}
         <Button size="sm" variant="flat" onPress={refresh} isLoading={loading}>
           Refresh
         </Button>
