@@ -25,11 +25,7 @@ const router = Router();
 
 const CONVERTIBLE_EXTS = new Set(['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp']);
 
-/**
- * Convert a memory-buffer file to PDF if it's a convertible document type.
- * Returns the original file unchanged if conversion is not needed or fails.
- */
-function maybeConvertToPdf(file: MemFile): MemFile {
+async function maybeConvertToPdf(file: MemFile): Promise<MemFile> {
   const ext = path.extname(file.originalname).toLowerCase();
   if (!CONVERTIBLE_EXTS.has(ext)) return file;
 
@@ -37,19 +33,15 @@ function maybeConvertToPdf(file: MemFile): MemFile {
   const tmpDir = os.tmpdir();
   try {
     fs.writeFileSync(tmpInput, file.buffer);
-    const pdfPath = convertToPdf(tmpInput, tmpDir, file.originalname);
+    const pdfPath = await convertToPdf(tmpInput, tmpDir, file.originalname);
     const pdfBuffer = fs.readFileSync(pdfPath);
     const newName = `${path.parse(file.originalname).name}.pdf`;
     logger.info('Converted uploaded file to PDF', { original: file.originalname, pdf: newName });
-    // clean up temp files
     try { fs.unlinkSync(tmpInput); } catch { /* ignore */ }
     if (pdfPath !== tmpInput) try { fs.unlinkSync(pdfPath); } catch { /* ignore */ }
     return { originalname: newName, buffer: pdfBuffer, mimetype: 'application/pdf' };
   } catch (err) {
-    logger.warn('PDF conversion failed for uploaded file, keeping original', {
-      file: file.originalname,
-      error: String(err),
-    });
+    logger.warn('PDF conversion failed, keeping original', { file: file.originalname, error: String(err) });
     try { fs.unlinkSync(tmpInput); } catch { /* ignore */ }
     return file;
   }
@@ -272,7 +264,7 @@ h1{color:#16a34a}p{color:#555;font-size:15px}</style>
  * POST /transfer/receive/:sessionId
  * Phone submits files via the upload form — uses memory storage.
  */
-router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: Request, res: Response): void => {
+router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), async (req: Request, res: Response): Promise<void> => {
   try {
     const session = transferStore.getReceive(req.params.sessionId);
 
@@ -289,7 +281,7 @@ router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: 
       return;
     }
 
-    const converted = files.map((f) => maybeConvertToPdf({ ...f, originalname: decodeURIComponent(f.originalname) }));
+    const converted = await Promise.all(files.map((f) => maybeConvertToPdf({ ...f, originalname: decodeURIComponent(f.originalname) })));
     const added = transferStore.addFilesToReceive(
       req.params.sessionId,
       converted.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),

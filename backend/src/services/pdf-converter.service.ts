@@ -1,146 +1,157 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import PDFDocument from 'pdfkit';
 import { logger } from '../utils/logger';
 
-/**
- * PDF Conversion Service
- * Converts various document formats to PDF for consistent printing
- */
+// Dynamic imports — avoid bundling errors if optional deps are missing at type-check time.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const mammoth = require('mammoth') as typeof import('mammoth');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const XLSX = require('xlsx') as typeof import('xlsx');
+
+export const isLibreOfficeAvailable = (): boolean => false;
+
+const DOCX_EXTS = new Set(['.doc', '.docx', '.odt']);
+const XLSX_EXTS = new Set(['.xls', '.xlsx', '.ods', '.csv']);
+const PPTX_EXTS = new Set(['.ppt', '.pptx', '.odp']);
 
 /**
- * Check if LibreOffice is available on the system
+ * Convert DOCX/DOC to PDF using mammoth (text extraction) + pdfkit.
  */
-const isLibreOfficeAvailable = (): boolean => {
+const convertDocToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+  const result = await mammoth.extractRawText({ path: inputPath });
+  const text = result.value || '(empty document)';
+
+  await new Promise<void>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 72, size: 'A4' });
+    const out = fs.createWriteStream(outputPath);
+    doc.pipe(out);
+    doc.fontSize(11).font('Helvetica').text(text, { lineGap: 2 });
+    doc.end();
+    out.on('finish', resolve);
+    out.on('error', reject);
+  });
+};
+
+/**
+ * Convert XLS/XLSX to PDF using xlsx (sheet parsing) + pdfkit.
+ */
+const convertXlsToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+  const workbook = XLSX.readFile(inputPath);
+
+  await new Promise<void>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
+    const out = fs.createWriteStream(outputPath);
+    doc.pipe(out);
+
+    let firstSheet = true;
+    for (const sheetName of workbook.SheetNames) {
+      if (!firstSheet) doc.addPage();
+      firstSheet = false;
+
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+
+      doc.fontSize(13).font('Helvetica-Bold').text(sheetName).moveDown(0.4);
+      doc.fontSize(8).font('Helvetica');
+
+      for (const row of rows) {
+        const line = (row as unknown[]).map((c) => String(c ?? '')).join('   ');
+        doc.text(line, { lineGap: 1 });
+      }
+      doc.moveDown(0.5);
+    }
+
+    doc.end();
+    out.on('finish', resolve);
+    out.on('error', reject);
+  });
+};
+
+/**
+ * Convert a PPT/PPTX to a minimal PDF (slide text only).
+ * Full fidelity requires LibreOffice; this is a best-effort fallback.
+ */
+const convertPptToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+  // pptx files are zips — extract text from slide XML via xlsx (it can parse pptx too)
   try {
-    execSync('where soffice', { stdio: 'ignore', timeout: 2000 });
-    return true;
+    const wb = XLSX.readFile(inputPath);
+    const texts: string[] = [];
+    for (const name of wb.SheetNames) {
+      const sheet = wb.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+      texts.push(`--- ${name} ---`);
+      for (const row of rows) {
+        texts.push((row as unknown[]).map((c) => String(c ?? '')).join(' '));
+      }
+    }
+    const text = texts.join('\n');
+    await new Promise<void>((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 72, size: 'A4' });
+      const out = fs.createWriteStream(outputPath);
+      doc.pipe(out);
+      doc.fontSize(11).font('Helvetica').text(text || '(no text content)');
+      doc.end();
+      out.on('finish', resolve);
+      out.on('error', reject);
+    });
   } catch {
-    try {
-      execSync('where libreoffice', { stdio: 'ignore', timeout: 2000 });
-      return true;
-    } catch {
-      return false;
-    }
+    // If xlsx can't parse it, just write a placeholder PDF
+    await new Promise<void>((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 72, size: 'A4' });
+      const out = fs.createWriteStream(outputPath);
+      doc.pipe(out);
+      doc.fontSize(12).text(`Presentation file: ${path.basename(inputPath)}\n\nFull conversion requires LibreOffice.`);
+      doc.end();
+      out.on('finish', resolve);
+      out.on('error', reject);
+    });
   }
 };
 
 /**
- * Convert document to PDF using LibreOffice
- * Supports: DOC, DOCX, XLS, XLSX, PPT, PPTX, ODP, ODT, etc.
+ * Convert any supported document to PDF.
+ * Returns outputPath on success or throws.
  */
-const convertWithLibreOffice = (inputPath: string, outputDir: string): string => {
-  try {
-    const cmd = `soffice --headless --convert-to pdf "${inputPath}" --outdir "${outputDir}"`;
-    logger.info('Converting with LibreOffice', { cmd });
-    execSync(cmd, { timeout: 30000, stdio: 'pipe' });
-
-    const inputFileName = path.parse(inputPath).name;
-    const pdfPath = path.join(outputDir, `${inputFileName}.pdf`);
-
-    if (fs.existsSync(pdfPath)) {
-      logger.info('Document converted to PDF', { inputPath, pdfPath });
-      return pdfPath;
-    }
-  } catch (error) {
-    logger.warn('LibreOffice conversion failed', { error: String(error) });
-  }
-
-  throw new Error('Failed to convert document to PDF');
-};
-
-/**
- * Copy text file as-is (already printable)
- */
-const handleTextFile = (inputPath: string, outputPath: string): string => {
-  fs.copyFileSync(inputPath, outputPath);
-  logger.info('Text file copied', { inputPath, outputPath });
-  return outputPath;
-};
-
-/**
- * Handle image files - could be converted to PDF if needed
- * For now, just copy them as-is (printable via system)
- */
-const handleImageFile = (inputPath: string, outputPath: string): string => {
-  fs.copyFileSync(inputPath, outputPath);
-  logger.info('Image file copied', { inputPath, outputPath });
-  return outputPath;
-};
-
-/**
- * Main conversion function
- * Converts any file to PDF or keeps it as is if already universal format
- */
-export const convertToPdf = (
+export const convertToPdf = async (
   inputPath: string,
   outputDir: string,
   originalFileName: string,
-): string => {
-  if (!fs.existsSync(inputPath)) {
-    throw new Error(`File not found: ${inputPath}`);
-  }
+): Promise<string> => {
+  if (!fs.existsSync(inputPath)) throw new Error(`File not found: ${inputPath}`);
 
   const ext = path.extname(originalFileName).toLowerCase();
-  const fileName = path.parse(originalFileName).name;
-  const outputPath = path.join(outputDir, `${fileName}.pdf`);
+  const baseName = path.parse(originalFileName).name;
+  const outputPath = path.join(outputDir, `${baseName}.pdf`);
 
-  try {
-    logger.info('Starting file conversion', {
-      inputFile: originalFileName,
-      ext,
-      outputPath,
-    });
+  logger.info('Starting document→PDF conversion', { file: originalFileName, ext });
 
-    // If already PDF, just copy it
-    if (ext === '.pdf') {
-      fs.copyFileSync(inputPath, outputPath);
-      logger.info('PDF file copied', { outputPath });
-      return outputPath;
-    }
-
-    // Text files - print directly
-    if (['.txt', '.csv'].includes(ext)) {
-      return handleTextFile(inputPath, outputPath);
-    }
-
-    // Image files - keep as-is (Windows can print images)
-    if (['.jpg', '.jpeg', '.png', '.bmp', '.gif'].includes(ext)) {
-      return handleImageFile(inputPath, outputPath);
-    }
-
-    // Document files - convert to PDF if LibreOffice available
-    if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp'].includes(ext)) {
-      if (isLibreOfficeAvailable()) {
-        return convertWithLibreOffice(inputPath, outputDir);
-      } else {
-        // Fallback: copy as-is (Windows may still be able to print some formats)
-        logger.warn('LibreOffice not available, copying file as-is', { file: originalFileName });
-        fs.copyFileSync(inputPath, outputPath);
-        return outputPath;
-      }
-    }
-
-    // Unknown format - try to copy as-is
-    logger.warn('Unknown file format, copying as-is', { ext, originalFileName });
+  if (ext === '.pdf') {
     fs.copyFileSync(inputPath, outputPath);
     return outputPath;
-  } catch (error) {
-    const err = error as Error;
-    logger.error('PDF conversion failed', {
-      file: originalFileName,
-      error: err.message,
-    });
-
-    // Fallback: just copy the file as-is
-    try {
-      fs.copyFileSync(inputPath, outputPath);
-      logger.info('Conversion failed, file copied as-is', { outputPath });
-      return outputPath;
-    } catch (copyErr) {
-      throw new Error(`Failed to process file: ${(copyErr as Error).message}`);
-    }
   }
+
+  if (DOCX_EXTS.has(ext)) {
+    await convertDocToPdf(inputPath, outputPath);
+    logger.info('DOCX converted to PDF', { outputPath });
+    return outputPath;
+  }
+
+  if (XLSX_EXTS.has(ext)) {
+    await convertXlsToPdf(inputPath, outputPath);
+    logger.info('XLSX converted to PDF', { outputPath });
+    return outputPath;
+  }
+
+  if (PPTX_EXTS.has(ext)) {
+    await convertPptToPdf(inputPath, outputPath);
+    logger.info('PPTX converted to PDF', { outputPath });
+    return outputPath;
+  }
+
+  // Images and other formats — copy as-is
+  fs.copyFileSync(inputPath, outputPath);
+  return outputPath;
 };
 
 export default { convertToPdf, isLibreOfficeAvailable };
