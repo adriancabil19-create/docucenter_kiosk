@@ -12,15 +12,136 @@ const mammoth = require('mammoth') as typeof import('mammoth');
 const XLSX = require('xlsx') as typeof import('xlsx');
 
 // ---------------------------------------------------------------------------
-// LibreOffice detection + conversion (primary path)
+// Windows Office COM automation (primary on Windows — pixel-perfect)
 // ---------------------------------------------------------------------------
 
-export const isLibreOfficeAvailable = (): boolean => {
+const OFFICE_CANDIDATES = [
+  'C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE',
+  'C:\\Program Files\\Microsoft Office\\root\\Office15\\WINWORD.EXE',
+  'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\WINWORD.EXE',
+  'C:\\Program Files (x86)\\Microsoft Office\\Office16\\WINWORD.EXE',
+  'C:\\Program Files (x86)\\Microsoft Office\\Office15\\WINWORD.EXE',
+];
+
+const isWindowsOfficeAvailable = (): boolean => {
+  if (os.platform() !== 'win32') return false;
+  return OFFICE_CANDIDATES.some((p) => fs.existsSync(p));
+};
+
+const psEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "''");
+
+const convertWithWindowsOffice = (
+  inputPath: string,
+  outputPath: string,
+  ext: string,
+): void => {
+  const absIn = path.resolve(inputPath);
+  const absOut = path.resolve(outputPath);
+
+  let script: string;
+
+  if (['.doc', '.docx', '.odt'].includes(ext)) {
+    script = `
+$w = New-Object -ComObject Word.Application
+$w.Visible = $false; $w.DisplayAlerts = 0
+try {
+  $d = $w.Documents.Open('${psEscape(absIn)}', $false, $true)
+  $d.SaveAs2('${psEscape(absOut)}', 17)
+  $d.Close($false)
+} finally { $w.Quit(); [GC]::Collect() }
+`.trim();
+  } else if (['.xls', '.xlsx', '.ods', '.csv'].includes(ext)) {
+    script = `
+$x = New-Object -ComObject Excel.Application
+$x.Visible = $false; $x.DisplayAlerts = $false
+try {
+  $b = $x.Workbooks.Open('${psEscape(absIn)}', 0, $true)
+  $b.ExportAsFixedFormat(0, '${psEscape(absOut)}')
+  $b.Close($false)
+} finally { $x.Quit(); [GC]::Collect() }
+`.trim();
+  } else if (['.ppt', '.pptx', '.odp'].includes(ext)) {
+    script = `
+$p = New-Object -ComObject PowerPoint.Application
+try {
+  $s = $p.Presentations.Open('${psEscape(absIn)}', $true, $false, $false)
+  $s.SaveAs('${psEscape(absOut)}', 32)
+  $s.Close()
+} finally { $p.Quit(); [GC]::Collect() }
+`.trim();
+  } else {
+    throw new Error(`No Office COM handler for extension: ${ext}`);
+  }
+
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    { timeout: 120_000, stdio: 'pipe' },
+  );
+
+  if (!fs.existsSync(absOut)) {
+    const detail = (result.stderr?.toString() || result.stdout?.toString() || '').trim().slice(0, 400);
+    throw new Error(`Office COM conversion produced no output. ${detail}`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// LibreOffice detection + conversion (primary on Linux/Docker)
+// ---------------------------------------------------------------------------
+
+const WINDOWS_SOFFICE_PATHS = [
+  'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+  'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+];
+
+const getLibreOfficeBin = (): string | null => {
+  if (os.platform() === 'win32') {
+    const found = WINDOWS_SOFFICE_PATHS.find((p) => fs.existsSync(p));
+    return found ?? null;
+  }
   try {
     execSync('which soffice', { stdio: 'pipe' });
-    return true;
+    return 'soffice';
   } catch {
-    return false;
+    return null;
+  }
+};
+
+export const isLibreOfficeAvailable = (): boolean => getLibreOfficeBin() !== null;
+
+const convertWithLibreOffice = (
+  soffice: string,
+  inputPath: string,
+  outputDir: string,
+  outputPath: string,
+): void => {
+  const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
+  if (os.platform() !== 'win32') {
+    const tmpHome = path.join(os.tmpdir(), `lo-home-${process.pid}`);
+    fs.mkdirSync(tmpHome, { recursive: true });
+    spawnEnv.HOME = tmpHome;
+    spawnEnv.UserInstallation = `file://${tmpHome}`;
+  }
+
+  const result = spawnSync(
+    soffice,
+    ['--headless', '--convert-to', 'pdf', '--outdir', outputDir, inputPath],
+    { timeout: 120_000, stdio: 'pipe', env: spawnEnv },
+  );
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString().trim();
+    throw new Error(`LibreOffice failed (exit ${result.status}): ${stderr}`);
+  }
+
+  const inputBaseName = path.parse(inputPath).name;
+  const loPdfPath = path.join(outputDir, `${inputBaseName}.pdf`);
+  if (loPdfPath !== outputPath && fs.existsSync(loPdfPath)) {
+    fs.renameSync(loPdfPath, outputPath);
+  }
+
+  if (!fs.existsSync(outputPath)) {
+    throw new Error('LibreOffice ran but produced no PDF output');
   }
 };
 
@@ -141,13 +262,10 @@ const convertXlsToPdfFallback = async (inputPath: string, outputPath: string): P
     for (const sheetName of workbook.SheetNames) {
       if (!firstSheet) doc.addPage();
       firstSheet = false;
-
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
-
       doc.fontSize(13).font('Helvetica-Bold').text(sheetName).moveDown(0.4);
       doc.fontSize(8).font('Helvetica');
-
       for (const row of rows) {
         const line = (row as unknown[]).map((c) => String(c ?? '')).join('   ');
         doc.text(line, { lineGap: 1 });
@@ -167,7 +285,7 @@ const convertPptToPdfFallback = async (inputPath: string, outputPath: string): P
     const out = fs.createWriteStream(outputPath);
     doc.pipe(out);
     doc.fontSize(12).text(
-      `Presentation: ${path.basename(inputPath)}\n\nFull conversion requires LibreOffice.`,
+      `Presentation: ${path.basename(inputPath)}\n\nFull conversion requires Microsoft Office or LibreOffice.`,
     );
     doc.end();
     out.on('finish', resolve);
@@ -202,59 +320,46 @@ export const convertToPdf = async (
     return outputPath;
   }
 
-  // Try LibreOffice first (pixel-perfect)
-  if (OFFICE_EXTS.has(ext) && isLibreOfficeAvailable()) {
-    try {
-      // LibreOffice needs a writable home dir (Render/Docker may not have one)
-      const tmpHome = path.join(os.tmpdir(), `lo-home-${process.pid}`);
-      fs.mkdirSync(tmpHome, { recursive: true });
-
-      const result = spawnSync(
-        'soffice',
-        ['--headless', '--convert-to', 'pdf', '--outdir', outputDir, inputPath],
-        {
-          timeout: 120_000,
-          stdio: 'pipe',
-          env: { ...process.env, HOME: tmpHome, UserInstallation: `file://${tmpHome}` },
-        },
-      );
-
-      if (result.status === 0) {
-        const inputBaseName = path.parse(inputPath).name;
-        const loPdfPath = path.join(outputDir, `${inputBaseName}.pdf`);
-        if (loPdfPath !== outputPath && fs.existsSync(loPdfPath)) {
-          fs.renameSync(loPdfPath, outputPath);
-        }
-        if (fs.existsSync(outputPath)) {
-          logger.info('Converted with LibreOffice', { outputPath });
-          return outputPath;
-        }
+  if (OFFICE_EXTS.has(ext)) {
+    // ── 1. Windows: Microsoft Office COM (best quality) ──────────────────────
+    if (isWindowsOfficeAvailable()) {
+      try {
+        convertWithWindowsOffice(inputPath, outputPath, ext);
+        logger.info('Converted with Microsoft Office COM', { outputPath });
+        return outputPath;
+      } catch (err) {
+        logger.warn('Office COM conversion failed, trying next method', { error: String(err) });
       }
-
-      const stderr = result.stderr?.toString().trim();
-      logger.warn('LibreOffice conversion failed, falling back', { stderr });
-    } catch (err) {
-      logger.warn('LibreOffice exception, falling back', { error: String(err) });
     }
-  }
 
-  // Fallback: mammoth/xlsx/pdfkit
-  if (DOCX_EXTS.has(ext)) {
-    await convertDocToPdfFallback(inputPath, outputPath);
-    logger.info('DOCX converted via fallback', { outputPath });
-    return outputPath;
-  }
+    // ── 2. LibreOffice (Linux/Docker or Windows if installed) ─────────────────
+    const soffice = getLibreOfficeBin();
+    if (soffice) {
+      try {
+        convertWithLibreOffice(soffice, inputPath, outputDir, outputPath);
+        logger.info('Converted with LibreOffice', { outputPath });
+        return outputPath;
+      } catch (err) {
+        logger.warn('LibreOffice conversion failed, falling back to pdfkit', { error: String(err) });
+      }
+    }
 
-  if (XLSX_EXTS.has(ext)) {
-    await convertXlsToPdfFallback(inputPath, outputPath);
-    logger.info('XLSX converted via fallback', { outputPath });
-    return outputPath;
-  }
-
-  if (PPTX_EXTS.has(ext)) {
-    await convertPptToPdfFallback(inputPath, outputPath);
-    logger.info('PPTX converted via fallback', { outputPath });
-    return outputPath;
+    // ── 3. Fallback: mammoth/xlsx/pdfkit ─────────────────────────────────────
+    if (DOCX_EXTS.has(ext)) {
+      await convertDocToPdfFallback(inputPath, outputPath);
+      logger.info('DOCX converted via mammoth+pdfkit fallback', { outputPath });
+      return outputPath;
+    }
+    if (XLSX_EXTS.has(ext)) {
+      await convertXlsToPdfFallback(inputPath, outputPath);
+      logger.info('XLSX converted via xlsx+pdfkit fallback', { outputPath });
+      return outputPath;
+    }
+    if (PPTX_EXTS.has(ext)) {
+      await convertPptToPdfFallback(inputPath, outputPath);
+      logger.info('PPTX converted via pdfkit stub fallback', { outputPath });
+      return outputPath;
+    }
   }
 
   // Images / unknown — copy as-is
