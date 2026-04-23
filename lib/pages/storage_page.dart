@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
+import '../config.dart';
 import '../storage_service.dart';
 import '../transfer_service.dart';
 
@@ -37,6 +41,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
   bool _isLoading = false;
 
   String _wifiStatusMessage = '';
+  Timer? _receivePollingTimer;
 
   Future<void> _refreshDocuments() async {
     setState(() => _isLoading = true);
@@ -239,6 +244,177 @@ class _StorageInterfaceState extends State<StorageInterface> {
     }
   }
 
+  Future<void> _receiveFromPhone() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Create a receive session on Render
+    http.Response createRes;
+    try {
+      createRes = await http
+          .post(Uri.parse(BackendConfig.transferReceiveSessionUrl))
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not reach server: $e')));
+      return;
+    }
+
+    final body = jsonDecode(createRes.body) as Map<String, dynamic>;
+    if (body['success'] != true) {
+      messenger.showSnackBar(const SnackBar(content: Text('Failed to create receive session')));
+      return;
+    }
+
+    final sessionId = body['sessionId'] as String;
+    final uploadUrl = body['uploadUrl'] as String;
+
+    if (!context.mounted) return;
+
+    // Show QR dialog and poll for files
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        bool filesReceived = false;
+        String statusText = 'Waiting for phone to upload files…';
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            // Start polling once the dialog is built
+            _receivePollingTimer ??= Timer.periodic(
+              const Duration(seconds: 3),
+              (_) async {
+                if (!ctx.mounted) return;
+                try {
+                  final res = await http
+                      .get(Uri.parse(BackendConfig.transferReceiveStatusUrl(sessionId)))
+                      .timeout(const Duration(seconds: 8));
+                  final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+                  if (data['ready'] == true && !filesReceived) {
+                    filesReceived = true;
+                    _receivePollingTimer?.cancel();
+                    _receivePollingTimer = null;
+
+                    final files = (data['files'] as List)
+                        .cast<Map<String, dynamic>>();
+
+                    setDialogState(() =>
+                        statusText = 'Received ${files.length} file(s)! Saving…');
+
+                    // Download each file from Render and save to local storage
+                    int saved = 0;
+                    for (final f in files) {
+                      final name = f['name'] as String;
+                      final mime = (f['mimeType'] as String?) ?? 'application/octet-stream';
+                      try {
+                        final dl = await http
+                            .get(Uri.parse(
+                                BackendConfig.transferReceiveFileUrl(sessionId, name)))
+                            .timeout(const Duration(minutes: 2));
+                        if (dl.statusCode == 200) {
+                          final doc = await StorageService.uploadFile(
+                              name, dl.bodyBytes, name, mime);
+                          if (doc != null) saved++;
+                        }
+                      } catch (e) {
+                        debugPrint('Failed to save received file $name: $e');
+                      }
+                    }
+
+                    // Clean up session on Render
+                    try {
+                      await http.delete(Uri.parse(
+                          BackendConfig.transferReceiveDeleteUrl(sessionId)));
+                    } catch (_) {}
+
+                    widget.onUpload?.call();
+
+                    if (ctx.mounted) Navigator.of(ctx).pop();
+
+                    messenger.showSnackBar(SnackBar(
+                        content: Text('$saved file(s) saved and ready to print')));
+                  }
+                } catch (_) {}
+              },
+            );
+
+            return Dialog(
+              child: SizedBox(
+                width: 380,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Receive Files from Phone',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Scan this QR code on your phone to upload files for printing:',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      QrImageView(
+                        data: uploadUrl,
+                        version: QrVersions.auto,
+                        size: 220,
+                        errorCorrectionLevel: QrErrorCorrectLevel.M,
+                      ),
+                      const SizedBox(height: 10),
+                      SelectableText(
+                        uploadUrl,
+                        style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (!filesReceived)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          const SizedBox(width: 8),
+                          Text(
+                            statusText,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: filesReceived ? Colors.green : Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            _receivePollingTimer?.cancel();
+                            _receivePollingTimer = null;
+                            Navigator.of(ctx).pop();
+                          },
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    _receivePollingTimer?.cancel();
+    _receivePollingTimer = null;
+  }
+
   void _toggleDocumentSelection(String docId, bool selected) {
     setState(() {
       if (selected) {
@@ -365,10 +541,17 @@ class _StorageInterfaceState extends State<StorageInterface> {
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                ElevatedButton.icon(
+                                  ElevatedButton.icon(
                                   onPressed: _shareViaWifi,
                                   icon: const Icon(Icons.wifi_tethering),
                                   label: const Text('Share via WiFi'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _receiveFromPhone,
+                                  icon: const Icon(Icons.upload_file),
+                                  label: const Text('Receive from Phone'),
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.deepPurple),
                                 ),
                               ],
                             ),

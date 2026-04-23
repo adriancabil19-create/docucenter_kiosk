@@ -27,8 +27,23 @@ class BackendConfig {
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
 
-  /// Upload endpoint on the Render transfer relay
+  /// Upload endpoint on the Render transfer relay (kiosk → phone)
   static const String transferUploadUrl = '$renderUrl/api/transfer/upload';
+
+  /// Create a receive session (phone → kiosk)
+  static const String transferReceiveSessionUrl = '$renderUrl/api/transfer/receive-session';
+
+  /// Poll receive session status
+  static String transferReceiveStatusUrl(String sessionId) =>
+      '$renderUrl/api/transfer/receive-session/$sessionId/status';
+
+  /// Download a file the phone uploaded
+  static String transferReceiveFileUrl(String sessionId, String filename) =>
+      '$renderUrl/api/transfer/receive-session/$sessionId/file/${Uri.encodeComponent(filename)}';
+
+  /// Delete a receive session after kiosk is done
+  static String transferReceiveDeleteUrl(String sessionId) =>
+      '$renderUrl/api/transfer/receive-session/$sessionId';
   
   // Endpoint paths
   static const String createPaymentPath = '/create-payment';
