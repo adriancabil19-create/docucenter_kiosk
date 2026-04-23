@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { KioskStatus, PaperTray } from '@/lib/types';
@@ -59,6 +59,10 @@ function TrayRow({ tray }: { tray: PaperTray }) {
 export function KioskStatusPanel({ initialData }: Props) {
   const [status, setStatus] = useState<KioskStatus | null>(initialData);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!status) refresh();
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);

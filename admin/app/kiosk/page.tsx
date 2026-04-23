@@ -5,14 +5,6 @@ import { KioskStatusPanel } from '@/components/kiosk-status-panel';
 export const dynamic = 'force-dynamic';
 
 export default async function KioskPage() {
-  let status: KioskStatus | null = null;
-  try {
-    const res = await getKioskStatus();
-    status = res.status;
-  } catch {
-    // Server unavailable at build/SSR time
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -22,7 +14,7 @@ export default async function KioskPage() {
         </p>
       </div>
 
-      <KioskStatusPanel initialData={status} />
+      <KioskStatusPanel initialData={null} />
     </div>
   );
 }
