@@ -8,6 +8,12 @@ import { transferStore } from '../services/transfer.service';
 import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 
+interface UploadedFile {
+  originalname: string;
+  path: string;
+  mimetype: string;
+}
+
 const router = Router();
 
 const uploadDir = path.join(os.tmpdir(), 'docucenter_transfer');
@@ -26,7 +32,7 @@ const upload = multer({
  * Kiosk uploads files — returns a session download URL for the QR code.
  */
 router.post('/api/transfer/upload', upload.array('files', 20), (req: Request, res: Response): void => {
-  const files = req.files as Express.Multer.File[];
+  const files = (req.files ?? []) as UploadedFile[];
 
   if (!files || files.length === 0) {
     res.status(400).json({ success: false, error: 'No files uploaded' });
