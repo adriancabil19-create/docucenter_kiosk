@@ -84,16 +84,17 @@ export function PaperTraysManager({ initialData }: Props) {
     try {
       await refillPaperTray(selected.tray_name, sheets, thr);
       setTrays((prev) =>
-        prev.map((t) =>
-          t.tray_name === selected.tray_name
-            ? {
-                ...t,
-                current_count: Math.min(t.max_capacity, t.current_count + sheets),
-                threshold: thr,
-                updated_at: new Date().toISOString(),
-              }
-            : t,
-        ),
+        prev.map((t) => {
+          if (t.tray_name !== selected.tray_name) return t;
+          const newMax = t.max_capacity === 0 ? t.current_count + sheets : t.max_capacity;
+          return {
+            ...t,
+            max_capacity: newMax,
+            current_count: Math.min(newMax, t.current_count + sheets),
+            threshold: thr,
+            updated_at: new Date().toISOString(),
+          };
+        }),
       );
       addToast({
         title: 'Refilled',

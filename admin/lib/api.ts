@@ -90,8 +90,8 @@ export const updatePaperTrayThreshold = (
 export const getDocuments = (): Promise<StorageResponse> =>
   apiFetch<StorageResponse>('/api/storage/documents');
 
-export const deleteDocument = (id: string): Promise<{ success: boolean; message: string }> =>
-  apiFetch(`/api/storage/${id}`, { method: 'DELETE' });
+export const deleteDocument = (filename: string): Promise<{ success: boolean; message: string }> =>
+  apiFetch(`/api/storage/documents/${encodeURIComponent(filename)}`, { method: 'DELETE' });
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 

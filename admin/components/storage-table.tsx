@@ -75,7 +75,7 @@ export function StorageTable({ initialData }: Props) {
     setDeleting(pendingDelete.id);
     onClose();
     try {
-      await deleteDocument(pendingDelete.id);
+      await deleteDocument(pendingDelete.name);
       setRows((prev) => prev.filter((d) => d.id !== pendingDelete.id));
       addToast({
         title: 'Deleted',

@@ -451,10 +451,20 @@ export const cancelStalePendingTransactions = (olderThanMinutes: number): string
 
 export const incrementPaperTray = (trayName: string, sheetsAdded: number): void => {
   try {
+    // When max_capacity is 0 (never configured), treat the refill as the initial load:
+    // set max_capacity = sheetsAdded and current_count = sheetsAdded.
+    // When max_capacity is already set, cap current_count at max_capacity.
     getDb()
       .prepare(
         `UPDATE paper_trays
-         SET current_count = MIN(max_capacity, current_count + @sheetsAdded),
+         SET current_count = CASE
+               WHEN max_capacity = 0 THEN current_count + @sheetsAdded
+               ELSE MIN(max_capacity, current_count + @sheetsAdded)
+             END,
+             max_capacity = CASE
+               WHEN max_capacity = 0 THEN current_count + @sheetsAdded
+               ELSE max_capacity
+             END,
              updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
          WHERE tray_name = @trayName`,
       )
