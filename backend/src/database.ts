@@ -409,6 +409,7 @@ export const insertLog = (
         `INSERT INTO activity_logs (level, category, message, metadata) VALUES (@level, @category, @message, @metadata)`,
       )
       .run({ level, category, message, metadata: metadata ? JSON.stringify(metadata) : null });
+    syncEvent('log', { level, category, message, metadata });
   } catch (err) {
     logger.warn('Failed to insert activity log', { error: String(err) });
   }
