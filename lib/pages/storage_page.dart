@@ -305,19 +305,20 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     int saved = 0;
                     for (final f in files) {
                       final name = f['name'] as String;
+                      final decodedName = Uri.decodeComponent(name);
                       final mime = (f['mimeType'] as String?) ?? 'application/octet-stream';
                       try {
                         final dl = await http
                             .get(Uri.parse(
-                                BackendConfig.transferReceiveFileUrl(sessionId, name)))
+                                BackendConfig.transferReceiveFileUrl(sessionId, decodedName)))
                             .timeout(const Duration(minutes: 2));
                         if (dl.statusCode == 200) {
                           final doc = await StorageService.uploadFile(
-                              name, dl.bodyBytes, name, mime);
+                              decodedName, dl.bodyBytes, decodedName, mime);
                           if (doc != null) saved++;
                         }
                       } catch (e) {
-                        debugPrint('Failed to save received file $name: $e');
+                        debugPrint('Failed to save received file $decodedName: $e');
                       }
                     }
 

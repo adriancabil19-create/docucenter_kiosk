@@ -258,7 +258,7 @@ router.post('/transfer/receive/:sessionId', memUpload.array('files', 20), (req: 
 
     const added = transferStore.addFilesToReceive(
       req.params.sessionId,
-      files.map((f) => ({ name: f.originalname, buffer: f.buffer, mimeType: f.mimetype })),
+      files.map((f) => ({ name: decodeURIComponent(f.originalname), buffer: f.buffer, mimeType: f.mimetype })),
     );
 
     if (!added) {
