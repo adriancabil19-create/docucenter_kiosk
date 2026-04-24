@@ -567,12 +567,13 @@ export const printDocument = async (
 
 /**
  * Convert document files to PDF using LibreOffice (soffice command).
- * Assumes LibreOffice is installed and soffice is in PATH.
+ * Assumes LibreOffice is installed in the default location.
  */
 const convertDocumentToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
   try {
-    // Use LibreOffice to convert to PDF
-    execSync(`soffice --headless --convert-to pdf --outdir "${path.dirname(outputPath)}" "${inputPath}"`, {
+    // Use full path to LibreOffice soffice.exe on Windows
+    const sofficePath = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    execSync(`"${sofficePath}" --headless --convert-to pdf --outdir "${path.dirname(outputPath)}" "${inputPath}"`, {
       timeout: 30000, // 30 seconds timeout
       stdio: 'pipe',
     });
