@@ -679,7 +679,7 @@ export const printFilesFromStorage = async (
             /* temp file may already be gone */
           }
         }
-      } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.rtf'].includes(ext)) {
+      } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf'].includes(ext)) {
         // Document files: convert to PDF using LibreOffice if available
         const tempPdf = path.join(
           os.tmpdir(),
