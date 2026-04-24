@@ -98,9 +98,14 @@ const initSchema = (db: Database.Database): void => {
   // ── Step 3: Seed default rows (paper_size column is guaranteed to exist now) ─
   db.exec(`
     INSERT OR IGNORE INTO paper_trays (tray_name, current_count, max_capacity, threshold, paper_size) VALUES
-      ('MP Tray', 0, 0, 20, 'A4'),
+      ('MP Tray', 0, 0, 20, 'FOLIO'),
       ('Tray 1',  0, 0, 20, 'A4'),
-      ('Tray 2',  0, 0, 20, 'A4');
+      ('Tray 2',  0, 0, 20, 'LETTER');
+
+    -- Always enforce the correct static paper size per tray
+    UPDATE paper_trays SET paper_size = 'FOLIO'  WHERE tray_name = 'MP Tray';
+    UPDATE paper_trays SET paper_size = 'A4'     WHERE tray_name = 'Tray 1';
+    UPDATE paper_trays SET paper_size = 'LETTER' WHERE tray_name = 'Tray 2';
   `);
 };
 

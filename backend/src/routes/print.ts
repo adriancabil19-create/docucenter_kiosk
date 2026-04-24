@@ -184,7 +184,7 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
     const { filenames, paperSize, colorMode, quality, copies } = req.body;
-    const numCopies: number = typeof copies === 'number' && copies > 0 ? copies : 1;
+    const numCopies: number = Math.max(1, parseInt(String(copies ?? '1'), 10) || 1);
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
