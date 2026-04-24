@@ -562,8 +562,36 @@ export const printDocument = async (
   return printText(documentContent, { paperSize: paperSize ?? 'A4' });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────// Document conversion helpers
 // ─────────────────────────────────────────────────────────────────────────────
-// Print files from storage
+
+/**
+ * Convert document files to PDF using LibreOffice (soffice command).
+ * Assumes LibreOffice is installed and soffice is in PATH.
+ */
+const convertDocumentToPdf = async (inputPath: string, outputPath: string): Promise<void> => {
+  try {
+    // Use LibreOffice to convert to PDF
+    execSync(`soffice --headless --convert-to pdf --outdir "${path.dirname(outputPath)}" "${inputPath}"`, {
+      timeout: 30000, // 30 seconds timeout
+      stdio: 'pipe',
+    });
+
+    // LibreOffice names the output file based on input, so rename if necessary
+    const expectedOutput = path.join(
+      path.dirname(outputPath),
+      path.basename(inputPath, path.extname(inputPath)) + '.pdf'
+    );
+
+    if (expectedOutput !== outputPath) {
+      fs.renameSync(expectedOutput, outputPath);
+    }
+  } catch (err) {
+    throw new Error(`Document conversion failed: ${String(err)}`);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────// Print files from storage
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -648,6 +676,45 @@ export const printFilesFromStorage = async (
             fs.unlinkSync(tempPdf);
           } catch (_e) {
             /* temp file may already be gone */
+          }
+        }
+      } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.rtf'].includes(ext)) {
+        // Document files: convert to PDF using LibreOffice if available
+        const tempPdf = path.join(
+          os.tmpdir(),
+          `doc_print_${jobID}_${path.basename(filename, ext)}.pdf`,
+        );
+        const tempResizedPdf = path.join(
+          os.tmpdir(),
+          `resized_doc_print_${jobID}_${path.basename(filename, ext)}.pdf`,
+        );
+        try {
+          await convertDocumentToPdf(filePath, tempPdf);
+          await resizePdfToPaperSize(tempPdf, tempResizedPdf, paperSize || 'A4');
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies);
+          printSuccess = result.success;
+          if (!result.success) {
+            logger.error('Document PDF print failed', { filename, error: result.error });
+          }
+          const simPath = copyToSimulation(filePath, filename);
+          if (simPath) simulatedPaths.push(simPath);
+        } catch (docErr) {
+          logger.error('Document conversion or print failed', { filename, error: String(docErr) });
+          // Fallback: try to read as text
+          try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const result = await printText(content, { paperSize, colorMode, quality });
+            printSuccess = result.success;
+            if (result.simulatedPaths) simulatedPaths.push(...result.simulatedPaths);
+          } catch (textErr) {
+            logger.error('Could not process document as text either', { filename, error: String(textErr) });
+          }
+        } finally {
+          try {
+            fs.unlinkSync(tempPdf);
+            fs.unlinkSync(tempResizedPdf);
+          } catch (_e) {
+            /* temp files may already be gone */
           }
         }
       } else {
