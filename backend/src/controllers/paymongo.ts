@@ -43,7 +43,7 @@ export class PayMongoController {
       });
 
       // Persist to SQLite
-      insertTransaction({
+      await insertTransaction({
         id: transaction.transactionId,
         reference_number: transaction.referenceNumber,
         amount: transaction.amount,
@@ -103,7 +103,7 @@ export class PayMongoController {
 
       // Persist terminal statuses to SQLite so the admin dashboard reflects reality
       if (['SUCCESS', 'FAILED', 'EXPIRED'].includes(transaction.status)) {
-        updateTransactionStatus(
+        await updateTransactionStatus(
           transactionId,
           transaction.status,
           transaction.completedAt ? transaction.completedAt.toISOString() : new Date().toISOString(),
@@ -165,7 +165,7 @@ export class PayMongoController {
       }
 
       // Persist cancellation to SQLite
-      updateTransactionStatus(transactionId, 'CANCELLED', new Date().toISOString());
+      await updateTransactionStatus(transactionId, 'CANCELLED', new Date().toISOString());
 
       logger.info('Payment cancelled', { transactionId, reason });
 
@@ -320,7 +320,7 @@ export class PayMongoController {
       logger.info('Payment simulation - success', { transactionId });
 
       // Update DB record
-      updateTransactionStatus(transactionId, 'SUCCESS', new Date().toISOString());
+      await updateTransactionStatus(transactionId, 'SUCCESS', new Date().toISOString());
 
       // If filenames were provided in the body, attempt to print them from storage
       const { filenames } = req.body as { filenames?: string[] };
@@ -393,7 +393,7 @@ export class PayMongoController {
       logger.info('Payment simulation - failure', { transactionId, reason });
 
       // Update DB record
-      updateTransactionStatus(transactionId, 'FAILED', new Date().toISOString());
+      await updateTransactionStatus(transactionId, 'FAILED', new Date().toISOString());
 
       res.status(200).json({
         success: true,

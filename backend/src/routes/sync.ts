@@ -21,7 +21,6 @@ import {
 
 const router = Router();
 
-// ── Auth middleware ────────────────────────────────────────────────────────────
 const requireSyncSecret = (req: Request, res: Response, next: () => void): void => {
   const secret = req.headers['x-sync-secret'];
   if (!config.renderSync.secret || secret !== config.renderSync.secret) {
@@ -33,11 +32,10 @@ const requireSyncSecret = (req: Request, res: Response, next: () => void): void 
 
 router.use(requireSyncSecret);
 
-// ── Ingest: new transaction ────────────────────────────────────────────────────
-router.post('/transaction', (req: Request, res: Response): void => {
+router.post('/transaction', async (req: Request, res: Response): Promise<void> => {
   try {
     const row = req.body as Omit<TransactionRow, 'created_at'>;
-    insertTransaction(row);
+    await insertTransaction(row);
     logger.info('Sync: transaction received', { id: row.id });
     res.json({ success: true });
   } catch (err) {
@@ -46,15 +44,10 @@ router.post('/transaction', (req: Request, res: Response): void => {
   }
 });
 
-// ── Ingest: transaction status update ─────────────────────────────────────────
-router.post('/transaction-status', (req: Request, res: Response): void => {
+router.post('/transaction-status', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id, status, completedAt } = req.body as {
-      id: string;
-      status: string;
-      completedAt?: string;
-    };
-    updateTransactionStatus(id, status, completedAt);
+    const { id, status, completedAt } = req.body as { id: string; status: string; completedAt?: string };
+    await updateTransactionStatus(id, status, completedAt);
     logger.info('Sync: transaction status updated', { id, status });
     res.json({ success: true });
   } catch (err) {
@@ -63,11 +56,10 @@ router.post('/transaction-status', (req: Request, res: Response): void => {
   }
 });
 
-// ── Ingest: new print job ──────────────────────────────────────────────────────
-router.post('/print-job', (req: Request, res: Response): void => {
+router.post('/print-job', async (req: Request, res: Response): Promise<void> => {
   try {
     const row = req.body as PrintJobRow;
-    insertPrintJob(row);
+    await insertPrintJob(row);
     logger.info('Sync: print job received', { id: row.id });
     res.json({ success: true });
   } catch (err) {
@@ -76,15 +68,14 @@ router.post('/print-job', (req: Request, res: Response): void => {
   }
 });
 
-// ── Ingest: paper tray update ──────────────────────────────────────────────────
-router.post('/paper-tray', (req: Request, res: Response): void => {
+router.post('/paper-tray', async (req: Request, res: Response): Promise<void> => {
   try {
     const { tray_name, current_count, max_capacity } = req.body as {
       tray_name: string;
       current_count: number;
       max_capacity?: number;
     };
-    updatePaperTray(tray_name, current_count, max_capacity);
+    await updatePaperTray(tray_name, current_count, max_capacity);
     logger.info('Sync: paper tray updated', { tray_name, current_count });
     res.json({ success: true });
   } catch (err) {
@@ -93,8 +84,7 @@ router.post('/paper-tray', (req: Request, res: Response): void => {
   }
 });
 
-// ── Ingest: activity log ───────────────────────────────────────────────────────
-router.post('/log', (req: Request, res: Response): void => {
+router.post('/log', async (req: Request, res: Response): Promise<void> => {
   try {
     const { level, category, message, metadata } = req.body as {
       level: 'info' | 'warn' | 'error';
@@ -102,7 +92,7 @@ router.post('/log', (req: Request, res: Response): void => {
       message: string;
       metadata?: Record<string, unknown>;
     };
-    insertLog(level, category, message, metadata);
+    await insertLog(level, category, message, metadata);
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: failed to insert log', { error: String(err) });

@@ -19,10 +19,11 @@ services:
         value: "true"
       - key: ALLOWED_ORIGINS
         value: "http://localhost:3000,https://docucenter-admin.onrender.com"
-      # SQLite — use Render Disk (paid) or leave blank for ephemeral storage:
-      #   DATABASE_PATH=/data/docucenter.db
-      - key: DATABASE_PATH
-        value: ""
+      # ── Turso (libSQL) — fill in the Render Dashboard ─────
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       # ── Secrets — fill these in the Render Dashboard ──────
       - key: PAYMONGO_SECRET_KEY
         sync: false

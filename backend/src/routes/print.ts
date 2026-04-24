@@ -201,7 +201,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
     const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
 
     // Log to SQLite regardless of outcome
-    insertPrintJob({
+    await insertPrintJob({
       id: result.jobID ?? randomUUID(),
       filenames,
       paper_size: paperSize ?? 'A4',
@@ -228,7 +228,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         const sheetsUsed = totalPages * numCopies;
 
         const normalizedSize = (paperSize ?? 'A4').toUpperCase();
-        const allTrays = PaperTrackerService.getTrays();
+        const allTrays = await PaperTrackerService.getTrays();
         const withPaper = allTrays.filter((t) => t.current_count > 0);
 
         // Prefer a tray loaded with the matching paper size

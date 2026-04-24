@@ -11,25 +11,18 @@ import {
 import { logger } from '../utils/logger';
 
 export class PaperTrackerService {
-  /**
-   * Get all paper tray statuses
-   */
-  static getTrays(): PaperTrayRow[] {
+  static async getTrays(): Promise<PaperTrayRow[]> {
     try {
-      return getPaperTrays();
+      return await getPaperTrays();
     } catch (error) {
       logger.error('Failed to get paper trays', { error: String(error) });
       return [];
     }
   }
 
-  /**
-   * Update paper tray with new counts (user inputs initial paper count)
-   */
-  static setTrayCapacity(trayName: string, maxCapacity: number): boolean {
+  static async setTrayCapacity(trayName: string, maxCapacity: number): Promise<boolean> {
     try {
-      // Set current count to max capacity when user adds papers
-      updatePaperTray(trayName, maxCapacity, maxCapacity);
+      await updatePaperTray(trayName, maxCapacity, maxCapacity);
       logger.info('Paper tray capacity updated', { trayName, maxCapacity });
       return true;
     } catch (error) {
@@ -38,12 +31,9 @@ export class PaperTrackerService {
     }
   }
 
-  /**
-   * Set the current sheet count directly (absolute value entered by admin)
-   */
-  static setCurrentCount(trayName: string, count: number): boolean {
+  static async setCurrentCount(trayName: string, count: number): Promise<boolean> {
     try {
-      setPaperTrayCount(trayName, count);
+      await setPaperTrayCount(trayName, count);
       logger.info('Paper tray count set', { trayName, count });
       return true;
     } catch (error) {
@@ -52,12 +42,9 @@ export class PaperTrackerService {
     }
   }
 
-  /**
-   * Add sheets to a tray (incremental refill, capped at max_capacity)
-   */
-  static refillTray(trayName: string, sheetsAdded: number): boolean {
+  static async refillTray(trayName: string, sheetsAdded: number): Promise<boolean> {
     try {
-      incrementPaperTray(trayName, sheetsAdded);
+      await incrementPaperTray(trayName, sheetsAdded);
       logger.info('Paper tray refilled', { trayName, sheetsAdded });
       return true;
     } catch (error) {
@@ -66,12 +53,9 @@ export class PaperTrackerService {
     }
   }
 
-  /**
-   * Decrement paper count (to be called when printing)
-   */
   static async usePaper(trayName: string, sheets: number): Promise<boolean> {
     try {
-      decrementPaperTray(trayName, sheets);
+      await decrementPaperTray(trayName, sheets);
       logger.info('Paper used from tray', { trayName, sheets });
       return true;
     } catch (error) {
@@ -80,28 +64,18 @@ export class PaperTrackerService {
     }
   }
 
-  /**
-   * Get trays that are low on paper (for admin alerts)
-   */
-  static getLowPaperAlerts(): Array<{
-    tray_name: string;
-    current_count: number;
-    threshold: number;
-  }> {
+  static async getLowPaperAlerts(): Promise<Array<{ tray_name: string; current_count: number; threshold: number }>> {
     try {
-      return getLowPaperAlerts();
+      return await getLowPaperAlerts();
     } catch (error) {
       logger.error('Failed to get low paper alerts', { error: String(error) });
       return [];
     }
   }
 
-  /**
-   * Set the paper size loaded in a tray (e.g. 'A4', 'LETTER', 'FOLIO')
-   */
-  static setPaperSize(trayName: string, paperSize: string): boolean {
+  static async setPaperSize(trayName: string, paperSize: string): Promise<boolean> {
     try {
-      updatePaperTrayPaperSize(trayName, paperSize);
+      await updatePaperTrayPaperSize(trayName, paperSize);
       logger.info('Paper tray paper size updated', { trayName, paperSize });
       return true;
     } catch (error) {
@@ -110,20 +84,13 @@ export class PaperTrackerService {
     }
   }
 
-  /**
-   * Check if a specific tray has enough paper
-   */
-  static hasEnoughPaper(trayName: string, requiredSheets: number): boolean {
+  static async hasEnoughPaper(trayName: string, requiredSheets: number): Promise<boolean> {
     try {
-      const trays = getPaperTrays();
+      const trays = await getPaperTrays();
       const tray = trays.find((t) => t.tray_name === trayName);
       return tray ? tray.current_count >= requiredSheets : false;
     } catch (error) {
-      logger.error('Failed to check paper availability', {
-        trayName,
-        requiredSheets,
-        error: String(error),
-      });
+      logger.error('Failed to check paper availability', { trayName, requiredSheets, error: String(error) });
       return false;
     }
   }

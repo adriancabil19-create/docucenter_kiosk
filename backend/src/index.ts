@@ -23,7 +23,7 @@ import {
   notFoundMiddleware,
   rateLimitMiddleware,
 } from './middleware';
-import { cancelStalePendingTransactions, insertLog, getDb } from './database';
+import { cancelStalePendingTransactions, insertLog, initSchema } from './database';
 
 // Initialize Express app
 const app: Express = express();
@@ -135,59 +135,54 @@ app.use(errorHandlingMiddleware);
 
 const PORT = config.port;
 
-// Eagerly open the DB so any init errors appear in startup logs
-try {
-  getDb();
-  logger.info('Database initialized', { path: process.env.DATABASE_PATH || 'default' });
-} catch (err) {
-  logger.error('Database initialization failed — exiting', { error: String(err) });
-  process.exit(1);
-}
-
-const server = app.listen(PORT, () => {
-  logger.info(`Server started`, {
-    port: PORT,
-    environment: config.env,
-    corsEnabled: config.corsEnabled,
-    helmetEnabled: config.helmetEnabled,
-  });
-
-  logger.info(`PAYMONGO Payment Integration API`, {
-    baseUrl: `http://localhost:${PORT}`,
-    healthCheck: `http://localhost:${PORT}/health`,
-    apiStatus: `http://localhost:${PORT}/api/status`,
-  });
-});
-
-// Auto-cancel transactions that have been PENDING/PROCESSING for more than 5 minutes
-setInterval(() => {
-  try {
-    const cancelled = cancelStalePendingTransactions(5);
-    cancelled.forEach((id) => {
-      insertLog('info', 'payment', 'Auto-cancelled stale pending transaction', { transactionId: id });
-      logger.info('Auto-cancelled stale transaction', { transactionId: id });
+// Initialize DB schema then start server
+initSchema()
+  .then(() => {
+    logger.info('Database initialized', {
+      url: process.env.TURSO_DATABASE_URL ? 'turso (remote)' : 'file (local)',
     });
-  } catch (err) {
-    logger.error('Auto-cancel interval error', { error: String(err) });
-  }
-}, 60_000);
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
-  });
-});
+    const server = app.listen(PORT, () => {
+      logger.info(`Server started`, {
+        port: PORT,
+        environment: config.env,
+        corsEnabled: config.corsEnabled,
+        helmetEnabled: config.helmetEnabled,
+      });
+      logger.info(`PAYMONGO Payment Integration API`, {
+        baseUrl: `http://localhost:${PORT}`,
+        healthCheck: `http://localhost:${PORT}/health`,
+        apiStatus: `http://localhost:${PORT}/api/status`,
+      });
+    });
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
+    // Auto-cancel transactions that have been PENDING/PROCESSING for more than 5 minutes
+    setInterval(async () => {
+      try {
+        const cancelled = await cancelStalePendingTransactions(5);
+        for (const id of cancelled) {
+          await insertLog('info', 'payment', 'Auto-cancelled stale pending transaction', { transactionId: id });
+          logger.info('Auto-cancelled stale transaction', { transactionId: id });
+        }
+      } catch (err) {
+        logger.error('Auto-cancel interval error', { error: String(err) });
+      }
+    }, 60_000);
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      logger.info('SIGTERM received, shutting down gracefully...');
+      server.close(() => { logger.info('Server closed'); process.exit(0); });
+    });
+    process.on('SIGINT', () => {
+      logger.info('SIGINT received, shutting down gracefully...');
+      server.close(() => { logger.info('Server closed'); process.exit(0); });
+    });
+  })
+  .catch((err) => {
+    logger.error('Database initialization failed — exiting', { error: String(err) });
+    process.exit(1);
   });
-});
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {

@@ -13,12 +13,9 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
-/**
- * GET /api/monitoring/stats
- */
-router.get('/stats', (_req: Request, res: Response): void => {
+router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const stats = getMonitoringStats();
+    const stats = await getMonitoringStats();
     res.json({ success: true, stats });
   } catch (err) {
     const error = err as Error;
@@ -27,13 +24,10 @@ router.get('/stats', (_req: Request, res: Response): void => {
   }
 });
 
-/**
- * GET /api/monitoring/jobs?limit=20
- */
-router.get('/jobs', (req: Request, res: Response): void => {
+router.get('/jobs', async (req: Request, res: Response): Promise<void> => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
-    const jobs = getRecentJobs(limit);
+    const jobs = await getRecentJobs(limit);
     res.json({ success: true, jobs, count: jobs.length });
   } catch (err) {
     const error = err as Error;
@@ -42,13 +36,10 @@ router.get('/jobs', (req: Request, res: Response): void => {
   }
 });
 
-/**
- * GET /api/monitoring/transactions?limit=20
- */
-router.get('/transactions', (req: Request, res: Response): void => {
+router.get('/transactions', async (req: Request, res: Response): Promise<void> => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
-    const transactions = getRecentTransactions(limit);
+    const transactions = await getRecentTransactions(limit);
     res.json({ success: true, transactions, count: transactions.length });
   } catch (err) {
     const error = err as Error;
@@ -57,14 +48,10 @@ router.get('/transactions', (req: Request, res: Response): void => {
   }
 });
 
-/**
- * POST /api/monitoring/transactions/:id/cancel
- * Cancel a PENDING or PROCESSING transaction from the admin console.
- */
-router.post('/transactions/:id/cancel', (req: Request, res: Response): void => {
+router.post('/transactions/:id/cancel', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const tx = getTransactionById(id);
+    const tx = await getTransactionById(id);
 
     if (!tx) {
       res.status(404).json({ success: false, error: 'Transaction not found' });
@@ -78,9 +65,9 @@ router.post('/transactions/:id/cancel', (req: Request, res: Response): void => {
       return;
     }
 
-    const ok = cancelTransactionById(id);
+    const ok = await cancelTransactionById(id);
     if (ok) {
-      insertLog('info', 'payment', 'Transaction cancelled by admin', {
+      await insertLog('info', 'payment', 'Transaction cancelled by admin', {
         transactionId: id,
         reference: tx.reference_number,
         amount: tx.amount,
@@ -96,13 +83,10 @@ router.post('/transactions/:id/cancel', (req: Request, res: Response): void => {
   }
 });
 
-/**
- * GET /api/monitoring/logs?limit=50
- */
-router.get('/logs', (req: Request, res: Response): void => {
+router.get('/logs', async (req: Request, res: Response): Promise<void> => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
-    const logs = getRecentLogs(limit);
+    const logs = await getRecentLogs(limit);
     res.json({ success: true, logs, count: logs.length });
   } catch (err) {
     const error = err as Error;
@@ -111,14 +95,10 @@ router.get('/logs', (req: Request, res: Response): void => {
   }
 });
 
-/**
- * GET /api/monitoring/kiosk-status
- * Returns server health, paper trays, and aggregate stats for the kiosk status dashboard.
- */
-router.get('/kiosk-status', (_req: Request, res: Response): void => {
+router.get('/kiosk-status', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const stats = getMonitoringStats();
-    const paperTrays = getPaperTrays();
+    const stats = await getMonitoringStats();
+    const paperTrays = await getPaperTrays();
     const lowPaperTrays = paperTrays.filter((t) => t.current_count <= t.threshold);
 
     res.json({
