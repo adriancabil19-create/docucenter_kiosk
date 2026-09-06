@@ -1,5 +1,6 @@
 // DEMO MODE: Scanning requires physical scanner hardware.
 // This page simulates the scanning workflow for thesis/demo purposes.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'dart:convert';
@@ -40,10 +41,80 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
   String _scanStatus = '';
   String _adfMessage = ''; // Message for ADF status
+  bool _scannerConnected = false;
+  bool _adfLoaded = false;
+  bool _checkingAdf = true;
+  Timer? _adfStatusTimer;
   bool _showPreview = false;
   final String _paperSize = 'Auto';
   final String _outputFormat = 'PDF';
   final String _quality = 'standard';
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshAdfStatus();
+    _adfStatusTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshAdfStatus(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _adfStatusTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<bool> _refreshAdfStatus() async {
+    try {
+      final response = await http
+          .get(Uri.parse('${BackendConfig.serverUrl}/api/scan/adf-status'))
+          .timeout(const Duration(seconds: 8));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final connected = body['scannerConnected'] == true;
+      final loaded = body['adfLoaded'] == true;
+      final status = body['status'] as String? ?? 'Scanner status unavailable';
+
+      if (!mounted) return loaded;
+      setState(() {
+        _scannerConnected = connected;
+        _adfLoaded = loaded;
+        _checkingAdf = false;
+        _adfMessage = status;
+      });
+      return loaded;
+    } catch (_) {
+      if (!mounted) return false;
+      setState(() {
+        _scannerConnected = false;
+        _adfLoaded = false;
+        _checkingAdf = false;
+        _adfMessage = 'Scanner status unavailable — start the local backend';
+      });
+      return false;
+    }
+  }
+
+  Future<void> _startScanning() async {
+    final adfReady = await _refreshAdfStatus();
+    if (!mounted) return;
+    if (!adfReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Place a document in the ADF before scanning.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isScanning = true;
+      _showPreview = false;
+      _scannedPages = [];
+      _scannedPageNames = [];
+      _scanStatus = '';
+    });
+    await _scanAllADFPages();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,22 +132,55 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Demo mode notice
+          // Live scanner and ADF status
           Container(
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.green[50],
-              border: Border.all(color: Colors.green),
+              color: _adfLoaded ? Colors.green[50] : Colors.orange[50],
+              border: Border.all(color: _adfLoaded ? Colors.green : Colors.orange),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _adfLoaded ? Icons.check_circle : Icons.warning_amber,
+                  color: _adfLoaded ? Colors.green : Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _checkingAdf
+                        ? 'Checking scanner and ADF...'
+                        : _adfMessage.isNotEmpty
+                            ? _adfMessage
+                            : (_scannerConnected
+                                ? 'Scanner connected — place a document in the ADF'
+                                : 'Scanner not connected'),
+                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.amber[50],
+              border: Border.all(color: Colors.amber[700]!),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 20),
-                SizedBox(width: 8),
+                Icon(Icons.warning_amber, color: Colors.orange, size: 22),
+                SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Scanner Connected — Brother MFC-J2730DW detected. ADF Ready. Press Start Scanning to begin.',
+                    'ADF safety: Remove staples, paper clips, pins, and other hard components. Do not place torn, folded, wet, or damaged documents in the ADF because they may cause further damage or a paper jam. For damaged documents, take a clear picture and use Storage > Receive from Phone instead.',
                     style: TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ),
@@ -223,17 +327,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _isScanning = true;
-                  _showPreview = false;
-                  _scannedPages = [];
-                  _scannedPageNames = [];
-                  _adfMessage = '';
-                  _scanStatus = '';
-                });
-                _scanAllADFPages();
-              },
+              onPressed: _checkingAdf || !_adfLoaded ? null : _startScanning,
               icon: const Icon(Icons.play_arrow),
               label: const Text('Start Scanning with ADF'),
               style: ElevatedButton.styleFrom(

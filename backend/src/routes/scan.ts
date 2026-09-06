@@ -111,6 +111,8 @@ router.get('/adf-status', async (req: Request, res: Response) => {
 
     res.json({
       ready: result.ready,
+      scannerConnected: result.scannerConnected ?? false,
+      adfLoaded: result.adfLoaded ?? false,
       status: result.status,
       error: result.error,
     });

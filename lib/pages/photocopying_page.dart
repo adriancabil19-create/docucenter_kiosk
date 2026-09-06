@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -29,6 +30,52 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   String? _sessionId;
   int _pageCount = 0;
   String _preScanError = '';
+  bool _scannerConnected = false;
+  bool _adfLoaded = false;
+  bool _checkingAdf = true;
+  Timer? _adfStatusTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshAdfStatus();
+    _adfStatusTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshAdfStatus(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _adfStatusTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<bool> _refreshAdfStatus() async {
+    try {
+      final response = await http
+          .get(Uri.parse('${BackendConfig.serverUrl}/api/scan/adf-status'))
+          .timeout(const Duration(seconds: 8));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final connected = body['scannerConnected'] == true;
+      final loaded = body['adfLoaded'] == true;
+      if (!mounted) return loaded;
+      setState(() {
+        _scannerConnected = connected;
+        _adfLoaded = loaded;
+        _checkingAdf = false;
+      });
+      return loaded;
+    } catch (_) {
+      if (!mounted) return false;
+      setState(() {
+        _scannerConnected = false;
+        _adfLoaded = false;
+        _checkingAdf = false;
+      });
+      return false;
+    }
+  }
 
   // ── Pricing: cost per page per copy ──────────────────────────────────────
   // Color: High=₱5, Standard=₱4, Draft=₱3  |  B&W: High=₱3, Standard=₱2, Draft=₱1
@@ -49,6 +96,15 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   // ── Phase 1: Pre-scan ADF before payment ─────────────────────────────────
 
   Future<void> _preScanDocuments() async {
+    final adfReady = await _refreshAdfStatus();
+    if (!mounted) return;
+    if (!adfReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Place a document in the ADF before scanning.')),
+      );
+      return;
+    }
+
     setState(() {
       _isPreScanning = true;
       _sessionId = null;
@@ -207,6 +263,63 @@ Thank you for using our service!
                   child: Text(
                     'Place all documents in the ADF, select your options below, then tap Scan Documents.',
                     style: TextStyle(fontSize: 12, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.amber[50],
+              border: Border.all(color: Colors.amber[700]!),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber, color: Colors.orange, size: 22),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'ADF safety: Remove staples, paper clips, pins, and other hard components. Do not place torn, folded, wet, or damaged documents in the ADF because they may cause further damage or a paper jam. For damaged documents, take a clear picture and use Storage > Receive from Phone instead.',
+                    style: TextStyle(fontSize: 12, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: _adfLoaded ? Colors.green[50] : Colors.orange[50],
+              border: Border.all(color: _adfLoaded ? Colors.green : Colors.orange),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _adfLoaded ? Icons.check_circle : Icons.warning_amber,
+                  color: _adfLoaded ? Colors.green : Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _checkingAdf
+                        ? 'Checking scanner and ADF...'
+                        : _adfLoaded
+                            ? 'Scanner connected and document detected in ADF.'
+                            : (_scannerConnected
+                                ? 'Scanner connected — place a document in the ADF.'
+                                : 'Scanner status unavailable — start the local backend.'),
+                    style: const TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ),
               ],
@@ -409,7 +522,7 @@ Thank you for using our service!
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _preScanDocuments,
+              onPressed: _checkingAdf || !_adfLoaded ? null : _preScanDocuments,
               icon: const Icon(Icons.document_scanner),
               label: const Text('Scan Documents'),
               style: ElevatedButton.styleFrom(
