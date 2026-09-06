@@ -14,6 +14,7 @@ import {
 import { getTransactions } from '@/lib/api';
 import type { Transaction } from '@/lib/types';
 import { StatusChip } from './status-chip';
+import { glassTableClassNames } from './table-styles';
 
 interface Props {
   initialData: Transaction[];
@@ -55,13 +56,13 @@ export function TransactionsTable({ initialData }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{rows.length} record(s)</p>
+        <p className="text-sm text-slate-500">{rows.length} record(s)</p>
         <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={() => refresh()}>
           Refresh
         </Button>
       </div>
 
-      <Table aria-label="Transactions table" removeWrapper>
+      <Table aria-label="Transactions table" removeWrapper classNames={glassTableClassNames}>
         <TableHeader>
           <TableColumn>ID</TableColumn>
           <TableColumn>Reference</TableColumn>
@@ -80,9 +81,9 @@ export function TransactionsTable({ initialData }: Props) {
               <TableCell>
                 <StatusChip status={tx.status} />
               </TableCell>
-              <TableCell className="text-xs text-gray-500">{tx.service_type ?? '—'}</TableCell>
+              <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
               <TableCell className="text-xs">{formatDate(tx.created_at)}</TableCell>
-              <TableCell className="text-xs text-gray-500">
+              <TableCell className="text-xs text-slate-500">
                 {tx.completed_at ? formatDate(tx.completed_at) : '—'}
               </TableCell>
             </TableRow>

@@ -16,8 +16,8 @@ export default async function PaperPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Paper Trays</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-slate-800">Paper Trays</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Monitor paper levels and refill trays. Set alert thresholds to get notified when paper is
           running low.
         </p>

@@ -16,6 +16,7 @@ import {
 import { addToast } from '@heroui/react';
 import type { ActivityLog, LogLevel } from '@/lib/types';
 import { getLogs } from '@/lib/api';
+import { glassTableClassNames } from './table-styles';
 
 interface Props {
   initialData: ActivityLog[];
@@ -72,14 +73,14 @@ export function ActivityLogTable({ initialData }: Props) {
           ))}
         </Select>
 
-        <span className="ml-auto text-xs text-gray-400">{filtered.length} entries</span>
+        <span className="ml-auto text-xs text-slate-400">{filtered.length} entries</span>
 
         <Button size="sm" variant="flat" onPress={refresh} isLoading={loading}>
           Refresh
         </Button>
       </div>
 
-      <Table aria-label="Activity log" isStriped>
+      <Table aria-label="Activity log" isStriped classNames={glassTableClassNames}>
         <TableHeader>
           <TableColumn className="w-16">Level</TableColumn>
           <TableColumn className="w-28">Category</TableColumn>
@@ -98,11 +99,11 @@ export function ActivityLogTable({ initialData }: Props) {
                   {log.level}
                 </Chip>
               </TableCell>
-              <TableCell className="text-xs font-medium text-gray-600">{log.category}</TableCell>
+              <TableCell className="text-xs font-medium text-slate-600">{log.category}</TableCell>
               <TableCell>
-                <span className="text-sm text-gray-800">{log.message}</span>
+                <span className="text-sm text-slate-800">{log.message}</span>
                 {log.metadata && (
-                  <pre className="mt-0.5 overflow-x-auto text-xs text-gray-400">
+                  <pre className="mt-0.5 overflow-x-auto text-xs text-slate-400">
                     {(() => {
                       try {
                         return JSON.stringify(JSON.parse(log.metadata), null, 2);
@@ -113,7 +114,7 @@ export function ActivityLogTable({ initialData }: Props) {
                   </pre>
                 )}
               </TableCell>
-              <TableCell className="text-xs text-gray-400">
+              <TableCell className="text-xs text-slate-400">
                 {new Date(log.created_at).toLocaleString('en-PH', {
                   dateStyle: 'short',
                   timeStyle: 'medium',

@@ -16,13 +16,13 @@ export default async function PrintJobsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Print Jobs</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-slate-800">Print Jobs</h1>
+        <p className="mt-1 text-sm text-slate-500">
           All print and photocopy jobs dispatched by the kiosk.
         </p>
       </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="glass p-5">
         <PrintJobsTable initialData={jobs} />
       </div>
     </div>

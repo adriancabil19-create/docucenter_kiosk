@@ -16,13 +16,13 @@ export default async function TransactionsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-slate-800">Transactions</h1>
+        <p className="mt-1 text-sm text-slate-500">
           All PayMongo payment transactions recorded in the system.
         </p>
       </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="glass p-5">
         <TransactionsTable initialData={transactions} />
       </div>
     </div>

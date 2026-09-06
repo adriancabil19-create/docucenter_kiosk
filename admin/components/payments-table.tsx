@@ -21,6 +21,12 @@ import { addToast } from '@heroui/react';
 import type { Transaction } from '@/lib/types';
 import { getTransactions, cancelTransaction } from '@/lib/api';
 import { StatusChip } from '@/components/status-chip';
+import { glassTableClassNames } from '@/components/table-styles';
+
+const glassModalClassNames = {
+  base: 'glass-strong',
+  backdrop: 'bg-slate-900/20 backdrop-blur-sm',
+};
 
 interface Props {
   initialData: Transaction[];
@@ -98,11 +104,11 @@ export function PaymentsTable({ initialData }: Props) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-4 text-sm">
-          <span className="rounded-md bg-green-50 px-2.5 py-1 font-semibold text-green-700">
+          <span className="glass-inset px-2.5 py-1 font-semibold text-green-700">
             Revenue: ₱{totals.paid.toFixed(2)}
           </span>
           {totals.pending > 0 && (
-            <span className="rounded-md bg-yellow-50 px-2.5 py-1 font-semibold text-yellow-700">
+            <span className="glass-inset px-2.5 py-1 font-semibold text-amber-700">
               {totals.pending} pending
             </span>
           )}
@@ -112,7 +118,7 @@ export function PaymentsTable({ initialData }: Props) {
         </Button>
       </div>
 
-      <Table aria-label="Payment transactions" isStriped>
+      <Table aria-label="Payment transactions" isStriped classNames={glassTableClassNames}>
         <TableHeader>
           <TableColumn>Reference</TableColumn>
           <TableColumn>Amount</TableColumn>
@@ -130,9 +136,9 @@ export function PaymentsTable({ initialData }: Props) {
               <TableCell>
                 <StatusChip status={tx.status} />
               </TableCell>
-              <TableCell className="text-xs text-gray-500">{tx.service_type ?? '—'}</TableCell>
-              <TableCell className="text-xs text-gray-400">{fmt(tx.created_at)}</TableCell>
-              <TableCell className="text-xs text-gray-400">{fmt(tx.completed_at)}</TableCell>
+              <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
+              <TableCell className="text-xs text-slate-400">{fmt(tx.created_at)}</TableCell>
+              <TableCell className="text-xs text-slate-400">{fmt(tx.completed_at)}</TableCell>
               <TableCell>
                 {canCancel(tx.status) ? (
                   <Button size="sm" color="danger" variant="flat" onPress={() => openCancel(tx)}>
@@ -149,16 +155,16 @@ export function PaymentsTable({ initialData }: Props) {
         </TableBody>
       </Table>
 
-      <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange} classNames={glassModalClassNames}>
         <ModalContent>
           <ModalHeader>Cancel Transaction</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-slate-700">
               Cancel transaction{' '}
               <span className="font-mono font-semibold">{selected?.reference_number}</span> for{' '}
               <span className="font-semibold">₱{selected?.amount.toFixed(2)}</span>?
             </p>
-            <p className="mt-1 text-xs text-gray-400">This action cannot be undone.</p>
+            <p className="mt-1 text-xs text-slate-400">This action cannot be undone.</p>
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={onClose}>

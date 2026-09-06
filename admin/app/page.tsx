@@ -26,23 +26,23 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">DocuCenter Kiosk — live monitoring overview</p>
+          <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">DocuCenter Kiosk — live monitoring overview</p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+        <div className="glass flex items-center gap-2 rounded-lg px-3 py-1.5">
           <span
             className={`inline-block h-2 w-2 rounded-full ${
               serverOnline ? 'bg-green-500' : 'bg-red-500'
             }`}
           />
-          <span className="text-xs font-medium text-gray-600">
+          <span className="text-xs font-medium text-slate-600">
             {serverOnline ? 'Server Online' : 'Server Offline'}
           </span>
         </div>
       </div>
 
       {!serverOnline && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-xl border border-red-300/40 bg-red-500/10 px-4 py-3 text-sm text-red-800 backdrop-blur-md">
           <strong>Backend unavailable.</strong> Live transactions, print jobs, paper levels, and
           kiosk status could not be refreshed. The empty tables below do not mean there is no data.
         </div>
@@ -82,12 +82,15 @@ export default async function DashboardPage() {
       {paperAlerts.length > 0 && (
         <section>
           <div className="mb-3">
-            <h2 className="text-base font-semibold text-gray-800">⚠️ Paper Alerts</h2>
-            <p className="text-sm text-gray-500">Trays running low on paper</p>
+            <h2 className="text-base font-semibold text-slate-800">⚠️ Paper Alerts</h2>
+            <p className="text-sm text-slate-500">Trays running low on paper</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {paperAlerts.map((alert) => (
-              <div key={alert.tray_name} className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <div
+                key={alert.tray_name}
+                className="rounded-xl border border-red-300/40 bg-red-500/10 p-4 backdrop-blur-md"
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-medium text-red-900">{alert.tray_name}</h3>
@@ -105,43 +108,43 @@ export default async function DashboardPage() {
       {/* Recent Transactions */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-800">Recent Transactions</h2>
-          <a href="/transactions" className="text-xs font-medium text-blue-600 hover:underline">
+          <h2 className="text-base font-semibold text-slate-800">Recent Transactions</h2>
+          <a href="/transactions" className="text-xs font-medium text-accent-strong hover:underline">
             View all →
           </a>
         </div>
-        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="glass overflow-hidden">
           {transactions.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-400">
+            <p className="px-4 py-6 text-center text-sm text-slate-400">
               {serverOnline ? 'No transactions yet.' : 'Transactions unavailable while backend is offline.'}
             </p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50">
+              <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Reference
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Amount
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Status
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Date
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-white/40">
                 {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-gray-50/60">
+                  <tr key={tx.id} className="hover:bg-white/40">
                     <td className="px-4 py-2.5 font-mono text-xs">{tx.reference_number}</td>
                     <td className="px-4 py-2.5 font-semibold">₱{tx.amount.toFixed(2)}</td>
                     <td className="px-4 py-2.5">
                       <StatusChip status={tx.status} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">
+                    <td className="px-4 py-2.5 text-xs text-slate-400">
                       {new Date(tx.created_at).toLocaleString('en-PH', {
                         dateStyle: 'short',
                         timeStyle: 'short',
@@ -158,45 +161,45 @@ export default async function DashboardPage() {
       {/* Recent Print Jobs */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-800">Recent Print Jobs</h2>
-          <a href="/print-jobs" className="text-xs font-medium text-blue-600 hover:underline">
+          <h2 className="text-base font-semibold text-slate-800">Recent Print Jobs</h2>
+          <a href="/print-jobs" className="text-xs font-medium text-accent-strong hover:underline">
             View all →
           </a>
         </div>
-        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="glass overflow-hidden">
           {jobs.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-400">
+            <p className="px-4 py-6 text-center text-sm text-slate-400">
               {serverOnline ? 'No print jobs yet.' : 'Print jobs unavailable while backend is offline.'}
             </p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-100 bg-gray-50">
+              <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Files
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Paper
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Status
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
                     Date
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-white/40">
                 {jobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-gray-50/60">
-                    <td className="max-w-[200px] truncate px-4 py-2.5 text-xs text-gray-700">
+                  <tr key={job.id} className="hover:bg-white/40">
+                    <td className="max-w-[200px] truncate px-4 py-2.5 text-xs text-slate-700">
                       {job.filenames.join(', ')}
                     </td>
                     <td className="px-4 py-2.5 text-xs">{job.paper_size}</td>
                     <td className="px-4 py-2.5">
                       <StatusChip status={job.status} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">
+                    <td className="px-4 py-2.5 text-xs text-slate-400">
                       {new Date(job.created_at).toLocaleString('en-PH', {
                         dateStyle: 'short',
                         timeStyle: 'short',

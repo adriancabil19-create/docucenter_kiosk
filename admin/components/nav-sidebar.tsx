@@ -24,13 +24,13 @@ export function NavSidebar() {
   };
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r border-gray-200 bg-white shadow-sm">
+    <aside className="glass-nav flex h-full w-56 flex-col">
       {/* Logo */}
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-5">
+      <div className="flex items-center gap-2 border-b border-white/40 px-4 py-5">
         <span className="text-2xl">🖨️</span>
         <div>
-          <p className="text-sm font-bold leading-tight text-gray-900">DocuCenter</p>
-          <p className="text-xs text-gray-500">Admin Console</p>
+          <p className="text-sm font-bold leading-tight text-slate-900">DocuCenter</p>
+          <p className="text-xs text-slate-500">Admin Console</p>
         </div>
       </div>
 
@@ -44,8 +44,8 @@ export function NavSidebar() {
               href={href}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 active
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  ? 'bg-accent/15 text-accent-strong ring-1 ring-accent/20'
+                  : 'text-slate-600 hover:bg-white/50 hover:text-slate-900'
               }`}
             >
               <span className="text-base">{icon}</span>
@@ -56,11 +56,11 @@ export function NavSidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 px-4 py-3 space-y-2">
-        <p className="text-xs text-gray-400">DocuCenter Kiosk v1.0</p>
+      <div className="border-t border-white/40 px-4 py-3 space-y-2">
+        <p className="text-xs text-slate-400">DocuCenter Kiosk v1.0</p>
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-red-500/10 hover:text-red-600 transition-colors"
         >
           <span>🚪</span> Sign out
         </button>

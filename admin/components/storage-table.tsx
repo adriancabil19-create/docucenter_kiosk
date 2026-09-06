@@ -19,6 +19,12 @@ import {
 } from '@heroui/react';
 import { getDocuments, deleteDocument } from '@/lib/api';
 import type { StorageDocument } from '@/lib/types';
+import { glassTableClassNames } from './table-styles';
+
+const glassModalClassNames = {
+  base: 'glass-strong',
+  backdrop: 'bg-slate-900/20 backdrop-blur-sm',
+};
 
 interface Props {
   initialData: StorageDocument[];
@@ -98,13 +104,13 @@ export function StorageTable({ initialData }: Props) {
     <>
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">{rows.length} file(s)</p>
+          <p className="text-sm text-slate-500">{rows.length} file(s)</p>
           <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={() => refresh()}>
             Refresh
           </Button>
         </div>
 
-        <Table aria-label="Storage table" removeWrapper>
+        <Table aria-label="Storage table" removeWrapper classNames={glassTableClassNames}>
           <TableHeader>
             <TableColumn>Filename</TableColumn>
             <TableColumn>Format</TableColumn>
@@ -119,10 +125,10 @@ export function StorageTable({ initialData }: Props) {
                 <TableCell>
                   <div>
                     <p className="text-sm font-medium">{doc.originalName}</p>
-                    <p className="font-mono text-xs text-gray-400">{doc.id}</p>
+                    <p className="font-mono text-xs text-slate-400">{doc.id}</p>
                   </div>
                 </TableCell>
-                <TableCell className="text-xs uppercase text-gray-600">{doc.format}</TableCell>
+                <TableCell className="text-xs uppercase text-slate-600">{doc.format}</TableCell>
                 <TableCell className="text-center text-xs">{doc.pages}</TableCell>
                 <TableCell className="text-xs">{doc.size}</TableCell>
                 <TableCell className="text-xs">{doc.date}</TableCell>
@@ -144,13 +150,13 @@ export function StorageTable({ initialData }: Props) {
       </div>
 
       {/* Delete confirmation modal */}
-      <Modal isOpen={isOpen} onClose={onClose} size="sm">
+      <Modal isOpen={isOpen} onClose={onClose} size="sm" classNames={glassModalClassNames}>
         <ModalContent>
           <ModalHeader>Delete File</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Are you sure you want to permanently delete{' '}
-              <span className="font-semibold text-gray-900">
+              <span className="font-semibold text-slate-900">
                 &quot;{pendingDelete?.originalName}&quot;
               </span>
               ? This action cannot be undone.

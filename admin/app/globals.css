@@ -2,7 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Indigo / violet accent (space-separated RGB for <alpha-value> support) */
+  --accent: 99 102 241;
+  --accent-strong: 79 70 229;
+}
+
 html,
 body {
   height: 100%;
+}
+
+/* Pastel aurora backdrop — gives the frosted panels something to blur */
+body {
+  color: rgb(30 41 59); /* slate-800 */
+  background-color: #e9ecf6;
+  background-image:
+    radial-gradient(46rem 46rem at 8% 4%, rgba(99, 102, 241, 0.3), transparent 60%),
+    radial-gradient(42rem 42rem at 92% 10%, rgba(139, 92, 246, 0.26), transparent 60%),
+    radial-gradient(50rem 50rem at 84% 90%, rgba(56, 189, 248, 0.22), transparent 62%),
+    radial-gradient(38rem 38rem at 14% 96%, rgba(236, 72, 153, 0.15), transparent 60%),
+    linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(56, 189, 248, 0.05));
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+@layer components {
+  /* Standard frosted panel / card surface */
+  .glass {
+    @apply rounded-2xl border border-white/70 bg-white/55 shadow-glass backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  /* Higher-contrast surface for modals, the login card, elevated panels */
+  .glass-strong {
+    @apply rounded-2xl border border-white/70 bg-white/[0.72] shadow-glass-lg backdrop-blur-2xl backdrop-saturate-150;
+  }
+
+  /* Sidebar chrome */
+  .glass-nav {
+    @apply border-r border-white/60 bg-white/55 shadow-glass backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  /* Faint recessed surface: nested rows, inputs, progress-bar tracks */
+  .glass-inset {
+    @apply rounded-xl border border-white/50 bg-white/40 backdrop-blur-md;
+  }
 }

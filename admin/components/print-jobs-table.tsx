@@ -15,6 +15,7 @@ import {
 import { getPrintJobs } from '@/lib/api';
 import type { PrintJob } from '@/lib/types';
 import { StatusChip } from './status-chip';
+import { glassTableClassNames } from './table-styles';
 
 interface Props {
   initialData: PrintJob[];
@@ -52,13 +53,13 @@ export function PrintJobsTable({ initialData }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{rows.length} record(s)</p>
+        <p className="text-sm text-slate-500">{rows.length} record(s)</p>
         <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={() => refresh()}>
           Refresh
         </Button>
       </div>
 
-      <Table aria-label="Print jobs table" removeWrapper>
+      <Table aria-label="Print jobs table" removeWrapper classNames={glassTableClassNames}>
         <TableHeader>
           <TableColumn>Job ID</TableColumn>
           <TableColumn>Files</TableColumn>
@@ -76,7 +77,7 @@ export function PrintJobsTable({ initialData }: Props) {
               <TableCell className="max-w-[160px]">
                 <div className="space-y-0.5">
                   {job.filenames.map((f) => (
-                    <p key={f} className="truncate text-xs text-gray-600">
+                    <p key={f} className="truncate text-xs text-slate-600">
                       {f}
                     </p>
                   ))}
@@ -87,7 +88,7 @@ export function PrintJobsTable({ initialData }: Props) {
               <TableCell>
                 <StatusChip status={job.status} />
               </TableCell>
-              <TableCell className="text-xs text-gray-500">{job.method ?? '—'}</TableCell>
+              <TableCell className="text-xs text-slate-500">{job.method ?? '—'}</TableCell>
               <TableCell>
                 <Chip size="sm" variant="flat" color={job.simulated ? 'warning' : 'success'}>
                   {job.simulated ? 'Simulated' : 'Real'}
