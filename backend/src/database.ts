@@ -277,11 +277,40 @@ export interface RecentJob {
   created_at: string;
 }
 
-export const getRecentJobs = async (limit = 20): Promise<RecentJob[]> => {
+/**
+ * Optional inclusive created_at range filter. Values are ISO-8601 strings
+ * ('YYYY-MM-DDTHH:MM:SSZ') matching how created_at is stored, so a plain
+ * lexicographic comparison is a correct chronological comparison.
+ */
+export interface DateRange {
+  from?: string;
+  to?: string;
+}
+
+const rangeClause = (
+  range: DateRange | undefined,
+  args: Record<string, string | number>,
+): string => {
+  if (!range) return '';
+  const parts: string[] = [];
+  if (range.from) {
+    parts.push('created_at >= @from');
+    args.from = range.from;
+  }
+  if (range.to) {
+    parts.push('created_at <= @to');
+    args.to = range.to;
+  }
+  return parts.length ? ` WHERE ${parts.join(' AND ')}` : '';
+};
+
+export const getRecentJobs = async (limit = 20, range?: DateRange): Promise<RecentJob[]> => {
+  const args: Record<string, string | number> = { limit };
+  const where = rangeClause(range, args);
   const result = await getDb().execute({
     sql: `SELECT id, transaction_id, filenames, paper_size, copies, status, method, simulated, created_at
-          FROM print_jobs ORDER BY created_at DESC LIMIT @limit`,
-    args: { limit },
+          FROM print_jobs${where} ORDER BY created_at DESC LIMIT @limit`,
+    args,
   });
 
   return toRows<{ id: string; transaction_id: string | null; filenames: string; paper_size: string; copies: number; status: string; method: string | null; simulated: number; created_at: string }>(result)
@@ -293,11 +322,16 @@ export const getRecentJobs = async (limit = 20): Promise<RecentJob[]> => {
     }));
 };
 
-export const getRecentTransactions = async (limit = 20): Promise<TransactionRow[]> => {
+export const getRecentTransactions = async (
+  limit = 20,
+  range?: DateRange,
+): Promise<TransactionRow[]> => {
+  const args: Record<string, string | number> = { limit };
+  const where = rangeClause(range, args);
   const result = await getDb().execute({
     sql: `SELECT id, reference_number, amount, status, service_type, created_at, completed_at
-          FROM transactions ORDER BY created_at DESC LIMIT @limit`,
-    args: { limit },
+          FROM transactions${where} ORDER BY created_at DESC LIMIT @limit`,
+    args,
   });
   return toRows<TransactionRow>(result);
 };
@@ -448,10 +482,12 @@ export const insertLog = async (
   }
 };
 
-export const getRecentLogs = async (limit = 50): Promise<ActivityLogRow[]> => {
+export const getRecentLogs = async (limit = 50, range?: DateRange): Promise<ActivityLogRow[]> => {
+  const args: Record<string, string | number> = { limit };
+  const where = rangeClause(range, args);
   const result = await getDb().execute({
-    sql: `SELECT id, level, category, message, metadata, created_at FROM activity_logs ORDER BY created_at DESC LIMIT @limit`,
-    args: { limit },
+    sql: `SELECT id, level, category, message, metadata, created_at FROM activity_logs${where} ORDER BY created_at DESC LIMIT @limit`,
+    args,
   });
   return toRows<ActivityLogRow>(result);
 };

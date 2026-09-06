@@ -13,6 +13,14 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+/** Parse ?from / ?to ISO date-time strings into an optional range filter. */
+const parseRange = (req: Request): { from?: string; to?: string } | undefined => {
+  const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+  const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+  if (!from && !to) return undefined;
+  return { from: from || undefined, to: to || undefined };
+};
+
 router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
     const stats = await getMonitoringStats();
@@ -26,8 +34,8 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
 
 router.get('/jobs', async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
-    const jobs = await getRecentJobs(limit);
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 500);
+    const jobs = await getRecentJobs(limit, parseRange(req));
     res.json({ success: true, jobs, count: jobs.length });
   } catch (err) {
     const error = err as Error;
@@ -38,8 +46,8 @@ router.get('/jobs', async (req: Request, res: Response): Promise<void> => {
 
 router.get('/transactions', async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
-    const transactions = await getRecentTransactions(limit);
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 500);
+    const transactions = await getRecentTransactions(limit, parseRange(req));
     res.json({ success: true, transactions, count: transactions.length });
   } catch (err) {
     const error = err as Error;
@@ -85,8 +93,8 @@ router.post('/transactions/:id/cancel', async (req: Request, res: Response): Pro
 
 router.get('/logs', async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
-    const logs = await getRecentLogs(limit);
+    const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 1000);
+    const logs = await getRecentLogs(limit, parseRange(req));
     res.json({ success: true, logs, count: logs.length });
   } catch (err) {
     const error = err as Error;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Table,
   TableHeader,
@@ -19,9 +19,10 @@ import {
 } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { Transaction } from '@/lib/types';
-import { getTransactions, cancelTransaction } from '@/lib/api';
+import { getTransactions, cancelTransaction, type DateRange } from '@/lib/api';
 import { StatusChip } from '@/components/status-chip';
 import { glassTableClassNames } from '@/components/table-styles';
+import { HistoryToolbar } from '@/components/history-toolbar';
 
 const glassModalClassNames = {
   base: 'glass-strong',
@@ -31,6 +32,15 @@ const glassModalClassNames = {
 interface Props {
   initialData: Transaction[];
 }
+
+const STATUS_OPTIONS = [
+  { key: 'PENDING', label: 'Pending' },
+  { key: 'PROCESSING', label: 'Processing' },
+  { key: 'SUCCESS', label: 'Success' },
+  { key: 'FAILED', label: 'Failed' },
+  { key: 'EXPIRED', label: 'Expired' },
+  { key: 'CANCELLED', label: 'Cancelled' },
+];
 
 const fmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -42,20 +52,34 @@ export function PaymentsTable({ initialData }: Props) {
   const [selected, setSelected] = useState<Transaction | null>(null);
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
-  const refresh = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const res = await getTransactions(200);
-      setData(res.transactions);
-      if (!silent) addToast({ title: 'Refreshed', description: `${res.count} transaction(s) loaded.`, color: 'success' });
-    } catch (err) {
-      if (!silent) addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, []);
+  const [range, setRange] = useState<DateRange>({});
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const res = await getTransactions(500, range);
+        setData(res.transactions);
+        if (!silent)
+          addToast({
+            title: 'Refreshed',
+            description: `${res.count} transaction(s) loaded.`,
+            color: 'success',
+          });
+      } catch (err) {
+        if (!silent)
+          addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [range],
+  );
 
   useEffect(() => {
+    refresh(true);
     const id = setInterval(() => refresh(true), 30_000);
     return () => clearInterval(id);
   }, [refresh]);
@@ -93,30 +117,53 @@ export function PaymentsTable({ initialData }: Props) {
     }
   }, [selected, onClose]);
 
-  const canCancel = (status: string) => status === 'PENDING' || status === 'PROCESSING';
+  const canCancel = (s: string) => s === 'PENDING' || s === 'PROCESSING';
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return data.filter((tx) => {
+      if (status !== 'all' && tx.status !== status) return false;
+      if (!q) return true;
+      return (
+        tx.reference_number.toLowerCase().includes(q) ||
+        (tx.service_type ?? '').toLowerCase().includes(q) ||
+        String(tx.amount).includes(q)
+      );
+    });
+  }, [data, search, status]);
 
   const totals = {
-    paid: data.filter((t) => t.status === 'SUCCESS').reduce((s, t) => s + t.amount, 0),
-    pending: data.filter((t) => canCancel(t.status)).length,
+    paid: filtered.filter((t) => t.status === 'SUCCESS').reduce((s, t) => s + t.amount, 0),
+    pending: filtered.filter((t) => canCancel(t.status)).length,
   };
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-4 text-sm">
-          <span className="glass-inset px-2.5 py-1 font-semibold text-green-700">
-            Revenue: ₱{totals.paid.toFixed(2)}
+      <div className="mb-3 flex flex-wrap gap-3 text-sm">
+        <span className="glass-inset px-2.5 py-1 font-semibold text-green-700">
+          Revenue: ₱{totals.paid.toFixed(2)}
+        </span>
+        {totals.pending > 0 && (
+          <span className="glass-inset px-2.5 py-1 font-semibold text-amber-700">
+            {totals.pending} pending
           </span>
-          {totals.pending > 0 && (
-            <span className="glass-inset px-2.5 py-1 font-semibold text-amber-700">
-              {totals.pending} pending
-            </span>
-          )}
-        </div>
-        <Button size="sm" variant="flat" onPress={() => refresh()} isLoading={loading}>
-          Refresh
-        </Button>
+        )}
       </div>
+
+      <HistoryToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Reference, service…"
+        range={range}
+        onRangeChange={setRange}
+        statusOptions={STATUS_OPTIONS}
+        status={status}
+        onStatusChange={setStatus}
+        count={filtered.length}
+        total={data.length}
+        loading={loading}
+        onRefresh={() => refresh()}
+      />
 
       <Table aria-label="Payment transactions" isStriped classNames={glassTableClassNames}>
         <TableHeader>
@@ -128,8 +175,8 @@ export function PaymentsTable({ initialData }: Props) {
           <TableColumn>Completed</TableColumn>
           <TableColumn>Action</TableColumn>
         </TableHeader>
-        <TableBody emptyContent="No transactions found.">
-          {data.map((tx) => (
+        <TableBody emptyContent="No transactions match these filters.">
+          {filtered.map((tx) => (
             <TableRow key={tx.id}>
               <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
               <TableCell className="font-semibold">₱{tx.amount.toFixed(2)}</TableCell>

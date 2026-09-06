@@ -12,6 +12,19 @@ import type {
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:5000';
 const API_TOKEN = process.env.NEXT_PUBLIC_ADMIN_API_TOKEN || '';
 
+/** Optional inclusive created_at range filter (ISO-8601 strings). */
+export interface DateRange {
+  from?: string;
+  to?: string;
+}
+
+function withRange(path: string, limit: number, range?: DateRange): string {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (range?.from) params.set('from', range.from);
+  if (range?.to) params.set('to', range.to);
+  return `${path}?${params.toString()}`;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -36,17 +49,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export const getStats = (): Promise<StatsResponse> =>
   apiFetch<StatsResponse>('/api/monitoring/stats');
 
-export const getTransactions = (limit = 50): Promise<TransactionsResponse> =>
-  apiFetch<TransactionsResponse>(`/api/monitoring/transactions?limit=${limit}`);
+export const getTransactions = (limit = 50, range?: DateRange): Promise<TransactionsResponse> =>
+  apiFetch<TransactionsResponse>(withRange('/api/monitoring/transactions', limit, range));
 
-export const getPrintJobs = (limit = 50): Promise<PrintJobsResponse> =>
-  apiFetch<PrintJobsResponse>(`/api/monitoring/jobs?limit=${limit}`);
+export const getPrintJobs = (limit = 50, range?: DateRange): Promise<PrintJobsResponse> =>
+  apiFetch<PrintJobsResponse>(withRange('/api/monitoring/jobs', limit, range));
 
 export const cancelTransaction = (id: string): Promise<{ success: boolean; message: string }> =>
   apiFetch(`/api/monitoring/transactions/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 
-export const getLogs = (limit = 100): Promise<LogsResponse> =>
-  apiFetch<LogsResponse>(`/api/monitoring/logs?limit=${limit}`);
+export const getLogs = (limit = 100, range?: DateRange): Promise<LogsResponse> =>
+  apiFetch<LogsResponse>(withRange('/api/monitoring/logs', limit, range));
 
 export const getKioskStatus = (): Promise<KioskStatusResponse> =>
   apiFetch<KioskStatusResponse>('/api/monitoring/kiosk-status');

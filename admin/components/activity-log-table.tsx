@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Table,
   TableHeader,
@@ -8,15 +8,15 @@ import {
   TableBody,
   TableRow,
   TableCell,
-  Button,
   Chip,
   Select,
   SelectItem,
 } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { ActivityLog, LogLevel } from '@/lib/types';
-import { getLogs } from '@/lib/api';
+import { getLogs, type DateRange } from '@/lib/api';
 import { glassTableClassNames } from './table-styles';
+import { HistoryToolbar } from './history-toolbar';
 
 interface Props {
   initialData: ActivityLog[];
@@ -30,34 +30,76 @@ const LEVEL_COLORS: Record<LogLevel, 'success' | 'warning' | 'danger'> = {
 
 const CATEGORIES = ['all', 'payment', 'paper', 'print', 'storage', 'system'];
 
+const LEVEL_OPTIONS = [
+  { key: 'info', label: 'Info' },
+  { key: 'warn', label: 'Warning' },
+  { key: 'error', label: 'Error' },
+];
+
 export function ActivityLogTable({ initialData }: Props) {
   const [logs, setLogs] = useState<ActivityLog[]>(initialData);
   const [loading, setLoading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [range, setRange] = useState<DateRange>({});
+  const [search, setSearch] = useState('');
+  const [level, setLevel] = useState('all');
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getLogs(200);
-      setLogs(res.logs);
-      addToast({
-        title: 'Refreshed',
-        description: `${res.count} log entries loaded.`,
-        color: 'success',
-      });
-    } catch (err) {
-      addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const res = await getLogs(1000, range);
+        setLogs(res.logs);
+        if (!silent)
+          addToast({
+            title: 'Refreshed',
+            description: `${res.count} log entries loaded.`,
+            color: 'success',
+          });
+      } catch (err) {
+        if (!silent)
+          addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [range],
+  );
 
-  const filtered =
-    categoryFilter === 'all' ? logs : logs.filter((l) => l.category === categoryFilter);
+  useEffect(() => {
+    refresh(true);
+  }, [refresh]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return logs.filter((l) => {
+      if (categoryFilter !== 'all' && l.category !== categoryFilter) return false;
+      if (level !== 'all' && l.level !== level) return false;
+      if (!q) return true;
+      return (
+        l.message.toLowerCase().includes(q) ||
+        l.category.toLowerCase().includes(q) ||
+        (l.metadata ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [logs, categoryFilter, level, search]);
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <HistoryToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Message, metadata…"
+        range={range}
+        onRangeChange={setRange}
+        statusOptions={LEVEL_OPTIONS}
+        status={level}
+        onStatusChange={setLevel}
+        count={filtered.length}
+        total={logs.length}
+        loading={loading}
+        onRefresh={() => refresh()}
+      >
         <Select
           aria-label="Filter by category"
           size="sm"
@@ -72,13 +114,7 @@ export function ActivityLogTable({ initialData }: Props) {
             <SelectItem key={c}>{c === 'all' ? 'All categories' : c}</SelectItem>
           ))}
         </Select>
-
-        <span className="ml-auto text-xs text-slate-400">{filtered.length} entries</span>
-
-        <Button size="sm" variant="flat" onPress={refresh} isLoading={loading}>
-          Refresh
-        </Button>
-      </div>
+      </HistoryToolbar>
 
       <Table aria-label="Activity log" isStriped classNames={glassTableClassNames}>
         <TableHeader>
@@ -87,7 +123,7 @@ export function ActivityLogTable({ initialData }: Props) {
           <TableColumn>Message</TableColumn>
           <TableColumn className="w-44">Time</TableColumn>
         </TableHeader>
-        <TableBody emptyContent="No log entries found.">
+        <TableBody emptyContent="No log entries match these filters.">
           {filtered.map((log) => (
             <TableRow key={log.id}>
               <TableCell>
