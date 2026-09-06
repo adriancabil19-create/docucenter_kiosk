@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import helmet from 'helmet';
 import cors from 'cors';
 
-import { config, validateConfig } from './utils/config';
+import { config, validateConfig, normalizeOrigin } from './utils/config';
 import { logger } from './utils/logger';
 import paymongoRoutes from './routes/paymongo';
 import qrphRoutes from './routes/qrph.routes';
@@ -51,8 +51,16 @@ if (config.corsEnabled) {
       origin: (origin, callback) => {
         // Allow requests with no origin (mobile apps, curl, and health checks)
         if (!origin) return callback(null, true);
-        if (config.allowedOrigins.includes(origin)) return callback(null, true);
-        callback(new Error(`CORS blocked: origin ${origin} not in ALLOWED_ORIGINS`));
+        if (config.allowedOrigins.includes(normalizeOrigin(origin))) {
+          return callback(null, true);
+        }
+        logger.warn('CORS blocked', {
+          origin,
+          allowedOrigins: config.allowedOrigins,
+        });
+        // Reject without throwing: omit the CORS headers (browser still blocks)
+        // but don't turn it into a 500 that hides the real cause.
+        callback(null, false);
       },
       credentials: config.corsCredentials,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -149,6 +157,7 @@ initSchema()
         environment: config.env,
         corsEnabled: config.corsEnabled,
         helmetEnabled: config.helmetEnabled,
+        allowedOrigins: config.allowedOrigins,
       });
       logger.info(`PAYMONGO Payment Integration API`, {
         baseUrl: `http://localhost:${PORT}`,

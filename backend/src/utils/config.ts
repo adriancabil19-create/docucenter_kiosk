@@ -3,6 +3,25 @@ import path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+/**
+ * Normalize an origin string so comparisons are resilient to how the value was
+ * entered in the deployment env: strips surrounding quotes/whitespace, a
+ * trailing slash, and lowercases the scheme+host. Returns '' for empty input.
+ */
+export const normalizeOrigin = (value: string | undefined | null): string => {
+  if (!value) return '';
+  const cleaned = value
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim()
+    .replace(/\/+$/, '');
+  return cleaned ? cleaned.toLowerCase() : '';
+};
+
+/** Read a boolean-ish env flag, tolerating surrounding quotes/whitespace/case. */
+const envFlag = (value: string | undefined): boolean =>
+  (value || '').trim().replace(/^['"]+|['"]+$/g, '').trim().toLowerCase() === 'true';
+
 export const config = {
   // Server
   env: process.env.NODE_ENV || 'development',
@@ -29,23 +48,16 @@ export const config = {
         'http://localhost:3000'
       )
         .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
-        .concat(
-          [
-            process.env.PUBLIC_BASE_URL,
-            process.env.API_BASE_URL,
-          ]
-            .filter((o): o is string => Boolean(o))
-            .map((o) => o.replace(/\/$/, '')),
-        ),
+        .map(normalizeOrigin)
+        .concat([process.env.PUBLIC_BASE_URL, process.env.API_BASE_URL].map(normalizeOrigin))
+        .filter(Boolean),
     ),
   ),
-  corsEnabled: process.env.ENABLE_CORS === 'true',
-  corsCredentials: process.env.CORS_CREDENTIALS === 'true',
+  corsEnabled: envFlag(process.env.ENABLE_CORS),
+  corsCredentials: envFlag(process.env.CORS_CREDENTIALS),
 
   // Security
-  helmetEnabled: process.env.ENABLE_HELMET === 'true',
+  helmetEnabled: envFlag(process.env.ENABLE_HELMET),
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
 
