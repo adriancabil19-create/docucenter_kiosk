@@ -45,6 +45,28 @@ export function presetRange(days: number): DateRange {
   return { from: iso(start, false), to: iso(end, true) };
 }
 
+// Solid white field surfaces so the controls read clearly on the glass panel.
+const fieldInput = {
+  label: 'text-slate-500',
+  inputWrapper:
+    '!bg-white border border-slate-200 shadow-sm data-[hover=true]:border-slate-300 ' +
+    'group-data-[focus=true]:!bg-white group-data-[focus=true]:border-accent',
+};
+export const fieldSelect = {
+  label: 'text-slate-500',
+  trigger:
+    '!bg-white border border-slate-200 shadow-sm !h-8 !min-h-8 data-[hover=true]:border-slate-300 ' +
+    'data-[open=true]:border-accent',
+  popoverContent: 'glass-strong',
+};
+const fieldDate = {
+  label: 'text-slate-500',
+  inputWrapper:
+    '!bg-white border border-slate-200 shadow-sm data-[hover=true]:border-slate-300 ' +
+    'group-data-[focus=true]:border-accent',
+  popoverContent: 'glass-strong',
+};
+
 export interface HistoryToolbarProps {
   search: string;
   onSearchChange: (value: string) => void;
@@ -81,30 +103,39 @@ export function HistoryToolbar({
   const hasRange = Boolean(range.from || range.to);
   const filtered = count !== total;
 
+  const presets = [
+    { label: 'Today', days: 1 },
+    { label: '7d', days: 7 },
+    { label: '30d', days: 30 },
+    { label: '90d', days: 90 },
+  ];
+
   return (
-    <div className="mb-4 space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
+    <div className="mb-5 rounded-2xl border border-white/50 bg-white/30 p-3 backdrop-blur-md sm:p-4">
+      {/* Row 1 — inputs */}
+      <div className="flex flex-wrap items-center gap-2.5">
         <Input
           size="sm"
+          radius="lg"
           aria-label="Search"
           placeholder={searchPlaceholder}
           value={search}
           onValueChange={onSearchChange}
-          startContent={<span className="text-sm text-slate-400">⌕</span>}
-          className="w-full max-w-xs"
+          classNames={fieldInput}
+          className="w-full sm:w-64"
         />
 
         <DateRangePicker
           size="sm"
+          radius="lg"
           aria-label="Date range"
-          label="Date range"
-          labelPlacement="outside-left"
           visibleMonths={2}
           /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
           value={rangeToValue(range) as any}
           /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
           onChange={(v: any) => onRangeChange(valueToRange(v as CalRange))}
-          className="w-full max-w-[19rem]"
+          classNames={fieldDate}
+          className="w-full sm:w-[16.5rem]"
         />
 
         {children}
@@ -112,13 +143,15 @@ export function HistoryToolbar({
         {statusOptions && onStatusChange && (
           <Select
             size="sm"
+            radius="lg"
             aria-label="Status"
-            className="w-40"
             selectedKeys={[status]}
             onSelectionChange={(keys) => {
               const val = Array.from(keys)[0] as string;
               if (val) onStatusChange(val);
             }}
+            classNames={fieldSelect}
+            className="w-full sm:w-40"
           >
             {[{ key: 'all', label: 'All statuses' }, ...statusOptions].map((o) => (
               <SelectItem key={o.key}>{o.label}</SelectItem>
@@ -126,42 +159,62 @@ export function HistoryToolbar({
           </Select>
         )}
 
-        <Button size="sm" variant="flat" color="primary" isLoading={loading} onPress={onRefresh}>
+        <Button
+          size="sm"
+          radius="lg"
+          variant="flat"
+          color="primary"
+          isLoading={loading}
+          onPress={onRefresh}
+          className="ml-auto shadow-sm"
+        >
           Refresh
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-slate-500">Quick range:</span>
-        {[
-          { label: 'Today', days: 1 },
-          { label: '7 days', days: 7 },
-          { label: '30 days', days: 30 },
-          { label: '90 days', days: 90 },
-        ].map((p) => (
-          <Button
-            key={p.label}
-            size="sm"
-            variant="flat"
-            className="h-6 min-w-0 px-2 text-xs"
-            onPress={() => onRangeChange(presetRange(p.days))}
-          >
-            {p.label}
-          </Button>
-        ))}
+      {/* Row 2 — quick ranges + count */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-white/40 pt-3 text-xs">
+        <span className="mr-1 font-medium text-slate-500">Quick range</span>
+        {presets.map((p) => {
+          const active =
+            hasRange && JSON.stringify(presetRange(p.days)) === JSON.stringify(range);
+          return (
+            <Button
+              key={p.label}
+              size="sm"
+              radius="full"
+              variant="flat"
+              className={`h-6 min-w-0 px-2.5 text-xs shadow-sm ${
+                active
+                  ? 'bg-accent/15 text-accent-strong'
+                  : 'bg-white/60 text-slate-600 data-[hover=true]:bg-white/80'
+              }`}
+              onPress={() => onRangeChange(presetRange(p.days))}
+            >
+              {p.label}
+            </Button>
+          );
+        })}
         {hasRange && (
           <Button
             size="sm"
+            radius="full"
             variant="light"
-            color="danger"
-            className="h-6 min-w-0 px-2 text-xs"
+            className="h-6 min-w-0 px-2 text-xs text-slate-500 data-[hover=true]:text-red-600"
             onPress={() => onRangeChange({})}
           >
-            Clear dates
+            Clear
           </Button>
         )}
         <span className="ml-auto text-slate-400">
-          {filtered ? `${count} of ${total}` : `${total}`} record{total === 1 ? '' : 's'}
+          {filtered ? (
+            <>
+              <span className="font-semibold text-slate-600">{count}</span> of {total}
+            </>
+          ) : (
+            <span className="font-semibold text-slate-600">{total}</span>
+          )}{' '}
+          record{total === 1 ? '' : 's'}
         </span>
       </div>
     </div>

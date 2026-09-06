@@ -16,7 +16,7 @@ import { addToast } from '@heroui/react';
 import type { ActivityLog, LogLevel } from '@/lib/types';
 import { getLogs, type DateRange } from '@/lib/api';
 import { glassTableClassNames } from './table-styles';
-import { HistoryToolbar } from './history-toolbar';
+import { HistoryToolbar, fieldSelect } from './history-toolbar';
 
 interface Props {
   initialData: ActivityLog[];
@@ -103,7 +103,9 @@ export function ActivityLogTable({ initialData }: Props) {
         <Select
           aria-label="Filter by category"
           size="sm"
-          className="w-44"
+          radius="lg"
+          className="w-full sm:w-44"
+          classNames={fieldSelect}
           selectedKeys={[categoryFilter]}
           onSelectionChange={(keys) => {
             const val = Array.from(keys)[0] as string;
