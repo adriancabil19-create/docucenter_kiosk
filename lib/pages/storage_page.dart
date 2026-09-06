@@ -205,7 +205,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
   Future<void> _receiveFromPhone() async {
     final messenger = ScaffoldMessenger.of(context);
 
-    // Create a receive session on Render
+    // Create a receive session on the Railway transfer relay.
     http.Response createRes;
     try {
       createRes = await http
@@ -259,7 +259,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     setDialogState(() =>
                         statusText = 'Received ${files.length} file(s)! Saving…');
 
-                    // Download each file from Render and save to local storage
+                    // Download each file from Railway and save to local storage.
                     int saved = 0;
                     for (final f in files) {
                       final name = f['name'] as String;
@@ -280,7 +280,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                       }
                     }
 
-                    // Clean up session on Render
+                    // Clean up the cloud receive session.
                     try {
                       await http.delete(Uri.parse(
                           BackendConfig.transferReceiveDeleteUrl(sessionId)));

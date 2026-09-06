@@ -433,7 +433,7 @@ class LocalWebTransferService extends TransferService {
   }
 }
 
-/// Cloud transfer service — uploads files to the Render relay and returns
+/// Cloud transfer service — uploads files to the Railway relay and returns
 /// a download URL the kiosk shows as a QR code. The phone opens that URL
 /// in any browser to download the files; no shared WiFi needed.
 class CloudTransferService extends TransferService {
@@ -598,8 +598,22 @@ class QrCodeTransferService extends TransferService {
   }
 
   Future<String> generateQrCodeData(List<StorageDocument> documents) async {
-    _transferToken = 'TOKEN_${DateTime.now().millisecondsSinceEpoch}';
-    _transferLink = 'https://webdoc.transfer/session=$_transferToken';
+    final response = await http
+        .post(Uri.parse(BackendConfig.transferReceiveSessionUrl))
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) {
+      throw Exception('Receive session failed (${response.statusCode})');
+    }
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (body['success'] != true || body['sessionId'] is! String ||
+        body['uploadUrl'] is! String) {
+      throw Exception(body['error'] ?? 'Invalid receive session response');
+    }
+
+    _transferToken = body['sessionId'] as String;
+    _transferLink = body['uploadUrl'] as String;
     _tokenExpiration = DateTime.now().add(const Duration(minutes: 10));
     return _transferLink!;
   }

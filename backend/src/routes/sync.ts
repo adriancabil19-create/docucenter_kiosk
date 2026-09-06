@@ -1,9 +1,8 @@
 /**
- * Sync ingest endpoints — only active on the Render-hosted backend.
- * The local kiosk backend POSTs events here after each DB write so the
- * admin dashboard sees live data.
+ * Sync ingest endpoints — used by the local kiosk backend after each DB write
+ * so the admin dashboard sees live data.
  *
- * Auth: every request must carry X-Sync-Secret matching RENDER_SYNC_SECRET.
+ * Auth: every request must carry X-Sync-Secret matching SYNC_SECRET.
  */
 
 import { Router, Request, Response } from 'express';
@@ -23,7 +22,7 @@ const router = Router();
 
 const requireSyncSecret = (req: Request, res: Response, next: () => void): void => {
   const secret = req.headers['x-sync-secret'];
-  if (!config.renderSync.secret || secret !== config.renderSync.secret) {
+  if (!config.sync.secret || secret !== config.sync.secret) {
     res.status(401).json({ success: false, error: 'Unauthorized' });
     return;
   }

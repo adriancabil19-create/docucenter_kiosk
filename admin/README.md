@@ -20,7 +20,7 @@ Built with **Next.js 14**, **HeroUI**, and **Tailwind CSS**.
 ## Prerequisites
 
 - Node.js 18+
-- The [docucenter-kiosk backend](../backend/README.md) running (locally or on Render)
+- The [docucenter-kiosk backend](../backend/README.md) running locally or on Railway
 
 ---
 
@@ -72,20 +72,16 @@ The admin console fetches all data from the backend API. Make sure the backend i
 
 ---
 
-## Production Deploy on Render
+## Production Deploy on Railway
 
-1. Push the repo to GitHub.
-2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Web Service**.
-3. Connect your GitHub repo.
-4. Set:
-   - **Root Directory**: `admin`
-   - **Build Command**: `npm ci && npm run build`
-   - **Start Command**: `npm start`
-5. Add environment variable:
-   - `NEXT_PUBLIC_API_URL` → your backend Render URL (e.g. `https://docucenter-kiosk-backend.onrender.com`)
-6. Click **Deploy**.
+Create a Railway service from this repository with:
 
-> Alternatively, deploy both services automatically using the root-level [`render.yaml`](../render.yaml).
+- **Root Directory**: `admin`
+- **Build Command**: `npm ci && npm run build`
+- **Start Command**: `npm start`
+- `NEXT_PUBLIC_API_URL`: the public URL of the Railway backend service
+
+Railway supplies `PORT` automatically; the production start command uses it.
 
 ---
 

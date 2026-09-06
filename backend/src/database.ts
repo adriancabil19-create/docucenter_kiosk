@@ -19,8 +19,11 @@ let _client: Client | null = null;
 
 export const getDb = (): Client => {
   if (_client) return _client;
+  const localDatabasePath = process.env.DATABASE_PATH || 'docucenter.db';
   _client = createClient({
-    url: process.env.TURSO_DATABASE_URL || 'file:docucenter.db',
+    url: process.env.TURSO_DATABASE_URL || (
+      localDatabasePath.startsWith('file:') ? localDatabasePath : `file:${localDatabasePath}`
+    ),
     authToken: process.env.TURSO_AUTH_TOKEN,
   });
   return _client;

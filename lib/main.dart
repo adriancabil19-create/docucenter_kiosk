@@ -9,10 +9,12 @@ void main() async {
   await windowManager.ensureInitialized();
 
   const windowOptions = WindowOptions(
-    fullScreen: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    titleBarStyle: TitleBarStyle.hidden,
+    size: Size(1280, 800),
+    minimumSize: Size(900, 600),
+    fullScreen: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.normal,
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {

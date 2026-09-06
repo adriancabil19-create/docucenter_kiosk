@@ -242,7 +242,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                     border: Border.all(color: Colors.grey[300]!),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.04),
+                                        color: Colors.black.withValues(alpha: 0.04),
                                         blurRadius: 24,
                                         offset: const Offset(0, 12),
                                       ),
@@ -290,10 +290,10 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 24, horizontal: 20),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF0F172A).withOpacity(0.03),
+                                          color: const Color(0xFF0F172A).withValues(alpha: 0.03),
                                           borderRadius: BorderRadius.circular(18),
                                           border: Border.all(
-                                            color: const Color(0xFF2563EB).withOpacity(0.12),
+                                            color: const Color(0xFF2563EB).withValues(alpha: 0.12),
                                           ),
                                         ),
                                         child: Text(
@@ -1026,7 +1026,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                                         boxShadow: [
                                           BoxShadow(
                                             color:
-                                                Colors.black.withOpacity(0.12),
+                                                Colors.black.withValues(alpha: 0.12),
                                             blurRadius: 6,
                                             offset: const Offset(0, 2),
                                           ),

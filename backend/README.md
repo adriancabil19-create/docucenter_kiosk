@@ -120,36 +120,26 @@ Server starts on `http://localhost:5000`.
 
 ---
 
-## Production Deploy on Render
+## Production Deploy on Railway
 
-### Using render.yaml (recommended)
+Create a Railway service from this repository with:
 
-A [`render.yaml`](../render.yaml) at the repo root configures both the backend and the admin console as Render web services. Push to GitHub and connect the repo on Render — both services deploy automatically.
+- **Root Directory**: `backend`
+- **Builder**: Dockerfile
+- **Dockerfile path**: `backend/Dockerfile`
+- **Healthcheck path**: `/health`
 
-Set these secret environment variables in the Render dashboard (they are marked `sync: false` in `render.yaml`):
+Railway supplies `PORT` automatically. Configure these variables in the Railway service:
 
+- `NODE_ENV=production`
+- `ALLOWED_ORIGINS` — include the public URL of the admin service
 - `PAYMONGO_SECRET_KEY`
 - `PAYMONGO_WEBHOOK_SECRET`
-- `ALLOWED_ORIGINS` — include the Render URL of your admin console (e.g. `https://docucenter-kiosk-admin.onrender.com`)
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+- `SYNC_SECRET` — shared with the local kiosk
 
-### Manual Render setup
-
-1. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Web Service**.
-2. Connect your GitHub repo.
-3. Set:
-   - **Root Directory**: `backend`
-   - **Build Command**: `npm ci && npm run build`
-   - **Start Command**: `npm start`
-4. Add the environment variables listed above.
-5. Click **Deploy**.
-
-### SQLite persistence on Render
-
-Render free-tier instances have ephemeral disks — the SQLite database resets on every deploy. For persistence:
-
-1. Add a **Disk** to the service (paid tier).
-2. Mount it at `/data`.
-3. Set `DATABASE_PATH=/data/docucenter.db`.
+Set `DATABASE_PATH=/data/docucenter.db` only if you attach a Railway persistent volume. Turso is recommended for the database; uploaded files still need object storage or a persistent volume.
 
 ### Docker
 
@@ -164,8 +154,8 @@ docker run -p 5000:5000 --env-file .env docucenter-backend
 
 ## Caveats
 
-- **Printing and scanning are Windows-only.** The WIA/TWAIN print driver integration only works on Windows. On Render (Linux), print jobs are logged as simulated and no physical print occurs.
-- **SQLite is ephemeral on Render free tier.** See the persistence note above.
+- **Printing and scanning are Windows-only.** The WIA/TWAIN print driver integration only works on the local Windows kiosk. On Railway (Linux), print jobs are logged as simulated and no physical print occurs.
+- **Cloud files need persistent storage.** Railway service filesystems are ephemeral unless a volume is attached.
 
 ---
 

@@ -23,6 +23,19 @@ interface MemFile {
 
 const router = Router();
 
+const publicBaseUrl = (req: Request): string => {
+  if (config.publicBaseUrl) return config.publicBaseUrl.replace(/\/$/, '');
+
+  const configuredUrl = config.apiBaseUrl.replace(/\/$/, '');
+  if (!/localhost|127\.0\.0\.1/.test(configuredUrl)) return configuredUrl;
+
+  const forwardedProtocol = req.header('x-forwarded-proto')?.split(',')[0].trim();
+  const forwardedHost = req.header('x-forwarded-host')?.split(',')[0].trim();
+  const protocol = forwardedProtocol || req.protocol;
+  const host = forwardedHost || req.get('host');
+  return host ? `${protocol}://${host}` : configuredUrl;
+};
+
 const CONVERTIBLE_EXTS = new Set(['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp']);
 
 async function maybeConvertToPdf(file: MemFile): Promise<MemFile> {
@@ -59,7 +72,7 @@ const diskUpload = multer({
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
-// Phone → kiosk: memory storage (avoids disk I/O issues on Render)
+// Phone → kiosk: memory storage (avoids unnecessary cloud disk I/O)
 const memUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -81,7 +94,7 @@ router.post('/api/transfer/upload', diskUpload.array('files', 20), (req: Request
     files.map((f) => ({ name: f.originalname, path: f.path, mimeType: f.mimetype })),
   );
 
-  const downloadUrl = `${config.apiBaseUrl}/transfer/${session.id}`;
+  const downloadUrl = `${publicBaseUrl(req)}/transfer/${session.id}`;
 
   logger.info('Transfer session created', {
     sessionId: session.id,
@@ -183,9 +196,9 @@ router.get('/transfer/:sessionId/file/:filename', (req: Request, res: Response):
  * POST /api/transfer/receive-session
  * Kiosk creates a session and gets back an upload URL to show as a QR code.
  */
-router.post('/api/transfer/receive-session', (_req: Request, res: Response): void => {
+router.post('/api/transfer/receive-session', (req: Request, res: Response): void => {
   const session = transferStore.createReceive();
-  const uploadUrl = `${config.apiBaseUrl}/transfer/receive/${session.id}`;
+  const uploadUrl = `${publicBaseUrl(req)}/transfer/receive/${session.id}`;
 
   logger.info('Receive session created', { sessionId: session.id });
 

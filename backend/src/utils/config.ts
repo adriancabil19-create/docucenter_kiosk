@@ -8,9 +8,14 @@ export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '5000', 10),
   apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:5000',
+  publicBaseUrl:
+    process.env.PUBLIC_BASE_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? 'https://grand-tenderness-production-b632.up.railway.app'
+      : ''),
 
   // CORS — comma-separated list of allowed origins, e.g.:
-  //   ALLOWED_ORIGINS=http://localhost:3000,https://admin.onrender.com
+  //   ALLOWED_ORIGINS=http://localhost:3000,https://your-admin.up.railway.app
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   allowedOrigins: (
     process.env.ALLOWED_ORIGINS ||
@@ -58,12 +63,11 @@ export const config = {
     printerName: process.env.PRINTER_NAME || '',
   },
 
-  // Render sync — set on the LOCAL kiosk backend only.
-  // RENDER_SYNC_URL  = https://docucenter-api.onrender.com
-  // RENDER_SYNC_SECRET = any random secret string (same value on both sides)
-  renderSync: {
-    url: (process.env.RENDER_SYNC_URL || '').replace(/\/$/, ''),
-    secret: process.env.RENDER_SYNC_SECRET || '',
+  // Cloud sync — set on the LOCAL kiosk backend only.
+  // SYNC_URL and SYNC_SECRET must match the cloud backend configuration.
+  sync: {
+    url: (process.env.SYNC_URL || '').replace(/\/$/, ''),
+    secret: process.env.SYNC_SECRET || '',
   },
 
   // Aiven / External DB (optional)

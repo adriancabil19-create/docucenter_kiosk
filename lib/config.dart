@@ -20,30 +20,32 @@ class BackendConfig {
   /// Local backend — storage, printing, scanning (must be running on the kiosk machine)
   static const String serverUrl = 'http://localhost:5000';
 
-  /// Render-hosted backend — payments and file transfer relay
-  static const String renderUrl = 'https://docucenter-api.onrender.com';
+  /// Railway-hosted backend — payments and file transfer relay
+  static const String railwayUrl =
+      'https://grand-tenderness-production-b632.up.railway.app';
 
-  static const String baseUrl = '$renderUrl/api/paymongo';
+  static const String baseUrl = '$railwayUrl/api/paymongo';
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
 
-  /// Upload endpoint on the Render transfer relay (kiosk → phone)
-  static const String transferUploadUrl = '$renderUrl/api/transfer/upload';
+    /// Upload endpoint on the Railway transfer relay (kiosk → phone)
+    static const String transferUploadUrl = '$railwayUrl/api/transfer/upload';
 
   /// Create a receive session (phone → kiosk)
-  static const String transferReceiveSessionUrl = '$renderUrl/api/transfer/receive-session';
+    static const String transferReceiveSessionUrl =
+      '$railwayUrl/api/transfer/receive-session';
 
   /// Poll receive session status
   static String transferReceiveStatusUrl(String sessionId) =>
-      '$renderUrl/api/transfer/receive-session/$sessionId/status';
+      '$railwayUrl/api/transfer/receive-session/$sessionId/status';
 
   /// Download a file the phone uploaded
   static String transferReceiveFileUrl(String sessionId, String filename) =>
-      '$renderUrl/api/transfer/receive-session/$sessionId/file/${Uri.encodeComponent(filename)}';
+      '$railwayUrl/api/transfer/receive-session/$sessionId/file/${Uri.encodeComponent(filename)}';
 
   /// Delete a receive session after kiosk is done
   static String transferReceiveDeleteUrl(String sessionId) =>
-      '$renderUrl/api/transfer/receive-session/$sessionId';
+      '$railwayUrl/api/transfer/receive-session/$sessionId';
   
   // Endpoint paths
   static const String createPaymentPath = '/create-payment';
