@@ -17,14 +17,26 @@ export const config = {
   // CORS — comma-separated list of allowed origins, e.g.:
   //   ALLOWED_ORIGINS=http://localhost:3000,https://your-admin.up.railway.app
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-  allowedOrigins: (
-    process.env.ALLOWED_ORIGINS ||
-    process.env.FRONTEND_URL ||
-    'http://localhost:3000'
-  )
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean),
+  allowedOrigins: Array.from(
+    new Set(
+      (
+        process.env.ALLOWED_ORIGINS ||
+        process.env.FRONTEND_URL ||
+        'http://localhost:3000'
+      )
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+        .concat(
+          [
+            process.env.PUBLIC_BASE_URL,
+            process.env.API_BASE_URL,
+          ]
+            .filter((o): o is string => Boolean(o))
+            .map((o) => o.replace(/\/$/, '')),
+        ),
+    ),
+  ),
   corsEnabled: process.env.ENABLE_CORS === 'true',
   corsCredentials: process.env.CORS_CREDENTIALS === 'true',
 
