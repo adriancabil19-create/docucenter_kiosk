@@ -664,7 +664,7 @@ export const checkADFStatus = async (): Promise<ADFStatus> => {
       ready: false,
       scannerConnected: false,
       adfLoaded: false,
-      status: 'Please place your document on the scanner, thank you.',
+      status: 'Scanner bridge is not running. Start Dynamsoft Web TWAIN Service.',
       error: String(err),
     };
   }
