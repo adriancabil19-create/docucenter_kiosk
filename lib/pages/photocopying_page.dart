@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config.dart';
+import '../scanner_status.dart';
 import 'payment_page.dart';
 
 class PhotocopyingInterface extends StatefulWidget {
@@ -30,9 +31,8 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   String? _sessionId;
   int _pageCount = 0;
   String _preScanError = '';
-  bool _scannerConnected = false;
-  bool _adfLoaded = false;
-  bool _checkingAdf = true;
+  ScannerStatusSnapshot _scannerStatus = const ScannerStatusSnapshot.checking();
+  final ScannerStatusService _scannerStatusService = const ScannerStatusService();
   Timer? _adfStatusTimer;
 
   @override
@@ -52,29 +52,10 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   }
 
   Future<bool> _refreshAdfStatus() async {
-    try {
-      final response = await http
-          .get(Uri.parse('${BackendConfig.serverUrl}/api/scan/adf-status'))
-          .timeout(const Duration(seconds: 8));
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final connected = body['scannerConnected'] == true;
-      final loaded = body['adfLoaded'] == true;
-      if (!mounted) return loaded;
-      setState(() {
-        _scannerConnected = connected;
-        _adfLoaded = loaded;
-        _checkingAdf = false;
-      });
-      return loaded;
-    } catch (_) {
-      if (!mounted) return false;
-      setState(() {
-        _scannerConnected = false;
-        _adfLoaded = false;
-        _checkingAdf = false;
-      });
-      return false;
-    }
+    final snapshot = await _scannerStatusService.check();
+    if (!mounted) return snapshot.canScan;
+    setState(() => _scannerStatus = snapshot);
+    return snapshot.canScan;
   }
 
   // ── Pricing: cost per page per copy ──────────────────────────────────────
@@ -182,7 +163,30 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
 
   // ── Navigate to payment; print job fires after payment succeeds ───────────
 
-  void _proceedToPayment() {
+  Future<void> _proceedToPayment() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm photocopy job'),
+        content: Text(
+          '$_pageCount page(s) × $_copies ${_copies == 1 ? 'copy' : 'copies'}\n'
+          'Total: ₱${_totalCost.toStringAsFixed(2)}\n\n'
+          'The documents have already been scanned and will be printed after payment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Review'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Continue to Payment'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+
     PAYMONGOPaymentPageState.pendingAmount = _totalCost;
     PAYMONGOPaymentPageState.printFiles = [];
     PAYMONGOPaymentPageState.paperSize = _paperSize;
@@ -269,62 +273,11 @@ Thank you for using our service!
             ),
           ),
 
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.amber[50],
-              border: Border.all(color: Colors.amber[700]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.warning_amber, color: Colors.orange, size: 22),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'ADF safety: Remove staples, paper clips, pins, and other hard components. Do not place torn, folded, wet, or damaged documents in the ADF because they may cause further damage or a paper jam. For damaged documents, take a clear picture and use Storage > Receive from Phone instead.',
-                    style: TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-              ],
-            ),
+          ScannerStatusPanel(
+            snapshot: _scannerStatus,
+            onRetry: _refreshAdfStatus,
           ),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: _adfLoaded ? Colors.green[50] : Colors.orange[50],
-              border: Border.all(color: _adfLoaded ? Colors.green : Colors.orange),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  _adfLoaded ? Icons.check_circle : Icons.warning_amber,
-                  color: _adfLoaded ? Colors.green : Colors.orange,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _checkingAdf
-                        ? 'Checking scanner and ADF...'
-                        : _adfLoaded
-                            ? 'Scanner connected and document detected in ADF.'
-                            : (_scannerConnected
-                                ? 'Scanner connected — place a document in the ADF.'
-                                : 'Scanner status unavailable — start the local backend.'),
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const AdfSafetyNotice(),
 
           if (_preScanError.isNotEmpty)
             Container(
@@ -522,7 +475,7 @@ Thank you for using our service!
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _checkingAdf || !_adfLoaded ? null : _preScanDocuments,
+              onPressed: !_scannerStatus.canScan ? null : _preScanDocuments,
               icon: const Icon(Icons.document_scanner),
               label: const Text('Scan Documents'),
               style: ElevatedButton.styleFrom(

@@ -11,6 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../storage_service.dart';
 import '../config.dart';
 import '../payment_service.dart';
+import '../scanner_status.dart';
 
 class ScanningInterface extends StatefulWidget {
   final List<StorageDocument> savedDocuments;
@@ -41,10 +42,11 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
   String _scanStatus = '';
   String _adfMessage = ''; // Message for ADF status
-  bool _scannerConnected = false;
   bool _adfLoaded = false;
   bool _checkingAdf = true;
   Timer? _adfStatusTimer;
+  ScannerStatusSnapshot _scannerStatus = const ScannerStatusSnapshot.checking();
+  final ScannerStatusService _scannerStatusService = const ScannerStatusService();
   bool _showPreview = false;
   final String _paperSize = 'Auto';
   final String _outputFormat = 'PDF';
@@ -67,33 +69,15 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   }
 
   Future<bool> _refreshAdfStatus() async {
-    try {
-      final response = await http
-          .get(Uri.parse('${BackendConfig.serverUrl}/api/scan/adf-status'))
-          .timeout(const Duration(seconds: 8));
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final connected = body['scannerConnected'] == true;
-      final loaded = body['adfLoaded'] == true;
-      final status = body['status'] as String? ?? 'Scanner status unavailable';
-
-      if (!mounted) return loaded;
-      setState(() {
-        _scannerConnected = connected;
-        _adfLoaded = loaded;
-        _checkingAdf = false;
-        _adfMessage = status;
-      });
-      return loaded;
-    } catch (_) {
-      if (!mounted) return false;
-      setState(() {
-        _scannerConnected = false;
-        _adfLoaded = false;
-        _checkingAdf = false;
-        _adfMessage = 'Scanner status unavailable — start the local backend';
-      });
-      return false;
-    }
+    final snapshot = await _scannerStatusService.check();
+    if (!mounted) return snapshot.canScan;
+    setState(() {
+      _scannerStatus = snapshot;
+      _adfLoaded = snapshot.canScan;
+      _checkingAdf = snapshot.availability == ScannerAvailability.checking;
+      _adfMessage = snapshot.message;
+    });
+    return snapshot.canScan;
   }
 
   Future<void> _startScanning() async {
@@ -132,61 +116,11 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Live scanner and ADF status
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: _adfLoaded ? Colors.green[50] : Colors.orange[50],
-              border: Border.all(color: _adfLoaded ? Colors.green : Colors.orange),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  _adfLoaded ? Icons.check_circle : Icons.warning_amber,
-                  color: _adfLoaded ? Colors.green : Colors.orange,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _checkingAdf
-                        ? 'Checking scanner and ADF...'
-                        : _adfMessage.isNotEmpty
-                            ? _adfMessage
-                            : (_scannerConnected
-                                ? 'Scanner connected — place a document in the ADF'
-                                : 'Scanner not connected'),
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-              ],
-            ),
+          ScannerStatusPanel(
+            snapshot: _scannerStatus,
+            onRetry: _refreshAdfStatus,
           ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.amber[50],
-              border: Border.all(color: Colors.amber[700]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.warning_amber, color: Colors.orange, size: 22),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'ADF safety: Remove staples, paper clips, pins, and other hard components. Do not place torn, folded, wet, or damaged documents in the ADF because they may cause further damage or a paper jam. For damaged documents, take a clear picture and use Storage > Receive from Phone instead.',
-                    style: TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const AdfSafetyNotice(),
           // Scan Settings - Simplified for ADF only
           Container(
             padding: const EdgeInsets.all(20),
@@ -356,6 +290,33 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     });
   }
 
+  Future<void> _confirmCancelScan() async {
+    if (!_isProcessing) {
+      _reset();
+      return;
+    }
+    final cancel = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel scan?'),
+        content: const Text(
+          'The scanner may still be processing a page. Cancel only after the feeder stops.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Continue Scanning'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cancel Scan'),
+          ),
+        ],
+      ),
+    );
+    if (cancel == true && mounted) _reset();
+  }
+
   Widget _buildPreview() => _buildScanningComplete();
 
 
@@ -489,6 +450,18 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   Widget _buildScanning() {
     return Column(
       children: [
+        if (_isProcessing)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            color: Colors.blue[50],
+            child: const Text(
+              'Scanning in progress. Do not remove documents from the ADF.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
         if (_adfMessage.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(16),
@@ -666,7 +639,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
         SizedBox(
           width: double.infinity,
           child: TextButton.icon(
-            onPressed: _reset,
+            onPressed: _confirmCancelScan,
             icon: const Icon(Icons.close, size: 16),
             label: const Text('Cancel Scan'),
           ),
