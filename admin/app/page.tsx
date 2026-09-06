@@ -41,6 +41,13 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {!serverOnline && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <strong>Backend unavailable.</strong> Live transactions, print jobs, paper levels, and
+          kiosk status could not be refreshed. The empty tables below do not mean there is no data.
+        </div>
+      )}
+
       {/* Stat Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
@@ -105,7 +112,9 @@ export default async function DashboardPage() {
         </div>
         <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
           {transactions.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-400">No transactions yet.</p>
+            <p className="px-4 py-6 text-center text-sm text-gray-400">
+              {serverOnline ? 'No transactions yet.' : 'Transactions unavailable while backend is offline.'}
+            </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50">
@@ -156,7 +165,9 @@ export default async function DashboardPage() {
         </div>
         <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
           {jobs.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-400">No print jobs yet.</p>
+            <p className="px-4 py-6 text-center text-sm text-gray-400">
+              {serverOnline ? 'No print jobs yet.' : 'Print jobs unavailable while backend is offline.'}
+            </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100 bg-gray-50">

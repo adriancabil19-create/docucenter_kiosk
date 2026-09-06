@@ -8,6 +8,10 @@ export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '5000', 10),
   apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:5000',
+  uploadsPath: process.env.UPLOADS_PATH || path.resolve(__dirname, '../../..', 'Uploads'),
+  dynamsoftLicense: process.env.DYNAMSOFT_LICENSE || '',
+  adminApiToken: process.env.ADMIN_API_TOKEN || '',
+  kioskApiToken: process.env.KIOSK_API_TOKEN || '',
   publicBaseUrl:
     process.env.PUBLIC_BASE_URL ||
     (process.env.NODE_ENV === 'production'

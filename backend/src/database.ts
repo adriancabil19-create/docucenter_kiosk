@@ -1,12 +1,5 @@
 /**
- * SQLite persistence layer — powered by Turso (libSQL) in production,
- * local file DB in development.
- *
- * Set env vars for Turso:
- *   TURSO_DATABASE_URL=libsql://your-db.turso.io
- *   TURSO_AUTH_TOKEN=your-token
- *
- * Local dev falls back to: file:docucenter.db
+ * Local SQLite persistence layer for the kiosk and cloud metadata receiver.
  */
 
 import { createClient, type Client, type ResultSet } from '@libsql/client';
@@ -21,10 +14,7 @@ export const getDb = (): Client => {
   if (_client) return _client;
   const localDatabasePath = process.env.DATABASE_PATH || 'docucenter.db';
   _client = createClient({
-    url: process.env.TURSO_DATABASE_URL || (
-      localDatabasePath.startsWith('file:') ? localDatabasePath : `file:${localDatabasePath}`
-    ),
-    authToken: process.env.TURSO_AUTH_TOKEN,
+    url: localDatabasePath.startsWith('file:') ? localDatabasePath : `file:${localDatabasePath}`,
   });
   return _client;
 };
@@ -93,11 +83,28 @@ export const initSchema = async (): Promise<void> => {
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      id              TEXT PRIMARY KEY,
+      event_type      TEXT NOT NULL,
+      payload         TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT NOT NULL,
+      created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      sent_at         TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_received_events (
+      event_id    TEXT PRIMARY KEY,
+      received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_txn       ON print_jobs(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_logs_created         ON activity_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending  ON sync_outbox(status, next_attempt_at, created_at);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -120,7 +127,7 @@ export const initSchema = async (): Promise<void> => {
   `);
 
   logger.info('Database schema initialized', {
-    url: process.env.TURSO_DATABASE_URL ? 'turso (remote)' : 'file (local)',
+    url: process.env.DATABASE_PATH || 'docucenter.db',
   });
 };
 
@@ -152,6 +159,7 @@ export const insertTransaction = async (row: Omit<TransactionRow, 'created_at'>)
     syncEvent('transaction', row);
   } catch (err) {
     logger.warn('Failed to insert transaction', { id: row.id, error: String(err) });
+    throw err;
   }
 };
 
@@ -168,6 +176,7 @@ export const updateTransactionStatus = async (
     syncEvent('transaction-status', { id, status, completedAt });
   } catch (err) {
     logger.warn('Failed to update transaction status', { id, error: String(err) });
+    throw err;
   }
 };
 
@@ -203,6 +212,7 @@ export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
     syncEvent('print-job', row);
   } catch (err) {
     logger.warn('Failed to insert print job', { id: row.id, error: String(err) });
+    throw err;
   }
 };
 

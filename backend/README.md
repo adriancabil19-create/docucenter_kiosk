@@ -135,11 +135,20 @@ Railway supplies `PORT` automatically. Configure these variables in the Railway 
 - `ALLOWED_ORIGINS` — include the public URL of the admin service
 - `PAYMONGO_SECRET_KEY`
 - `PAYMONGO_WEBHOOK_SECRET`
-- `TURSO_DATABASE_URL`
-- `TURSO_AUTH_TOKEN`
 - `SYNC_SECRET` — shared with the local kiosk
 
-Set `DATABASE_PATH=/data/docucenter.db` only if you attach a Railway persistent volume. Turso is recommended for the database; uploaded files still need object storage or a persistent volume.
+Set `DATABASE_PATH=/data/docucenter.db` on the Railway metadata receiver if you attach a persistent volume. The kiosk keeps its authoritative SQLite database and document files locally; Railway receives synchronized metadata only.
+
+On the kiosk PC, use:
+
+```env
+DATABASE_PATH=./database/docucenter.db
+UPLOADS_PATH=./Uploads
+SYNC_URL=https://your-railway-backend.up.railway.app
+SYNC_SECRET=shared_secret
+```
+
+The local sync outbox retries failed events and sends an idempotency event ID. Railway should use a persistent volume for its metadata copy.
 
 ### Docker
 

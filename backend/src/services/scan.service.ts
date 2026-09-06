@@ -5,6 +5,8 @@ import * as os from 'os';
 import * as http from 'http';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { config } from '../utils/config';
+import { scannerLock } from './device-lock';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,8 +57,7 @@ const DWT_HOST = '127.0.0.1';
 const DWT_PORT = 18622;
 const DWT_DCP_PORT = 18625;
 const DWT_DCP_VERSION = 'dwasm2_19301028';
-const DWT_LICENSE =
-  't0200EQYAACdTxWAVwW/IIbkLSSWSboeM7i37QH6J75HEH8pOSydAno8ilBC40qlhRTQ37w7VY63TyF81OQumTpZk/m+MRFi215UTE5wy3pnEY508wYlHTiKXPm0+bZXGxQEIwJon+16HH8A1kNdyAjZ99F4ZCgA9QDqA9NbAPaC5C5981MmLv/85vXegLScmOGW8sy6QMU6e4MQjpy+QxZLa/W73XCBc35wCQA+QJpDmZWoUCJ0B9ABpAtupilEAZLQ2zhn7AZNyN6M=';
+const DWT_LICENSE = config.dynamsoftLicense;
 
 function dwtRequest(
   method: string,
@@ -379,7 +380,7 @@ const convertImageToPdf = async (
 // Returns an ordered list of temp-file paths (one per page).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const scanAllADFPages = async (
+const scanAllADFPagesUnlocked = async (
   options: ScanOptions,
 ): Promise<{ success: boolean; pages: string[]; sessionId: string; error?: string }> => {
   const sessionId = `SESSION-${Date.now()}`;
@@ -507,6 +508,11 @@ const scanAllADFPages = async (
   return { success: true, pages, sessionId };
 };
 
+const scanAllADFPages = async (
+  options: ScanOptions,
+): Promise<{ success: boolean; pages: string[]; sessionId: string; error?: string }> =>
+  scannerLock.runExclusive(() => scanAllADFPagesUnlocked(options));
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public: scan ALL pages from the ADF and return image buffers.
 // Used by the "Scan to PC" document scanning workflow.
@@ -567,7 +573,7 @@ export const scanDocument = async (options: Partial<ScanOptions> = {}): Promise<
   const finalPath = path.join(tempDir, `scan_${scanId}.${opts.outputFormat}`);
 
   try {
-    const result = await scanWithDWT(tempImage, opts);
+    const result = await scannerLock.runExclusive(() => scanWithDWT(tempImage, opts));
     if (!result.success) {
       return { success: false, error: result.error };
     }

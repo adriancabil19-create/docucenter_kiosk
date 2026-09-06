@@ -10,11 +10,16 @@ import type {
 } from './types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:5000';
+const API_TOKEN = process.env.NEXT_PUBLIC_ADMIN_API_TOKEN || '';
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+      ...init?.headers,
+    },
     cache: 'no-store',
   });
 

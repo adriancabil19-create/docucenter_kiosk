@@ -9,9 +9,7 @@ export const sessionOptions: SessionOptions = {
   cookieName: 'docucenter_admin_session',
   cookieOptions: {
     httpOnly: true,
-    // Keep secure=false so the cookie is sent over plain HTTP (local kiosk LAN access).
-    // Browsers silently drop Secure cookies on http:// origins, causing redirect loops.
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 60 * 60 * 8, // 8 hours
   },

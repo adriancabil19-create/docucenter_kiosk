@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { logger } from '../utils/logger';
+import { config } from '../utils/config';
 
 interface StorageDocument {
   id: string;
@@ -28,7 +29,7 @@ interface FileMeta {
 
 // Get the Uploads directory path (relative to project root)
 const getUploadsDir = (): string => {
-  const uploadsDir = path.resolve(__dirname, '../../..', 'Uploads');
+  const uploadsDir = config.uploadsPath;
 
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });

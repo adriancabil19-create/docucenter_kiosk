@@ -23,6 +23,13 @@ interface MemFile {
 
 const router = Router();
 
+const escapeHtml = (value: string): string => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
 const publicBaseUrl = (req: Request): string => {
   if (config.publicBaseUrl) return config.publicBaseUrl.replace(/\/$/, '');
 
@@ -126,7 +133,7 @@ router.get('/transfer/:sessionId', (req: Request, res: Response): void => {
   const items = session.files
     .map((f) => {
       const enc = encodeURIComponent(f.name);
-      return `<li><a href="/transfer/${session.id}/file/${enc}">${f.name}</a></li>`;
+      return `<li><a href="/transfer/${session.id}/file/${enc}">${escapeHtml(f.name)}</a></li>`;
     })
     .join('\n    ');
 

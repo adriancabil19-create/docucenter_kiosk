@@ -243,12 +243,24 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get('/scan/status', async (req: Request, res: Response) => {
-  // In a real implementation, this would check scanner connectivity
-  res.json({
-    success: true,
-    scannerAvailable: true,
-    message: 'Scanner is ready',
-  });
+  try {
+    const result = await checkADFStatus();
+    res.json({
+      success: true,
+      scannerAvailable: result.scannerConnected === true,
+      adfLoaded: result.adfLoaded === true,
+      ready: result.ready,
+      message: result.status,
+    });
+  } catch {
+    res.status(503).json({
+      success: false,
+      scannerAvailable: false,
+      adfLoaded: false,
+      ready: false,
+      message: 'Scanner status unavailable',
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ import {
   notFoundMiddleware,
   rateLimitMiddleware,
 } from './middleware';
+import { requireAdminApiToken, requireKioskApiToken } from './middleware/api-auth';
 import { cancelStalePendingTransactions, insertLog, initSchema } from './database';
 
 // Initialize Express app
@@ -100,11 +101,11 @@ app.get('/health', (_req: any, res: any) => {
 app.use('/api/paymongo', paymongoRoutes);
 app.use('/', qrphRoutes);
 app.use('/api/qr', qrRoutes);
-app.use('/api/print', printRoutes);
-app.use('/api/storage', storageRoutes);
-app.use('/api/monitoring', monitoringRoutes);
-app.use('/api/scan', scanRoutes);
-app.use('/api/paper-tracker', paperTrackerRoutes);
+app.use('/api/print', requireKioskApiToken, printRoutes);
+app.use('/api/storage', requireKioskApiToken, storageRoutes);
+app.use('/api/monitoring', requireAdminApiToken, monitoringRoutes);
+app.use('/api/scan', requireKioskApiToken, scanRoutes);
+app.use('/api/paper-tracker', requireKioskApiToken, paperTrackerRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 
@@ -139,7 +140,7 @@ const PORT = config.port;
 initSchema()
   .then(() => {
     logger.info('Database initialized', {
-      url: process.env.TURSO_DATABASE_URL ? 'turso (remote)' : 'file (local)',
+      url: process.env.DATABASE_PATH || 'docucenter.db',
     });
 
     const server = app.listen(PORT, () => {

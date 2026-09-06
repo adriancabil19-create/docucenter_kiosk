@@ -17,6 +17,7 @@ import {
   TransactionRow,
   PrintJobRow,
 } from '../database';
+import { getDb } from '../database';
 
 const router = Router();
 
@@ -31,8 +32,24 @@ const requireSyncSecret = (req: Request, res: Response, next: () => void): void 
 
 router.use(requireSyncSecret);
 
+const acceptEventOnce = async (req: Request, res: Response): Promise<boolean> => {
+  const eventId = req.header('x-sync-event-id');
+  if (!eventId) return true;
+  try {
+    await getDb().execute({
+      sql: 'INSERT INTO sync_received_events (event_id) VALUES (@eventId)',
+      args: { eventId },
+    });
+    return true;
+  } catch {
+    res.json({ success: true, duplicate: true });
+    return false;
+  }
+};
+
 router.post('/transaction', async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!(await acceptEventOnce(req, res))) return;
     const row = req.body as Omit<TransactionRow, 'created_at'>;
     await insertTransaction(row);
     logger.info('Sync: transaction received', { id: row.id });
@@ -45,6 +62,7 @@ router.post('/transaction', async (req: Request, res: Response): Promise<void> =
 
 router.post('/transaction-status', async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!(await acceptEventOnce(req, res))) return;
     const { id, status, completedAt } = req.body as { id: string; status: string; completedAt?: string };
     await updateTransactionStatus(id, status, completedAt);
     logger.info('Sync: transaction status updated', { id, status });
@@ -57,6 +75,7 @@ router.post('/transaction-status', async (req: Request, res: Response): Promise<
 
 router.post('/print-job', async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!(await acceptEventOnce(req, res))) return;
     const row = req.body as PrintJobRow;
     await insertPrintJob(row);
     logger.info('Sync: print job received', { id: row.id });
@@ -69,6 +88,7 @@ router.post('/print-job', async (req: Request, res: Response): Promise<void> => 
 
 router.post('/paper-tray', async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!(await acceptEventOnce(req, res))) return;
     const { tray_name, current_count, max_capacity } = req.body as {
       tray_name: string;
       current_count: number;
@@ -85,6 +105,7 @@ router.post('/paper-tray', async (req: Request, res: Response): Promise<void> =>
 
 router.post('/log', async (req: Request, res: Response): Promise<void> => {
   try {
+    if (!(await acceptEventOnce(req, res))) return;
     const { level, category, message, metadata } = req.body as {
       level: 'info' | 'warn' | 'error';
       category: string;

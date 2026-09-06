@@ -147,7 +147,7 @@ const convertImageToPdf = async (
 const projectRoot = path.resolve(__dirname, '../../..');
 
 /** Uploads directory */
-const uploadsDir = path.resolve(projectRoot, 'Uploads');
+const uploadsDir = config.uploadsPath;
 
 /** PrintSimulation directory */
 const printSimDir = path.resolve(projectRoot, 'PrintSimulation');

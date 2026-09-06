@@ -5,6 +5,7 @@ import {
   generateReferenceNumber,
 } from '../utils/helpers';
 import { logger } from '../utils/logger';
+import { getTransactionById } from '../database';
 
 export class PayMongoService {
   private transactions: Map<string, PaymentTransaction> = new Map();
@@ -17,7 +18,6 @@ export class PayMongoService {
       secretKeyPresent: !!config.PAYMONGO.secretKey,
       secretKeyLength: config.PAYMONGO.secretKey?.length,
       apiBaseUrl: config.PAYMONGO.apiBaseUrl,
-      authHeaderSample: `Basic ${secretKeyEncoded.substring(0, 20)}...`,
     });
 
     this.axiosInstance = axios.create({
@@ -176,10 +176,25 @@ export class PayMongoService {
    * Check payment status by retrieving from PayMongo
    */
   async checkPaymentStatus(transactionId: string): Promise<PaymentTransaction | null> {
-    const transaction = this.transactions.get(transactionId);
+    let transaction = this.transactions.get(transactionId);
 
     if (!transaction) {
-      return null;
+      const stored = await getTransactionById(transactionId);
+      if (!stored) return null;
+      transaction = {
+        transactionId: stored.id,
+        referenceNumber: stored.reference_number,
+        amount: stored.amount,
+        currency: 'PHP',
+        status: (stored.status as PaymentStatus) || 'PENDING',
+        qrCode: '',
+        merchantId: config.PAYMONGO.merchantId,
+        createdAt: new Date(stored.created_at),
+        expiresAt: new Date(new Date(stored.created_at).getTime() + 30 * 60 * 1000),
+        completedAt: stored.completed_at ? new Date(stored.completed_at) : undefined,
+        serviceType: stored.service_type,
+      };
+      this.transactions.set(transactionId, transaction);
     }
 
     try {
