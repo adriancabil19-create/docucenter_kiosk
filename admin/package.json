@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build --webpack",
-    "start": "node server.mjs",
+    "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,css,json}\"",
