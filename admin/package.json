@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Admin console for DocuCenter Kiosk — built with Next.js and HeroUI",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build --webpack",
