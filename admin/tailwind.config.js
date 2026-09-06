@@ -5,7 +5,12 @@ module.exports = {
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
-    './node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}',
+    // HeroUI's compiled theme classes. `@heroui/theme` is hoisted in some
+    // installs and nested under `@heroui/react/node_modules` in others, and the
+    // class strings live in `.mjs` chunk files — so scan both locations and
+    // include `.mjs`, otherwise Tailwind purges e.g. the calendar grid classes.
+    './node_modules/@heroui/theme/dist/**/*.{js,mjs}',
+    './node_modules/**/@heroui/theme/dist/**/*.{js,mjs}',
   ],
   theme: {
     extend: {
