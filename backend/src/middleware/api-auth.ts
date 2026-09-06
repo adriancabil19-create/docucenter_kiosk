@@ -35,3 +35,27 @@ export const requireKioskApiToken = (req: Request, res: Response, next: NextFunc
   }
   next();
 };
+
+/**
+ * Accept EITHER the kiosk token or the admin token. Used by endpoints the admin
+ * console reads/writes (e.g. paper trays) that are also called by the kiosk.
+ */
+export const requireAdminOrKioskApiToken = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const loopback = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+  if (loopback || (!config.kioskApiToken && !config.adminApiToken && config.isDevelopment)) {
+    next();
+    return;
+  }
+  const supplied = req.header('x-kiosk-token') || bearerToken(req);
+  const matchesKiosk = !!config.kioskApiToken && supplied === config.kioskApiToken;
+  const matchesAdmin = !!config.adminApiToken && supplied === config.adminApiToken;
+  if (!matchesKiosk && !matchesAdmin) {
+    unauthorized(res);
+    return;
+  }
+  next();
+};

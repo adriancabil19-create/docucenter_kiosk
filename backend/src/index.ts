@@ -23,7 +23,11 @@ import {
   notFoundMiddleware,
   rateLimitMiddleware,
 } from './middleware';
-import { requireAdminApiToken, requireKioskApiToken } from './middleware/api-auth';
+import {
+  requireAdminApiToken,
+  requireKioskApiToken,
+  requireAdminOrKioskApiToken,
+} from './middleware/api-auth';
 import { cancelStalePendingTransactions, insertLog, initSchema } from './database';
 
 // Initialize Express app
@@ -113,7 +117,7 @@ app.use('/api/print', requireKioskApiToken, printRoutes);
 app.use('/api/storage', requireKioskApiToken, storageRoutes);
 app.use('/api/monitoring', requireAdminApiToken, monitoringRoutes);
 app.use('/api/scan', requireKioskApiToken, scanRoutes);
-app.use('/api/paper-tracker', requireKioskApiToken, paperTrackerRoutes);
+app.use('/api/paper-tracker', requireAdminOrKioskApiToken, paperTrackerRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 
