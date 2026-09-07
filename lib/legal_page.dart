@@ -137,51 +137,66 @@ Please do not scan or copy private images of another person without their consen
                     label: const Text('Back to Home'),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Semantics(
-                  header: true,
-                  child: Text(
-                    'Legal & Privacy',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: const Color(0xFF003D99),
-                          fontWeight: FontWeight.bold,
+                const SizedBox(height: 12),
+                // Centered masthead — reads as a page title rather than a
+                // line of text pinned to the edge of a wide, empty row.
+                SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          'Legal & Privacy',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                color: const Color(0xFF003D99),
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        _effectiveDate,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: Color(0xFF4B5563)),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  _effectiveDate,
-                  style: TextStyle(fontSize: 13, color: Color(0xFF4B5563)),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
                 // Operator / business details
                 const _OperatorCard(),
                 const SizedBox(height: 24),
 
                 // Section selector — focusable, labelled chips
-                Semantics(
-                  label: 'Choose a policy to read',
-                  container: true,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (var i = 0; i < _sections.length; i++)
-                        ChoiceChip(
-                          label: Text(_sections[i].title),
-                          selected: _selected == i,
-                          onSelected: (_) => setState(() => _selected = i),
-                          labelStyle: TextStyle(
-                            color: _selected == i
-                                ? Colors.white
-                                : const Color(0xFF1F2937),
-                            fontWeight: FontWeight.w600,
+                SizedBox(
+                  width: double.infinity,
+                  child: Semantics(
+                    label: 'Choose a policy to read',
+                    container: true,
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (var i = 0; i < _sections.length; i++)
+                          ChoiceChip(
+                            label: Text(_sections[i].title),
+                            selected: _selected == i,
+                            onSelected: (_) => setState(() => _selected = i),
+                            labelStyle: TextStyle(
+                              color: _selected == i
+                                  ? Colors.white
+                                  : const Color(0xFF1F2937),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            selectedColor: const Color(0xFF2563EB),
+                            backgroundColor: const Color(0xFFEEF2FF),
                           ),
-                          selectedColor: const Color(0xFF2563EB),
-                          backgroundColor: const Color(0xFFEEF2FF),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

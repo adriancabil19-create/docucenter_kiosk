@@ -722,15 +722,14 @@ class _HomePageState extends State<HomePage> {
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: MediaQuery.of(context).size.width < 768 
-                    ? 1 
-                    : MediaQuery.of(context).size.width < 1024 
-                      ? 2 
-                      : 3,
+                // A fixed aspect ratio left tall, mostly-empty cards on wide
+                // screens. Sizing the row height to the content instead keeps
+                // every card snug regardless of column count.
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 420,
+                  mainAxisExtent: 200,
                   crossAxisSpacing: 32,
                   mainAxisSpacing: 32,
-                  childAspectRatio: 1.1,
                 ),
                 itemCount: features.length,
                 itemBuilder: (context, index) {
@@ -772,6 +771,8 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
