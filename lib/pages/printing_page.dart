@@ -227,6 +227,13 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                               ],
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'You are responsible for having the right to copy '
+                            'these files. Uploaded files are used only for this '
+                            'job and are deleted afterwards (within 24 hours).',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF4B5563), height: 1.4),
+                          ),
                           // Show uploaded/selected file list
                           if (allDocs.isNotEmpty) ...[
                             const SizedBox(height: 16),
@@ -347,16 +354,19 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (_copies > 1) {
-                                    setState(() {
-                                      _copies--;
-                                      _copiesController.text = _copies.toString();
-                                    });
-                                  }
-                                },
-                                child: const Text('-'),
+                              Tooltip(
+                                message: 'Decrease number of copies',
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    if (_copies > 1) {
+                                      setState(() {
+                                        _copies--;
+                                        _copiesController.text = _copies.toString();
+                                      });
+                                    }
+                                  },
+                                  child: const Text('-', semanticsLabel: 'Decrease copies'),
+                                ),
                               ),
                               Expanded(
                                 child: Padding(
@@ -371,19 +381,28 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                                     },
                                     textAlign: TextAlign.center,
                                     keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Number of copies',
+                                      helperText: '1 to 20',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
                                   ),
                                 ),
                               ),
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (_copies < 20) {
-                                    setState(() {
-                                      _copies++;
-                                      _copiesController.text = _copies.toString();
-                                    });
-                                  }
-                                },
-                                child: const Text('+'),
+                              Tooltip(
+                                message: 'Increase number of copies',
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    if (_copies < 20) {
+                                      setState(() {
+                                        _copies++;
+                                        _copiesController.text = _copies.toString();
+                                      });
+                                    }
+                                  },
+                                  child: const Text('+', semanticsLabel: 'Increase copies'),
+                                ),
                               ),
                             ],
                           ),

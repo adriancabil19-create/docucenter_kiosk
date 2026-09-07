@@ -1,5 +1,8 @@
 name: web_doc
-description: A Flutter application with web documentation.
+description: >-
+  DocuCenter Kiosk — self-service document printing, scanning, and photocopying.
+  Undergraduate thesis prototype (University of Cebu – Lapu-Lapu and Mandaue
+  Campus). Operator: Charles Adrian L. Cabil <adriancabil12@gmail.com>.
 publish_to: 'none'
 
 version: 1.0.0+1

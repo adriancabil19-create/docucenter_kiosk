@@ -154,45 +154,53 @@ class _ServicesPageState extends State<ServicesPage> {
 
   Widget _buildServiceButton(String serviceId, String title, String subtitle, IconData icon) {
     final isActive = _activeService == serviceId;
-    return GestureDetector(
-      onTap: () => _handleServiceChange(serviceId),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF2563EB) : Colors.white,
-          border: Border.all(
-            color: isActive ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB),
+    return Semantics(
+      button: true,
+      selected: isActive,
+      label: '$title. $subtitle',
+      child: InkWell(
+        onTap: () => _handleServiceChange(serviceId),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF2563EB) : Colors.white,
+            border: Border.all(
+              color: isActive ? const Color(0xFF2563EB) : const Color(0xFF9CA3AF),
+            ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 40,
-                color: isActive ? Colors.white : const Color(0xFF2563EB),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isActive ? Colors.white : Colors.black,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ExcludeSemantics(
+                  child: Icon(
+                    icon,
+                    size: 40,
+                    color: isActive ? Colors.white : const Color(0xFF2563EB),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isActive ? Colors.white70 : const Color(0xFF4B5563),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isActive ? Colors.white : Colors.black,
+                  ),
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isActive ? Colors.white : const Color(0xFF4B5563),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       ),

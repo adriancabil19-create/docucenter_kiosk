@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login'];
+// `/legal` is intentionally public — privacy/terms/refund notices must be
+// readable without signing in.
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/legal'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

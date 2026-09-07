@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/paper', label: 'Paper Trays', icon: '📄' },
   { href: '/logs', label: 'Activity Logs', icon: '📋' },
   { href: '/kiosk', label: 'Kiosk Status', icon: '🖥️' },
+  { href: '/legal', label: 'Legal & Privacy', icon: '📜' },
 ];
 
 export function NavSidebar() {
@@ -27,28 +28,33 @@ export function NavSidebar() {
     <aside className="glass-nav flex h-full w-56 flex-col">
       {/* Logo */}
       <div className="flex items-center gap-2 border-b border-white/40 px-4 py-5">
-        <span className="text-2xl">🖨️</span>
+        <span className="text-2xl" aria-hidden="true">
+          🖨️
+        </span>
         <div>
           <p className="text-sm font-bold leading-tight text-slate-900">DocuCenter</p>
-          <p className="text-xs text-slate-500">Admin Console</p>
+          <p className="text-xs text-slate-600">Admin Console</p>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
+      <nav aria-label="Primary" className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {NAV_ITEMS.map(({ href, label, icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              aria-current={active ? 'page' : undefined}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
                 active
                   ? 'bg-accent/15 text-accent-strong ring-1 ring-accent/20'
-                  : 'text-slate-600 hover:bg-white/50 hover:text-slate-900'
+                  : 'text-slate-700 hover:bg-white/50 hover:text-slate-900'
               }`}
             >
-              <span className="text-base">{icon}</span>
+              <span className="text-base" aria-hidden="true">
+                {icon}
+              </span>
               {label}
             </Link>
           );
@@ -57,12 +63,13 @@ export function NavSidebar() {
 
       {/* Footer */}
       <div className="border-t border-white/40 px-4 py-3 space-y-2">
-        <p className="text-xs text-slate-400">DocuCenter Kiosk v1.0</p>
+        <p className="text-xs text-slate-500">DocuCenter Kiosk v1.0</p>
         <button
+          type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-red-500/10 hover:text-red-600 transition-colors"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-red-500/10 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
         >
-          <span>🚪</span> Sign out
+          <span aria-hidden="true">🚪</span> Sign out
         </button>
       </div>
     </aside>

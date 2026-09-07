@@ -80,10 +80,12 @@ export default async function DashboardPage() {
 
       {/* Paper Alerts */}
       {paperAlerts.length > 0 && (
-        <section>
+        <section aria-labelledby="paper-alerts-heading">
           <div className="mb-3">
-            <h2 className="text-base font-semibold text-slate-800">⚠️ Paper Alerts</h2>
-            <p className="text-sm text-slate-500">Trays running low on paper</p>
+            <h2 id="paper-alerts-heading" className="text-base font-semibold text-slate-800">
+              <span aria-hidden="true">⚠️ </span>Paper Alerts
+            </h2>
+            <p className="text-sm text-slate-600">Trays running low on paper</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {paperAlerts.map((alert) => (
@@ -106,32 +108,38 @@ export default async function DashboardPage() {
       )}
 
       {/* Recent Transactions */}
-      <section>
+      <section aria-labelledby="recent-tx-heading">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-800">Recent Transactions</h2>
-          <a href="/transactions" className="text-xs font-medium text-accent-strong hover:underline">
-            View all →
+          <h2 id="recent-tx-heading" className="text-base font-semibold text-slate-800">
+            Recent Transactions
+          </h2>
+          <a
+            href="/transactions"
+            className="rounded text-xs font-medium text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            View all transactions<span aria-hidden="true"> →</span>
           </a>
         </div>
         <div className="glass overflow-hidden">
           {transactions.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-400">
+            <p className="px-4 py-6 text-center text-sm text-slate-500">
               {serverOnline ? 'No transactions yet.' : 'Transactions unavailable while backend is offline.'}
             </p>
           ) : (
             <table className="w-full text-sm">
+              <caption className="sr-only">Five most recent payment transactions</caption>
               <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Reference
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Amount
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Status
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Date
                   </th>
                 </tr>
@@ -144,7 +152,7 @@ export default async function DashboardPage() {
                     <td className="px-4 py-2.5">
                       <StatusChip status={tx.status} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-400">
+                    <td className="px-4 py-2.5 text-xs text-slate-500">
                       {new Date(tx.created_at).toLocaleString('en-PH', {
                         dateStyle: 'short',
                         timeStyle: 'short',
@@ -159,32 +167,38 @@ export default async function DashboardPage() {
       </section>
 
       {/* Recent Print Jobs */}
-      <section>
+      <section aria-labelledby="recent-jobs-heading">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-800">Recent Print Jobs</h2>
-          <a href="/print-jobs" className="text-xs font-medium text-accent-strong hover:underline">
-            View all →
+          <h2 id="recent-jobs-heading" className="text-base font-semibold text-slate-800">
+            Recent Print Jobs
+          </h2>
+          <a
+            href="/print-jobs"
+            className="rounded text-xs font-medium text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            View all print jobs<span aria-hidden="true"> →</span>
           </a>
         </div>
         <div className="glass overflow-hidden">
           {jobs.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-400">
+            <p className="px-4 py-6 text-center text-sm text-slate-500">
               {serverOnline ? 'No print jobs yet.' : 'Print jobs unavailable while backend is offline.'}
             </p>
           ) : (
             <table className="w-full text-sm">
+              <caption className="sr-only">Five most recent print jobs</caption>
               <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Files
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Paper
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Status
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">
+                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-slate-600">
                     Date
                   </th>
                 </tr>
@@ -199,7 +213,7 @@ export default async function DashboardPage() {
                     <td className="px-4 py-2.5">
                       <StatusChip status={job.status} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-400">
+                    <td className="px-4 py-2.5 text-xs text-slate-500">
                       {new Date(job.created_at).toLocaleString('en-PH', {
                         dateStyle: 'short',
                         timeStyle: 'short',

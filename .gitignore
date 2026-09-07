@@ -68,9 +68,17 @@ admin/.env
 *.db-wal
 backend/database/
 
-# ── Upload / Print artifacts ──────────────────────────────────────────────────
+# ── Upload / Print artifacts (may contain users' documents — never commit) ────
 Uploads/
 PrintSimulation/
+backend/uploads/
+/flutter_01.png
+/scan.pdf
+/query
+/ntwain_datasource_members.txt
+/ntwain_types.txt
+# stray shell-error capture file at repo root
+/$($type
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 Thumbs.db

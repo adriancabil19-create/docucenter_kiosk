@@ -5,7 +5,10 @@ import { ConditionalLayout } from '@/components/conditional-layout';
 
 export const metadata: Metadata = {
   title: 'DocuCenter Admin',
-  description: 'Admin console for DocuCenter Kiosk System',
+  description: 'Admin console for the DocuCenter Kiosk — an undergraduate thesis prototype.',
+  applicationName: 'DocuCenter Admin',
+  authors: [{ name: 'Charles Adrian L. Cabil', url: 'mailto:adriancabil12@gmail.com' }],
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

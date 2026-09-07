@@ -37,11 +37,25 @@ class AboutPage extends StatelessWidget {
             context,
             'Project Overview',
             Icons.info_outline,
-            '''The DOCUCENTER Kiosk project represents a comprehensive thesis work undertaken as partial fulfillment of the requirements for the degree of Bachelor of Science in Information Technology at the University of Cebu - Lapu-Lapu and Mandaue Campus.
+            '''The DocuCenter Kiosk is undergraduate thesis work undertaken as partial fulfillment of the requirements for the degree of Bachelor of Science in Computer Engineering at the University of Cebu - Lapu-Lapu and Mandaue Campus.
 
-This innovative project addresses the growing need for efficient, accessible, and automated document processing services within the university environment. By integrating self-service technology, real-time IoT monitoring, and automated payment systems, the DOCUCENTER Kiosk aims to revolutionize how students, faculty, and staff access essential document services.
+The project looks at the need for more efficient and accessible document processing within the university environment. By combining a self-service kiosk, staff-side device monitoring, and an online payment integration, it aims to improve how students, faculty, and staff complete routine document tasks. It is currently a prototype being piloted for evaluation and is not a commercial service.
 
-The project combines theoretical foundations from multiple disciplines including Human-Computer Interaction, Self-Service Technology Theory, Technology Acceptance Model, and IoT systems to create a holistic solution that is both user-friendly and operationally efficient.''',
+The work draws on Human-Computer Interaction, Self-Service Technology theory, and the Technology Acceptance Model to keep the design both usable and practical to operate.''',
+          ),
+
+          // Business / Operator Details
+          _buildSection(
+            context,
+            'Business / Operator Details',
+            Icons.storefront,
+            'Service: DocuCenter — Self-Service Document Processing Kiosk\n'
+            'Developer / Operator: Charles Adrian L. Cabil\n'
+            'Contact & data-privacy e-mail: adriancabil12@gmail.com\n'
+            'Nature: Undergraduate thesis prototype, piloted at the University of Cebu - Lapu-Lapu and Mandaue Campus\n'
+            'Payment processor: PayMongo Philippines, Inc.\n\n'
+            'Privacy Policy, Terms & Conditions, Cookie Policy and Refund Policy '
+            'are available on the Legal screen and by e-mail on request.',
           ),
 
           // University Information
@@ -113,7 +127,7 @@ The project combines theoretical foundations from multiple disciplines including
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Academic Year', style: TextStyle(fontSize: 10, color: Color(0xFFDBE9F8))),
-                            Text('2024-2025', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                            Text('2025–2026', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -204,7 +218,10 @@ The project combines theoretical foundations from multiple disciplines including
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'College of Engineering Major in Computer\nUniversity of Cebu - Lapu-Lapu and Mandaue Campus\n\nEmail: adriancabil12@gmail.com',
+                    'DocuCenter — Developer: Charles Adrian L. Cabil\n'
+                    'College of Computer Engineering\n'
+                    'University of Cebu - Lapu-Lapu and Mandaue Campus\n\n'
+                    'Email: adriancabil12@gmail.com',
                     style: TextStyle(color: Colors.white, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
@@ -457,7 +474,7 @@ The project combines theoretical foundations from multiple disciplines including
                   _buildAcknowledgmentItem('Our thesis adviser, for invaluable guidance and unwavering support throughout this research journey'),
                   _buildAcknowledgmentItem('The University of Cebu - Lapu-Lapu and Mandaue Campus administration for providing resources and facilities'),
                   _buildAcknowledgmentItem('The College of Computer Engineering faculty for their expertise and constructive feedback'),
-                  _buildAcknowledgmentItem('All survey respondents and user testing participants who contributed valuable insights'),
+                  _buildAcknowledgmentItem('Everyone who contributed feedback to the design and evaluation of this project'),
                   _buildAcknowledgmentItem('Our families and friends for their constant encouragement and support'),
                 ],
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'services.dart';
 import 'about.dart';
+import 'legal_page.dart';
 import 'pages/payment_page.dart';
 
 void main() async {
@@ -94,6 +95,7 @@ class _HeaderState extends State<Header> {
     {'id': 'home', 'label': 'Home'},
     {'id': 'services', 'label': 'Services'},
     {'id': 'about', 'label': 'About'},
+    {'id': 'legal', 'label': 'Legal'},
   ];
 
   void _handleNavigate(String page) {
@@ -210,6 +212,9 @@ class _HeaderState extends State<Header> {
                         _mobileMenuOpen ? Icons.close : Icons.menu,
                         color: const Color(0xFF003D99),
                       ),
+                      tooltip: _mobileMenuOpen
+                          ? 'Close navigation menu'
+                          : 'Open navigation menu',
                       onPressed: () {
                         setState(() {
                           _mobileMenuOpen = !_mobileMenuOpen;
@@ -262,7 +267,11 @@ class _HeaderState extends State<Header> {
 }
 
 class Footer extends StatelessWidget {
-  const Footer({super.key});
+  /// Optional navigation callback so footer links can open in-app pages
+  /// (e.g. the Legal screen). When null, the links are hidden.
+  final ValueChanged<String>? onNavigate;
+
+  const Footer({super.key, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +306,13 @@ class Footer extends StatelessWidget {
                       _buildFooterColumn(
                         context,
                         'Project Information',
-                        'Bachelor of Science in\nComputer Engineering\nAcademic Year 2024-2025',
+                        'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
+                      ),
+                      const SizedBox(height: 32),
+                      _buildFooterColumn(
+                        context,
+                        'Operator',
+                        'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
                       ),
                     ],
                   )
@@ -324,7 +339,15 @@ class Footer extends StatelessWidget {
                         child: _buildFooterColumn(
                           context,
                           'Project Information',
-                          'Bachelor of Science in\nComputer Engineering\nAcademic Year 2024-2025',
+                          'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: _buildFooterColumn(
+                          context,
+                          'Operator',
+                          'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
                         ),
                       ),
                     ],
@@ -336,16 +359,58 @@ class Footer extends StatelessWidget {
             height: 1,
             color: const Color(0xFF1F2937), // gray-800
           ),
+          const SizedBox(height: 20),
+          // Legal links
+          if (onNavigate != null)
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                _buildFooterLink(context, 'Privacy Policy', 'legal'),
+                _buildFooterDot(),
+                _buildFooterLink(context, 'Terms & Conditions', 'legal'),
+                _buildFooterDot(),
+                _buildFooterLink(context, 'Cookie Policy', 'legal'),
+                _buildFooterDot(),
+                _buildFooterLink(context, 'Refund Policy', 'legal'),
+              ],
+            ),
           // Copyright
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Text(
-            '© 2025 DOCUCENTER Kiosk Project. All rights reserved.',
+            '© 2025–2026 DocuCenter — an undergraduate thesis prototype by '
+            'Charles Adrian L. Cabil, University of Cebu – Lapu-Lapu and Mandaue Campus.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF9CA3AF), // gray-400
+              color: const Color(0xFFCBD1DC), // lighter grey for AA contrast on gray-900
             ),
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFooterDot() => const Text(
+        '·',
+        style: TextStyle(color: Color(0xFF6B7280)),
+      );
+
+  Widget _buildFooterLink(BuildContext context, String label, String pageId) {
+    return TextButton(
+      onPressed: () => onNavigate?.call(pageId),
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFFDBE9F8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        minimumSize: const Size(0, 40),
+        tapTargetSize: MaterialTapTargetSize.padded,
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 13,
+          decoration: TextDecoration.underline,
+        ),
       ),
     );
   }
@@ -410,6 +475,8 @@ class _HomePageState extends State<HomePage> {
         return ServicesPage(onNavigate: widget.onNavigate);
       case 'about':
         return const AboutPage();
+      case 'legal':
+        return LegalPage(onNavigate: widget.onNavigate);
       default:
         return _buildHomePageContent();
     }
@@ -435,7 +502,7 @@ class _HomePageState extends State<HomePage> {
           _buildCallToActionSection(context),
           
           // Footer
-          const Footer(),
+          Footer(onNavigate: widget.onNavigate),
         ],
       ),
     );
@@ -488,7 +555,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 32),
                     Text(
-                      'Revolutionizing document services with real-time monitoring and automated payment systems',
+                      'Print, scan, and photocopy documents at the kiosk, with staff-side device monitoring and cashless payment',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: const Color(0xFFF0F9FF), // blue-50
                       ),
@@ -568,21 +635,21 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 24),
               Text(
-                'The DOCUCENTER Kiosk addresses the critical need for efficient, accessible, and autonomous document processing services within the university environment. Traditional document services often suffer from long queues, limited operating hours, and manual payment processing.',
+                'The DocuCenter Kiosk looks at the need for quicker, more accessible document processing on campus. Traditional counters can mean long queues, limited hours, and manual payment handling.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF374151), // gray-700
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                'By implementing a self-service kiosk with real-time monitoring and automated payment systems, we empower students, faculty, and staff to access essential document services 24/7 while reducing operational overhead and improving service quality.',
+                'By combining a self-service kiosk with staff-side device monitoring and a cashless payment integration, the project aims to help students, faculty, and staff complete routine document tasks with less waiting and less manual processing.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF374151),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                'This innovative solution integrates Self-Service Technology (SST), Internet of Things (IoT) monitoring, and modern payment systems to create a seamless user experience that meets the demands of today\'s digital campus environment.',
+                'This is an undergraduate thesis prototype developed at the University of Cebu – Lapu-Lapu and Mandaue Campus. It is being piloted for evaluation and is not yet a commercial service.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF374151),
                 ),
@@ -618,8 +685,8 @@ class _HomePageState extends State<HomePage> {
       },
       {
         'icon': Icons.analytics,
-        'title': 'Real-Time Monitoring',
-        'description': 'Track paper, ink levels, and system status in real-time',
+        'title': 'Device Monitoring',
+        'description': 'Staff can track paper-tray levels and kiosk status from the admin console',
       },
       {
         'icon': Icons.desktop_mac,
@@ -812,9 +879,12 @@ class _HomePageState extends State<HomePage> {
             shape: BoxShape.circle,
           ),
           child: Center(
-            child: Text(
-              emoji,
-              style: const TextStyle(fontSize: 32),
+            // Decorative — the group name is announced by the text below.
+            child: ExcludeSemantics(
+              child: Text(
+                emoji,
+                style: const TextStyle(fontSize: 32),
+              ),
             ),
           ),
         ),
@@ -865,7 +935,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 32),
               Text(
-                'The DOCUCENTER Kiosk represents a significant advancement in campus technology infrastructure, combining convenience, efficiency, and innovation.',
+                'The DocuCenter Kiosk is a student-built prototype exploring how self-service and cashless payment can speed up routine document tasks on campus.',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: const Color(0xFFF0F9FF), // blue-50
                 ),
