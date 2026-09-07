@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import {
   LEGAL_SECTIONS,
   LEGAL_EFFECTIVE,
@@ -15,7 +16,13 @@ export default function LegalPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">Legal &amp; Privacy</h1>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm font-medium text-accent-strong underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          <span aria-hidden="true">←</span> Back to Dashboard
+        </Link>
+        <h1 className="mt-3 text-2xl font-bold text-slate-800">Legal &amp; Privacy</h1>
         <p className="mt-1 text-sm text-slate-600">{LEGAL_EFFECTIVE}</p>
         <p className="mt-2 text-sm text-slate-600">
           Plain-language summaries. The authoritative full texts are kept with the

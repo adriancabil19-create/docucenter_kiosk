@@ -129,6 +129,15 @@ Please do not scan or copy private images of another person without their consen
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => widget.onNavigate('home'),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Back to Home'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Semantics(
                   header: true,
                   child: Text(
