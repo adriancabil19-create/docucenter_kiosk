@@ -35,9 +35,15 @@ class MainApp extends StatefulWidget {
 
 class _MainAppState extends State<MainApp> {
   String _currentPage = 'home';
+  // The page we navigated *from*, so a page reached mid-flow (e.g. Legal,
+  // opened from the payment consent screen) can send the user back to where
+  // they actually were instead of always dumping them on the marketing home
+  // page and losing their in-progress job.
+  String _previousPage = 'home';
 
   void _navigate(String page) {
     setState(() {
+      _previousPage = _currentPage;
       _currentPage = page;
     });
   }
@@ -64,6 +70,7 @@ class _MainAppState extends State<MainApp> {
             Expanded(
               child: HomePage(
                 currentPage: _currentPage,
+                previousPage: _previousPage,
                 onNavigate: _navigate,
               ),
             ),
@@ -445,11 +452,13 @@ class Footer extends StatelessWidget {
 
 class HomePage extends StatefulWidget {
   final String currentPage;
+  final String previousPage;
   final ValueChanged<String> onNavigate;
 
   const HomePage({
     super.key,
     required this.currentPage,
+    required this.previousPage,
     required this.onNavigate,
   });
 
@@ -476,7 +485,10 @@ class _HomePageState extends State<HomePage> {
       case 'about':
         return const AboutPage();
       case 'legal':
-        return LegalPage(onNavigate: widget.onNavigate);
+        // Opened mid-flow (e.g. from the payment consent screen), Legal
+        // should send the user back to that flow, not always to Home —
+        // otherwise their in-progress job looks like it vanished.
+        return LegalPage(onNavigate: widget.onNavigate, backTarget: widget.previousPage);
       default:
         return _buildHomePageContent();
     }

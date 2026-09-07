@@ -12,7 +12,13 @@ import 'package:flutter/material.dart';
 class LegalPage extends StatefulWidget {
   final ValueChanged<String> onNavigate;
 
-  const LegalPage({super.key, required this.onNavigate});
+  /// Page id to return to when the user presses back. Defaults to the
+  /// marketing home page, but a caller reached mid-flow (e.g. the payment
+  /// consent screen's "Read the Terms" link) should pass its own page id so
+  /// the user is returned to their in-progress job instead of Home.
+  final String backTarget;
+
+  const LegalPage({super.key, required this.onNavigate, this.backTarget = 'home'});
 
   @override
   State<LegalPage> createState() => _LegalPageState();
@@ -22,6 +28,9 @@ class _LegalPageState extends State<LegalPage> {
   int _selected = 0;
 
   static const String _effectiveDate = 'Effective 7 September 2026 · Version 1.0';
+
+  String get _backLabel =>
+      widget.backTarget == 'home' ? 'Back to Home' : 'Back';
 
   static const List<_LegalSection> _sections = [
     _LegalSection(
@@ -132,9 +141,9 @@ Please do not scan or copy private images of another person without their consen
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => widget.onNavigate('home'),
+                    onPressed: () => widget.onNavigate(widget.backTarget),
                     icon: const Icon(Icons.arrow_back),
-                    label: const Text('Back to Home'),
+                    label: Text(_backLabel),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -246,16 +255,6 @@ Please do not scan or copy private images of another person without their consen
                     'e-mail from adriancabil12@gmail.com. Questions or data-privacy '
                     'requests can be sent to the same address.',
                     style: TextStyle(fontSize: 13, color: Color(0xFF1E3A5F), height: 1.5),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => widget.onNavigate('home'),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Back to Home'),
                   ),
                 ),
               ],
