@@ -1,4 +1,4 @@
-import { getKioskStatus } from '@/lib/api';
+import { getKioskStatus } from '@/lib/backend';
 import type { KioskStatus } from '@/lib/types';
 import { KioskStatusPanel } from '@/components/kiosk-status-panel';
 

@@ -1,7 +1,13 @@
-// CLIENT-SAFE. Every call goes to the same-origin proxy at `/api/backend/*`,
-// which checks the admin session and adds the backend bearer token server-side.
-// No backend URL or token is shipped to the browser. Server Components should
-// import `lib/backend.ts` directly instead of going through this HTTP hop.
+// SERVER-ONLY. Talks to the kiosk backend with the privileged bearer token.
+// Never import this from a Client Component — the token would end up in the
+// browser bundle. Client code goes through `lib/api.ts`, which calls the
+// session-gated proxy at `/api/backend/*`.
+
+if (typeof window !== 'undefined') {
+  throw new Error(
+    'lib/backend.ts is server-only and must not be imported into client code — use lib/api.ts instead.',
+  );
+}
 
 import type {
   StatsResponse,
@@ -17,8 +23,18 @@ import type {
 
 export type { DateRange };
 
-/** Same-origin proxy mount point (see app/api/backend/[...path]/route.ts). */
-const BASE_URL = '/api/backend';
+/**
+ * Backend base URL and admin token. Prefer the server-only names; fall back to
+ * the legacy `NEXT_PUBLIC_*` names so existing deployments keep working until
+ * they migrate (see admin/README.md → Environment).
+ */
+export const BACKEND_URL = (
+  process.env.API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:5000'
+).replace(/\/$/, '');
+
+const BACKEND_TOKEN = process.env.ADMIN_API_TOKEN || process.env.NEXT_PUBLIC_ADMIN_API_TOKEN || '';
 
 function withRange(path: string, limit: number, range?: DateRange): string {
   const params = new URLSearchParams({ limit: String(limit) });
@@ -27,15 +43,21 @@ function withRange(path: string, limit: number, range?: DateRange): string {
   return `${path}?${params.toString()}`;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+/** Low-level fetch to the backend. Exported for the proxy route handler. */
+export async function backendFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${BACKEND_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(BACKEND_TOKEN ? { Authorization: `Bearer ${BACKEND_TOKEN}` } : {}),
       ...init?.headers,
     },
     cache: 'no-store',
   });
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await backendFetch(path, init);
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);

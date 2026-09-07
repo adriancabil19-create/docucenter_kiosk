@@ -1,4 +1,4 @@
-import { getStats, getTransactions, getPrintJobs, getHealth, getPaperAlerts } from '@/lib/api';
+import { getStats, getTransactions, getPrintJobs, getHealth, getPaperAlerts } from '@/lib/backend';
 import { StatCard } from '@/components/stat-card';
 import { StatusChip } from '@/components/status-chip';
 

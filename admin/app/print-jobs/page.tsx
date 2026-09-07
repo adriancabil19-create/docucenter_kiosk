@@ -1,4 +1,4 @@
-import { getPrintJobs } from '@/lib/api';
+import { getPrintJobs } from '@/lib/backend';
 import type { PrintJob } from '@/lib/types';
 import { PrintJobsTable } from '@/components/print-jobs-table';
 

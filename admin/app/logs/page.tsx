@@ -1,4 +1,4 @@
-import { getLogs } from '@/lib/api';
+import { getLogs } from '@/lib/backend';
 import type { ActivityLog } from '@/lib/types';
 import { ActivityLogTable } from '@/components/activity-log-table';
 

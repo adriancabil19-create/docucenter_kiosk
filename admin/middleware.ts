@@ -1,29 +1,48 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, type SessionData } from '@/lib/session';
 
 // `/legal` is intentionally public — privacy/terms/refund notices must be
 // readable without signing in.
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/legal'];
 
-export function middleware(request: NextRequest) {
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths and Next.js internals
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith('/_next') ||
+    isPublic(pathname) ||
+    pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico'
   ) {
     return NextResponse.next();
   }
 
-  // Check for encrypted session cookie set by iron-session
-  const session = request.cookies.get('docucenter_admin_session');
-  if (!session) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  // Actually decrypt & verify the iron-session cookie — presence alone is not
+  // enough, a forged cookie value must be rejected. Any failure (bad cookie,
+  // missing/short SESSION_SECRET) is treated as "not authenticated".
+  const res = NextResponse.next();
+  let authed = false;
+  try {
+    const session = await getIronSession<SessionData>(request, res, sessionOptions);
+    authed = Boolean(session.user);
+  } catch {
+    authed = false;
   }
 
-  return NextResponse.next();
+  if (!authed) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+    const loginUrl = new URL('/login', request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return res;
 }
 
 export const config = {

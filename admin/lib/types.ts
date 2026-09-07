@@ -1,3 +1,11 @@
+// ─── Query helpers ────────────────────────────────────────────────────────────
+
+/** Optional inclusive `created_at` range filter (ISO-8601 strings). */
+export interface DateRange {
+  from?: string;
+  to?: string;
+}
+
 // ─── Payment / Transaction ────────────────────────────────────────────────────
 
 export type TransactionStatus =

@@ -1,4 +1,4 @@
-import { getPaperTrays } from '@/lib/api';
+import { getPaperTrays } from '@/lib/backend';
 import type { PaperTray } from '@/lib/types';
 import { PaperTraysManager } from '@/components/paper-trays-manager';
 

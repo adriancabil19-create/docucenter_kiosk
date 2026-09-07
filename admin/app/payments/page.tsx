@@ -1,4 +1,4 @@
-import { getTransactions } from '@/lib/api';
+import { getTransactions } from '@/lib/backend';
 import type { Transaction } from '@/lib/types';
 import { PaymentsTable } from '@/components/payments-table';
 
