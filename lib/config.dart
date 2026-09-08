@@ -28,6 +28,18 @@ class BackendConfig {
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
 
+  /// Stable identifier for this physical kiosk. Must match KIOSK_ID on the
+  /// local backend so heartbeats and admin commands line up.
+  static const String kioskId = 'DOCUCENTER-01';
+
+  /// Local backend — this kiosk's live runtime flags (maintenance, printing
+  /// lock, printer state) and structured incident reporting.
+  static const String kioskSelfUrl = '$serverUrl/api/kiosk/self';
+  static const String kioskIncidentUrl = '$serverUrl/api/kiosk/incidents';
+
+  /// How often the app polls its runtime flags / connectivity.
+  static const Duration kioskRuntimePollInterval = Duration(seconds: 10);
+
     /// Upload endpoint on the Railway transfer relay (kiosk → phone)
     static const String transferUploadUrl = '$railwayUrl/api/transfer/upload';
 

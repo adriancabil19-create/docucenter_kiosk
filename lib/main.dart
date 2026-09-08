@@ -4,6 +4,8 @@ import 'services.dart';
 import 'about.dart';
 import 'legal_page.dart';
 import 'pages/payment_page.dart';
+import 'kiosk_runtime_service.dart';
+import 'widgets/kiosk_status_overlays.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +43,14 @@ class _MainAppState extends State<MainApp> {
   // page and losing their in-progress job.
   String _previousPage = 'home';
 
+  @override
+  void initState() {
+    super.initState();
+    // Begin polling this kiosk's runtime flags (offline / maintenance /
+    // printing-disabled) from the local backend.
+    KioskRuntime.instance.start();
+  }
+
   void _navigate(String page) {
     setState(() {
       _previousPage = _currentPage;
@@ -60,21 +70,23 @@ class _MainAppState extends State<MainApp> {
         useMaterial3: true,
       ),
       home: Scaffold(
-        body: Column(
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            Header(
-              currentPage: _currentPage,
-              onNavigate: _navigate,
-            ),
-            Expanded(
-              child: HomePage(
+        body: KioskShell(
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Header(
                 currentPage: _currentPage,
-                previousPage: _previousPage,
                 onNavigate: _navigate,
               ),
-            ),
-          ],
+              Expanded(
+                child: HomePage(
+                  currentPage: _currentPage,
+                  previousPage: _previousPage,
+                  onNavigate: _navigate,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -483,7 +495,7 @@ class _HomePageState extends State<HomePage> {
       case 'services':
         return ServicesPage(onNavigate: widget.onNavigate);
       case 'about':
-        return const AboutPage();
+        return AboutPage(onNavigate: widget.onNavigate);
       case 'legal':
         // Opened mid-flow (e.g. from the payment consent screen), Legal
         // should send the user back to that flow, not always to Home —

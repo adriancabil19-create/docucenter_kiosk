@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'config.dart';
+import 'kiosk_runtime_service.dart';
 
 class PrintingService {
   static const String _baseUrl = BackendConfig.serverUrl;
@@ -72,9 +73,26 @@ class PrintingService {
       }
 
       print('Failed to print from storage: ${response.statusCode}');
+      // 423 = admin locked printing / maintenance — not a device fault.
+      if (response.statusCode != 423) {
+        KioskRuntime.reportIncident(
+          device: 'printer',
+          errorCode: 'PRINT_FAILED',
+          severity: 'critical',
+          message: 'Print from storage failed (HTTP ${response.statusCode})',
+          metadata: {'paperSize': paperSize, 'files': filenames.length},
+        );
+      }
       return false;
     } catch (e) {
       print('Error printing from storage: $e');
+      KioskRuntime.reportIncident(
+        device: 'printer',
+        errorCode: 'PRINT_ERROR',
+        severity: 'critical',
+        message: 'Print from storage threw: $e',
+        metadata: {'paperSize': paperSize, 'files': filenames.length},
+      );
       return false;
     }
   }
