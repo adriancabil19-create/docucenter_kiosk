@@ -20,6 +20,7 @@ import kioskRoutes from './routes/kiosk';
 import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
 import { startMaintenanceJob } from './services/maintenance.service';
+import { backfillStorageDocMetas } from './services/storage.service';
 import {
   corsMiddleware,
   securityHeadersMiddleware,
@@ -173,6 +174,8 @@ initSchema()
     startFleetAgent();
     startRetentionJob();
     startMaintenanceJob();
+    // Reconcile any pre-existing uploads into storage_documents (kiosk role).
+    if (config.isKioskRole) void backfillStorageDocMetas();
 
     const server = app.listen(PORT, () => {
       logger.info(`Server started`, {

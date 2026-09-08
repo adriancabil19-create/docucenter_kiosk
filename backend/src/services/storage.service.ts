@@ -454,6 +454,49 @@ export const purgeExpiredDocuments = (
 };
 
 /**
+ * One-time reconciliation: make sure every file currently in Uploads/ has a
+ * storage_documents row (and forwards to the cloud). Runs at startup on the
+ * kiosk role so files uploaded before metadata sync existed still show up.
+ */
+export const backfillStorageDocMetas = async (): Promise<number> => {
+  try {
+    const uploadsDir = getUploadsDir();
+    const files = fs.readdirSync(uploadsDir);
+    let synced = 0;
+    for (const filename of files) {
+      if (filename.endsWith('.meta.json')) continue;
+      try {
+        const filePath = path.join(uploadsDir, filename);
+        const stats = fs.statSync(filePath);
+        if (!stats.isFile()) continue;
+        const fileUuid = path.basename(filename, path.extname(filename));
+        const meta = readMeta(uploadsDir, fileUuid, filename);
+        await upsertStorageDocMeta({
+          id: fileUuid,
+          kiosk_id: config.kioskId,
+          name: filename,
+          original_name: meta.originalName,
+          format: getFileFormat(filename),
+          pages: estimatePages(filename, filePath),
+          size_bytes: stats.size,
+          size_label: getFileSize(stats.size),
+          mime_type: meta.mimeType,
+          created_at: new Date(stats.mtime).toISOString().replace(/\.\d+Z$/, 'Z'),
+        });
+        synced += 1;
+      } catch (e) {
+        logger.warn('backfillStorageDocMetas: skipped file', { filename, error: String(e) });
+      }
+    }
+    if (synced > 0) logger.info('Storage metadata backfilled', { synced });
+    return synced;
+  } catch (err) {
+    logger.warn('backfillStorageDocMetas failed', { error: String(err) });
+    return 0;
+  }
+};
+
+/**
  * Get storage statistics (excludes sidecar files)
  */
 export const getStorageStats = (): Promise<{
