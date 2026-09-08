@@ -38,11 +38,18 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
     }
   };
 
+  const summarise = (res: { deleted?: number; queued?: number }) => {
+    const parts: string[] = [];
+    if (res.deleted) parts.push(`${res.deleted} removed here`);
+    if (res.queued) parts.push(`sent to ${res.queued} kiosk${res.queued === 1 ? '' : 's'}`);
+    return parts.length ? parts.join(' · ') : 'Nothing to do.';
+  };
+
   const runPurge = async () => {
     setBusy('purge');
     try {
       const res = await purgeStorage();
-      addToast({ title: 'Purge complete', description: `${res.deleted ?? 0} expired file(s) removed.`, color: 'success' });
+      addToast({ title: 'Purge dispatched', description: summarise(res), color: 'success' });
     } catch (err) {
       addToast({ title: 'Purge failed', description: (err as Error).message, color: 'danger' });
     } finally {
@@ -60,7 +67,7 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
     setBusy('deleteAll');
     try {
       const res = await deleteAllStorage();
-      addToast({ title: 'All files deleted', description: `${res.deleted ?? 0} file(s) removed.`, color: 'success' });
+      addToast({ title: 'Delete dispatched', description: summarise(res), color: 'success' });
     } catch (err) {
       addToast({ title: 'Delete failed', description: (err as Error).message, color: 'danger' });
     } finally {

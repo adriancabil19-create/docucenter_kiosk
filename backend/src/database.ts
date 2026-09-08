@@ -889,7 +889,9 @@ export type KioskCommandName =
   | 'DISABLE_PRINTING'
   | 'ENABLE_PRINTING'
   | 'RESTART_PRINTER'
-  | 'RESTART_APP';
+  | 'RESTART_APP'
+  | 'PURGE_STORAGE'
+  | 'DELETE_ALL_FILES';
 
 export interface KioskCommandRow {
   id: string;
@@ -1002,11 +1004,13 @@ export const updateStorageSettings = async (patch: {
   retention_hours?: number;
 }): Promise<StorageSettings> => {
   await getDb().execute({
-    sql: `UPDATE storage_settings SET
+    // Upsert so a missing singleton row can't silently swallow the write.
+    sql: `INSERT INTO storage_settings (id, delete_after_print, retention_hours)
+          VALUES (1, COALESCE(@delete_after_print, 0), COALESCE(@retention_hours, 24))
+          ON CONFLICT(id) DO UPDATE SET
             delete_after_print = COALESCE(@delete_after_print, delete_after_print),
             retention_hours    = COALESCE(@retention_hours, retention_hours),
-            updated_at         = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-          WHERE id = 1`,
+            updated_at         = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
     args: {
       delete_after_print:
         patch.delete_after_print === undefined ? null : patch.delete_after_print ? 1 : 0,

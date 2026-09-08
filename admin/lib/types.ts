@@ -138,7 +138,9 @@ export type KioskCommandName =
   | 'DISABLE_PRINTING'
   | 'ENABLE_PRINTING'
   | 'RESTART_PRINTER'
-  | 'RESTART_APP';
+  | 'RESTART_APP'
+  | 'PURGE_STORAGE'
+  | 'DELETE_ALL_FILES';
 
 export interface KioskCommand {
   id: string;
@@ -325,5 +327,6 @@ export interface MutationResponse {
   success: boolean;
   message?: string;
   deleted?: number;
+  queued?: number;
   error?: string;
 }

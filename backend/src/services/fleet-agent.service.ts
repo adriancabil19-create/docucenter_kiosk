@@ -23,9 +23,11 @@ import {
   updateStorageSettings,
   setKioskFlags,
   insertIncident,
+  insertLog,
   type KioskCommandRow,
   type KioskCommandName,
 } from '../database';
+import { purgeExpiredDocuments, deleteAllDocuments } from './storage.service';
 
 const { url: SYNC_URL, secret: SYNC_SECRET } = config.sync;
 const cloudMode = !!SYNC_URL && !!SYNC_SECRET;
@@ -202,6 +204,19 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
           message: `Admin requested a kiosk application restart (${result})`,
         });
         break;
+      case 'PURGE_STORAGE': {
+        const { retention_hours } = await getStorageSettings();
+        const r = await purgeExpiredDocuments(retention_hours);
+        result = `purged ${r.deleted} expired file(s)`;
+        await insertLog('info', 'storage', `Admin purge: ${result}`, { kioskId: KIOSK_ID });
+        break;
+      }
+      case 'DELETE_ALL_FILES': {
+        const r = await deleteAllDocuments();
+        result = `deleted ${r.deleted} file(s)`;
+        await insertLog('warn', 'storage', `Admin delete-all: ${result}`, { kioskId: KIOSK_ID });
+        break;
+      }
       default:
         await ackRemote(cmd.id, false, `unknown command: ${name}`);
         return;

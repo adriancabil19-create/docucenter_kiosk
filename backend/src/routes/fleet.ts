@@ -36,6 +36,8 @@ const VALID_COMMANDS: KioskCommandName[] = [
   'ENABLE_PRINTING',
   'RESTART_PRINTER',
   'RESTART_APP',
+  'PURGE_STORAGE',
+  'DELETE_ALL_FILES',
 ];
 
 /** Flag-type commands whose effect we also reflect immediately on the roster row. */
@@ -201,25 +203,46 @@ router.get('/storage-documents', async (req: Request, res: Response): Promise<vo
   }
 });
 
-router.post('/storage/purge', async (_req: Request, res: Response): Promise<void> => {
+/**
+ * The files live on the kiosks, not on this (possibly cloud) instance. So run
+ * the op locally only when THIS instance is a kiosk, and dispatch a command to
+ * every other known kiosk to do the same.
+ */
+const runStorageOp = async (
+  op: 'PURGE_STORAGE' | 'DELETE_ALL_FILES',
+  res: Response,
+): Promise<void> => {
   try {
-    const { retention_hours } = await getStorageSettings();
-    const result = await purgeExpiredDocuments(retention_hours);
-    res.json({ success: result.success, deleted: result.deleted, error: result.error });
-  } catch (err) {
-    res.status(500).json({ success: false, error: String(err) });
-  }
-});
+    let localDeleted = 0;
+    let queued = 0;
 
-router.post('/storage/delete-all', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const result = await deleteAllDocuments();
-    await insertLog('warn', 'storage', `Admin deleted all files (${result.deleted})`, {});
-    res.json({ success: result.success, deleted: result.deleted, error: result.error });
+    if (config.isKioskRole) {
+      if (op === 'PURGE_STORAGE') {
+        const { retention_hours } = await getStorageSettings();
+        localDeleted = (await purgeExpiredDocuments(retention_hours)).deleted;
+      } else {
+        localDeleted = (await deleteAllDocuments()).deleted;
+      }
+    }
+
+    for (const k of await getKiosks()) {
+      if (config.isKioskRole && k.kiosk_id === config.kioskId) continue;
+      await enqueueCommand(k.kiosk_id, op, undefined, 'admin');
+      queued += 1;
+    }
+
+    await insertLog('info', 'storage', `Admin ${op}: ${localDeleted} local, ${queued} queued`, {});
+    res.json({ success: true, deleted: localDeleted, queued });
   } catch (err) {
+    logger.error(`Fleet: ${op} failed`, { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
-});
+};
+
+router.post('/storage/purge', (_req: Request, res: Response) => runStorageOp('PURGE_STORAGE', res));
+router.post('/storage/delete-all', (_req: Request, res: Response) =>
+  runStorageOp('DELETE_ALL_FILES', res),
+);
 
 // ─── Analytics & nav summary ────────────────────────────────────────────────
 

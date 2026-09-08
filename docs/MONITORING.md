@@ -45,6 +45,7 @@ heartbeat (the heartbeat response carries `commands`), executes locally, and ACK
 | `DISABLE_PRINTING` / `ENABLE_PRINTING` | toggles `kiosks.printing_disabled`; `/api/print/from-storage` returns **423** while set |
 | `RESTART_PRINTER` | `Restart-Service Spooler -Force` — **needs the backend to run as administrator**; the ACK carries the failure reason if it can't |
 | `RESTART_APP` | `taskkill /F /IM <KIOSK_PROCESS_NAME>.exe` — the `start-kiosk.bat` loop or `kiosk-watchdog.ps1` then relaunches it. With no supervisor running it just closes the app. |
+| `PURGE_STORAGE` / `DELETE_ALL_FILES` | run the retention purge / wipe on the kiosk that owns the files. The admin Storage buttons enqueue these for every known kiosk (and run locally too when the admin's backend is itself the kiosk). |
 
 Flag commands also update the roster row immediately so the console reflects
 intent without waiting for the ACK. Between heartbeats the agent still polls for
