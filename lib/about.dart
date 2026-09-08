@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class AboutPage extends StatelessWidget {
-  const AboutPage({super.key});
+  final ValueChanged<String> onNavigate;
+
+  const AboutPage({super.key, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -44,18 +46,25 @@ The project looks at the need for more efficient and accessible document process
 The work draws on Human-Computer Interaction, Self-Service Technology theory, and the Technology Acceptance Model to keep the design both usable and practical to operate.''',
           ),
 
-          // Business / Operator Details
+          // Business / Operator Details — kept short here; the Legal page is
+          // the single source of truth for the full operator record and
+          // policies, so this just points there instead of repeating it.
           _buildSection(
             context,
             'Business / Operator Details',
             Icons.storefront,
-            'Service: DocuCenter — Self-Service Document Processing Kiosk\n'
-            'Developer / Operator: Charles Adrian L. Cabil\n'
-            'Contact & data-privacy e-mail: adriancabil12@gmail.com\n'
-            'Nature: Undergraduate thesis prototype, piloted at the University of Cebu - Lapu-Lapu and Mandaue Campus\n'
-            'Payment processor: PayMongo Philippines, Inc.\n\n'
-            'Privacy Policy, Terms & Conditions, Cookie Policy and Refund Policy '
-            'are available on the Legal screen and by e-mail on request.',
+            'DocuCenter is developed and operated by Charles Adrian L. Cabil '
+            '(adriancabil12@gmail.com). For the full operator record, payment '
+            'processor, and our Privacy Policy, Terms & Conditions, Cookie '
+            'Policy, and Refund Policy, see Legal & Privacy.',
+            trailing: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => onNavigate('legal'),
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const Text('View Legal & Privacy'),
+              ),
+            ),
           ),
 
           // University Information
@@ -165,8 +174,8 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                   crossAxisSpacing: 12,
                   children: [
                     _buildTeamMember('Charles Adrian Cabil', 'Lead Researcher & Developer'),
-                    _buildTeamMember('Mark Lee Duyag', 'Banker'),
-                    _buildTeamMember('Ignacio Maurice Vergara', 'Banker'),
+                    _buildTeamMember('Mark Lee Duyag', 'Co-Researcher'),
+                    _buildTeamMember('Ignacio Maurice Vergara', 'Co-Researcher'),
                   ],
                 ),
               ],
@@ -242,6 +251,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
     IconData icon,
     String content, {
     bool showIcon = false,
+    Widget? trailing,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -298,6 +308,10 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                     height: 1.6,
                   ),
                 ),
+              if (trailing != null) ...[
+                const SizedBox(height: 8),
+                trailing,
+              ],
             ],
           ),
         ),
@@ -356,7 +370,8 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
       ('Jan - Feb 2026', 'Development', 'Architecture design and prototype development'),
       ('Mar 2026', 'Testing & Refinement', 'Iterative testing, debugging, and performance optimization'),
       ('Apr 2026', 'Thesis Writing', 'Documentation of research findings, methodologies, and conclusions'),
-      ('May 2026', 'Final Submission & Defense', 'Submission of thesis paper and preparation for defense presentation'),
+      ('May 2026', 'Final Submission & Defense', 'Submission of thesis paper and defense presentation'),
+      ('Jun 2026 – Present', 'Pilot & Refinement', 'Continued pilot deployment with security hardening and interface refinements based on feedback'),
     ];
 
     return Padding(
