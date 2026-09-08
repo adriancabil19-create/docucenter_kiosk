@@ -116,5 +116,41 @@ flowchart TD
 ### Payment Processing
 - **PayMongo**: QR code generation and status polling
 - **Timeout**: 5-minute window for payment completion
-- **Verification**: Automatic polling and webhook support</content>
+- **Verification**: Automatic polling and webhook support
+
+## Monitoring & Control Plane
+
+Layered on top of the metadata sync. Full detail in [docs/MONITORING.md](docs/MONITORING.md).
+
+```mermaid
+graph LR
+    subgraph Kiosk PC
+        FA[Fleet agent<br/>heartbeat + command exec]
+        RJ[Retention job]
+        APP[Flutter app<br/>KioskRuntime poll]
+        WD[Watchdog.ps1]
+    end
+    subgraph Cloud / Railway
+        SYNC[/api/sync/*<br/>heartbeat · incident · commands/]
+        FLEET[/api/fleet/*<br/>roster · analytics · settings/]
+    end
+    ADMIN[Admin console<br/>Kiosks · Alerts · Analytics · Storage]
+
+    FA -- "X-Sync-Secret" --> SYNC
+    APP -- "/api/kiosk/self" --> FA
+    WD -- "incident" --> FA
+    ADMIN -- "session proxy + bearer" --> FLEET
+    SYNC --- FLEET
+```
+
+- **Heartbeat** → `kiosks.last_seen`; OFFLINE after 60 s. No retry queue.
+- **Commands** (`kiosk_commands`) ride the heartbeat response: maintenance mode,
+  disable printing (enforced server-side, 423), restart spooler, restart app.
+- **Incidents** (`incidents`) — structured `device/error_code/severity` events,
+  forwarded via the durable outbox, shown on the Alerts page with a nav badge.
+- **Analytics** — revenue / usage / peak-demand rollups from `transactions` and
+  the widened `print_jobs`.
+- **Retention** — `storage_settings` singleton, purge job on the kiosk role,
+  `delete_after_print` hook in the print route.
+- **Roles** — `INSTANCE_ROLE=kiosk|cloud|both` gates which timers run where.</content>
 <parameter name="filePath">ARCHITECTURE.md
