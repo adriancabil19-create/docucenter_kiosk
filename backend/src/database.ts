@@ -1099,13 +1099,15 @@ export const getAnalytics = async (range?: DateRange): Promise<AnalyticsResult> 
       args: jobArgs,
     }),
     db.execute({
-      sql: `SELECT CAST(strftime('%H', created_at) AS INTEGER) AS hour, COUNT(*) AS count
+      sql: `SELECT CAST(strftime('%H', replace(created_at, 'Z', '')) AS INTEGER) AS hour,
+                   COUNT(*) AS count
             FROM transactions${txWhere}
             GROUP BY hour ORDER BY hour ASC`,
       args: txArgs,
     }),
     db.execute({
-      sql: `SELECT CAST(strftime('%w', created_at) AS INTEGER) AS weekday, COUNT(*) AS count
+      sql: `SELECT CAST(strftime('%w', replace(created_at, 'Z', '')) AS INTEGER) AS weekday,
+                   COUNT(*) AS count
             FROM transactions${txWhere}
             GROUP BY weekday ORDER BY weekday ASC`,
       args: txArgs,
