@@ -384,6 +384,17 @@ class _StorageInterfaceState extends State<StorageInterface> {
     });
   }
 
+  /// "Receive from Phone" — the QR upload flow. Available in every mode so the
+  /// user is never stranded on an empty storage screen mid-print.
+  Widget _receiveFromPhoneButton() {
+    return ElevatedButton.icon(
+      onPressed: _receiveFromPhone,
+      icon: const Icon(Icons.qr_code_2),
+      label: const Text('Receive from Phone'),
+      style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+    );
+  }
+
 
 
   @override
@@ -512,16 +523,26 @@ class _StorageInterfaceState extends State<StorageInterface> {
             if (widget.printingMode)
               Padding(
                 padding: const EdgeInsets.only(left: 8.0),
-                child: ElevatedButton.icon(
-                  onPressed: _selectedDocs.isNotEmpty
-                      ? () {
-                          final selected = widget.documents.where((d) => _selectedDocs.contains(d.id)).toList();
-                          widget.onSelectForPrint(selected);
-                        }
-                      : null,
-                  icon: const Icon(Icons.check),
-                  label: const Text('Confirm Selection'),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    _receiveFromPhoneButton(),
+                    ElevatedButton.icon(
+                      onPressed: _selectedDocs.isNotEmpty
+                          ? () {
+                              final selected = widget.documents
+                                  .where((d) => _selectedDocs.contains(d.id))
+                                  .toList();
+                              widget.onSelectForPrint(selected);
+                            }
+                          : null,
+                      icon: const Icon(Icons.check),
+                      label: const Text('Confirm Selection'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                    ),
+                  ],
                 ),
               ),
           ],
@@ -630,7 +651,13 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                        'Upload files or use the scanning service to add documents'),
+                      'Send documents from your phone with the QR code, or use '
+                      'the Scanning service to add them.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                    const SizedBox(height: 20),
+                    _receiveFromPhoneButton(),
                   ],
                 ),
               ),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:file_selector/file_selector.dart';
 import '../storage_service.dart';
 import 'payment_page.dart';
 
@@ -28,9 +27,6 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
   String _quality = 'standard';
   String _paperSize = 'A4';
   int _copies = 1;
-  /// Locally selected files that have been uploaded to backend storage.
-  final List<StorageDocument> _uploadedFiles = [];
-  bool _isUploading = false;
   late final TextEditingController _copiesController;
 
   double _calculateCost() {
@@ -40,7 +36,7 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     } else {
       costPerPage = _colorMode == 'color' ? 3 : 2;
     }
-    final totalPages = _uploadedFiles.fold<int>(0, (sum, doc) => sum + doc.pages) +
+    final totalPages =
         widget.selectedDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
     return costPerPage * totalPages * _copies;
   }
@@ -57,47 +53,8 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     super.dispose();
   }
 
-  /// Open file picker, upload selected files to backend, track them locally.
-  Future<void> _pickAndUploadFiles() async {
-    const typeGroup = XTypeGroup(
-      label: 'Documents',
-      extensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
-    );
-
-    final files = await openFiles(acceptedTypeGroups: [typeGroup]);
-    if (files.isEmpty) return;
-
-    setState(() => _isUploading = true);
-
-    int uploaded = 0;
-    for (final xFile in files) {
-      try {
-        final bytes = await xFile.readAsBytes();
-        final mimeType = StorageService.getMimeType(xFile.name);
-        final doc = await StorageService.uploadFile(xFile.path, bytes, xFile.name, mimeType);
-        if (doc != null) {
-          setState(() => _uploadedFiles.add(doc));
-          uploaded++;
-        }
-      } catch (e) {
-        debugPrint('Failed to upload file: $e');
-      }
-    }
-
-    setState(() => _isUploading = false);
-
-    if (mounted && uploaded > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$uploaded file(s) uploaded to storage'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
   void _handlePrint() {
-    final allDocs = [..._uploadedFiles, ...widget.selectedDocs];
+    final allDocs = widget.selectedDocs;
     if (allDocs.isEmpty) return;
 
     final totalPages = allDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
@@ -138,7 +95,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
 
   @override
   Widget build(BuildContext context) {
-    final allDocs = [..._uploadedFiles, ...widget.selectedDocs];
+    final allDocs = widget.selectedDocs;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,7 +115,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                   ),
                 ),
                 Text(
-                  'Configure your print settings and upload your documents',
+                  'Configure your print settings and choose documents from storage',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: const Color(0xFF4B5563),
                   ),
@@ -182,7 +139,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Upload Documents',
+                            'Documents',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -196,33 +153,34 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                const Icon(Icons.cloud_upload, size: 48, color: Color(0xFF9CA3AF)),
+                                const Icon(Icons.folder_open, size: 48, color: Color(0xFF9CA3AF)),
                                 const SizedBox(height: 16),
-                                ElevatedButton(
-                                  onPressed: _isUploading ? null : _pickAndUploadFiles,
-                                  child: _isUploading
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : const Text('Choose File'),
-                                ),
-                                const SizedBox(height: 8),
-                                ElevatedButton.icon(
-                                  onPressed: widget.onBrowseStorage,
-                                  icon: const Icon(Icons.folder_open),
-                                  label: const Text('Browse Storage'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF2563EB),
-                                    side: const BorderSide(color: Color(0xFF2563EB)),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: widget.onBrowseStorage,
+                                    icon: const Icon(Icons.folder_open),
+                                    label: const Text('Browse Storage'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF2563EB),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 10),
                                 Text(
-                                  '${_uploadedFiles.length} uploaded, ${widget.selectedDocs.length} from storage',
+                                  allDocs.isEmpty
+                                      ? 'No documents selected yet'
+                                      : '${allDocs.length} document${allDocs.length == 1 ? '' : 's'} selected from storage',
                                   style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Add documents from the Storage tab (scan or receive '
+                                  'from your phone via QR), then pick them here.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), height: 1.4),
                                 ),
                               ],
                             ),
@@ -230,11 +188,11 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           const SizedBox(height: 12),
                           const Text(
                             'You are responsible for having the right to copy '
-                            'these files. Uploaded files are used only for this '
-                            'job and are deleted afterwards (within 24 hours).',
+                            'these files. Files are used only for this job and are '
+                            'deleted afterwards (within 24 hours).',
                             style: TextStyle(fontSize: 11, color: Color(0xFF4B5563), height: 1.4),
                           ),
-                          // Show uploaded/selected file list
+                          // Show selected file list
                           if (allDocs.isNotEmpty) ...[
                             const SizedBox(height: 16),
                             ...allDocs.map((doc) => Padding(
