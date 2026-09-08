@@ -56,7 +56,7 @@ export class PaperTrackerService {
   static async usePaper(trayName: string, sheets: number): Promise<boolean> {
     try {
       await decrementPaperTray(trayName, sheets);
-      logger.info('Paper used from tray', { trayName, sheets });
+      logger.debug('Paper used from tray', { trayName, sheets });
       return true;
     } catch (error) {
       logger.error('Failed to decrement paper count', { trayName, sheets, error: String(error) });

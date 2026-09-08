@@ -94,6 +94,9 @@ export const cancelTransaction = (id: string): Promise<{ success: boolean; messa
 export const getLogs = (limit = 100, range?: DateRange): Promise<LogsResponse> =>
   apiFetch<LogsResponse>(withRange('/api/monitoring/logs', limit, range));
 
+export const clearLogs = (): Promise<{ success: boolean; deleted: number }> =>
+  apiFetch('/api/monitoring/logs', { method: 'DELETE' });
+
 export const getKioskStatus = (): Promise<KioskStatusResponse> =>
   apiFetch<KioskStatusResponse>('/api/monitoring/kiosk-status');
 

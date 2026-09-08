@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PaperTrackerService } from '../services/paperTracker.service';
-import { updatePaperTrayThreshold, insertLog } from '../database';
+import { updatePaperTrayThreshold } from '../database';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -25,13 +25,16 @@ router.put('/paper-trays/:trayName', async (req, res) => {
       currentCount?: number;
     };
 
+    // NOTE: routine tray edits (count / capacity / threshold / refill) are no
+    // longer written to activity_logs — they were dominating the table. Paper
+    // usage is logged once per print job instead (see routes/print.ts).
+
     if (currentCount !== undefined) {
       if (typeof currentCount !== 'number' || currentCount < 0) {
         return res.status(400).json({ success: false, error: 'Invalid currentCount' });
       }
       const ok = await PaperTrackerService.setCurrentCount(trayName, currentCount);
       if (!ok) return res.status(500).json({ success: false, error: 'Failed to set tray count' });
-      await insertLog('info', 'paper', `Tray "${trayName}" count set to ${currentCount}`, { trayName, currentCount });
     }
 
     if (sheetsAdded !== undefined) {
@@ -40,7 +43,6 @@ router.put('/paper-trays/:trayName', async (req, res) => {
       }
       const ok = await PaperTrackerService.refillTray(trayName, sheetsAdded);
       if (!ok) return res.status(500).json({ success: false, error: 'Failed to refill tray' });
-      await insertLog('info', 'paper', `Tray "${trayName}" refilled with ${sheetsAdded} sheets`, { trayName, sheetsAdded });
     }
 
     if (maxCapacity !== undefined) {
@@ -49,7 +51,6 @@ router.put('/paper-trays/:trayName', async (req, res) => {
       }
       const ok = await PaperTrackerService.setTrayCapacity(trayName, maxCapacity);
       if (!ok) return res.status(500).json({ success: false, error: 'Failed to update tray capacity' });
-      await insertLog('info', 'paper', `Tray "${trayName}" capacity set to ${maxCapacity}`, { trayName, maxCapacity });
     }
 
     if (threshold !== undefined) {
@@ -57,7 +58,6 @@ router.put('/paper-trays/:trayName', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid threshold' });
       }
       await updatePaperTrayThreshold(trayName, threshold);
-      await insertLog('info', 'paper', `Tray "${trayName}" threshold updated`, { trayName, threshold });
     }
 
     return res.json({ success: true, message: `Tray "${trayName}" updated` });

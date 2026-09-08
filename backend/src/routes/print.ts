@@ -11,7 +11,7 @@ import {
   printTestPage,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
-import { insertPrintJob, getKioskById, getStorageSettings } from '../database';
+import { insertPrintJob, getKioskById, getStorageSettings, insertLog } from '../database';
 import { config } from '../utils/config';
 import { deleteDocument } from '../services/storage.service';
 import { PaperTrackerService } from '../services/paperTracker.service';
@@ -280,13 +280,21 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         const trayName = tray?.tray_name ?? 'Tray 1';
 
         await PaperTrackerService.usePaper(trayName, sheetsUsed);
-        logger.info('Paper tracking updated after print', {
-          tray: trayName,
-          paperSize: normalizedSize,
-          totalPages,
-          copies: numCopies,
-          sheets: sheetsUsed,
-        });
+        // One activity-log entry per print job — this is the only paper event
+        // worth persisting (routine tray edits no longer log).
+        await insertLog(
+          'info',
+          'paper',
+          `Print job used ${sheetsUsed} sheet(s) from ${trayName}`,
+          {
+            jobID: result.jobID,
+            tray: trayName,
+            paperSize: normalizedSize,
+            pages: totalPages,
+            copies: numCopies,
+            sheets: sheetsUsed,
+          },
+        );
       } catch (paperError) {
         logger.warn('Failed to update paper tracking after print', { error: String(paperError) });
       }

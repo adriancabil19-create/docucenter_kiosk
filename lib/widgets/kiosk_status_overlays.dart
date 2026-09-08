@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config.dart';
 import '../kiosk_runtime_service.dart';
 
 /// Wraps the whole app UI and layers connectivity / maintenance state on top:
@@ -112,40 +113,137 @@ class _Banner extends StatelessWidget {
   }
 }
 
-class _MaintenanceOverlay extends StatelessWidget {
+/// Full-screen blocking maintenance screen — red, iconic, and deliberately
+/// plain so it reads as an official "out of service" notice.
+class _MaintenanceOverlay extends StatefulWidget {
   const _MaintenanceOverlay();
+
+  @override
+  State<_MaintenanceOverlay> createState() => _MaintenanceOverlayState();
+}
+
+class _MaintenanceOverlayState extends State<_MaintenanceOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: Material(
-        color: const Color(0xFF0F172A),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.build_circle_outlined, color: Colors.white, size: 72),
-                  const SizedBox(height: 24),
-                  Text(
-                    'DOCUCENTER is temporarily unavailable',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF7F1D1D), // red-900
+                Color(0xFFB91C1C), // red-700
+                Color(0xFF991B1B), // red-800
+              ],
+            ),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Icon badge
+                    Container(
+                      width: 132,
+                      height: 132,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2),
+                      ),
+                      child: const Icon(Icons.engineering_rounded, color: Colors.white, size: 68),
+                    ),
+                    const SizedBox(height: 32),
+                    const Text(
+                      'MAINTENANCE MODE',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 3,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'This kiosk is temporarily out of service while staff perform '
+                      'maintenance. We apologise for the inconvenience.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFFFEE2E2), // red-100
+                        fontSize: 16,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    // Live status pill
+                    FadeTransition(
+                      opacity: Tween<double>(begin: 0.35, end: 1).animate(_pulse),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(999),
                         ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'The kiosk is in maintenance mode. Please try again shortly or ask '
-                    'a staff member for assistance.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, height: 1.5),
-                  ),
-                ],
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.circle, color: Colors.white, size: 10),
+                            SizedBox(width: 10),
+                            Text(
+                              'Service will resume shortly',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    Divider(color: Colors.white.withValues(alpha: 0.2), height: 1),
+                    const SizedBox(height: 20),
+                    Text(
+                      'DOCUCENTER  ·  ${BackendConfig.kioskId}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.75),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'For assistance, please contact a staff member.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

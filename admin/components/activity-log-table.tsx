@@ -11,10 +11,11 @@ import {
   Chip,
   Select,
   SelectItem,
+  Button,
 } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { ActivityLog, LogLevel } from '@/lib/types';
-import { getLogs, type DateRange } from '@/lib/api';
+import { getLogs, clearLogs, type DateRange } from '@/lib/api';
 import { glassTableClassNames } from './table-styles';
 import { HistoryToolbar, fieldSelect } from './history-toolbar';
 
@@ -43,6 +44,8 @@ export function ActivityLogTable({ initialData }: Props) {
   const [range, setRange] = useState<DateRange>({});
   const [search, setSearch] = useState('');
   const [level, setLevel] = useState('all');
+  const [clearing, setClearing] = useState(false);
+  const [armClear, setArmClear] = useState(false);
 
   const refresh = useCallback(
     async (silent = false) => {
@@ -69,6 +72,29 @@ export function ActivityLogTable({ initialData }: Props) {
   useEffect(() => {
     refresh(true);
   }, [refresh]);
+
+  const handleClear = useCallback(async () => {
+    if (!armClear) {
+      setArmClear(true);
+      setTimeout(() => setArmClear(false), 4000);
+      return;
+    }
+    setArmClear(false);
+    setClearing(true);
+    try {
+      const res = await clearLogs();
+      setLogs([]);
+      addToast({
+        title: 'Logs cleared',
+        description: `${res.deleted} entr${res.deleted === 1 ? 'y' : 'ies'} deleted.`,
+        color: 'success',
+      });
+    } catch (err) {
+      addToast({ title: 'Clear failed', description: (err as Error).message, color: 'danger' });
+    } finally {
+      setClearing(false);
+    }
+  }, [armClear]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -116,6 +142,16 @@ export function ActivityLogTable({ initialData }: Props) {
             <SelectItem key={c}>{c === 'all' ? 'All categories' : c}</SelectItem>
           ))}
         </Select>
+        <Button
+          size="sm"
+          variant="flat"
+          color="danger"
+          className="w-full sm:w-auto"
+          isLoading={clearing}
+          onPress={handleClear}
+        >
+          {armClear ? 'Confirm — delete all logs?' : 'Clear all logs'}
+        </Button>
       </HistoryToolbar>
 
       <Table aria-label="Activity log" isStriped classNames={glassTableClassNames}>

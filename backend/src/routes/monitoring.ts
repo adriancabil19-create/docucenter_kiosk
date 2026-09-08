@@ -8,6 +8,7 @@ import {
   cancelTransactionById,
   getPaperTrays,
   insertLog,
+  clearActivityLogs,
 } from '../database';
 import { logger } from '../utils/logger';
 
@@ -99,6 +100,19 @@ router.get('/logs', async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     const error = err as Error;
     logger.error('Monitoring logs error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/** DELETE /api/monitoring/logs — wipe the activity log to reclaim space. */
+router.delete('/logs', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const deleted = await clearActivityLogs();
+    logger.info('Activity log cleared by admin', { deleted });
+    res.json({ success: true, deleted });
+  } catch (err) {
+    const error = err as Error;
+    logger.error('Clear logs error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 });

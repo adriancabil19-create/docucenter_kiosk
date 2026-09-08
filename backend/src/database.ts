@@ -602,6 +602,12 @@ export const getRecentLogs = async (limit = 50, range?: DateRange): Promise<Acti
   return toRows<ActivityLogRow>(result);
 };
 
+/** Wipe the activity log. Returns how many rows were removed. */
+export const clearActivityLogs = async (): Promise<number> => {
+  const result = await getDb().execute(`DELETE FROM activity_logs`);
+  return result.rowsAffected ?? 0;
+};
+
 // ─── Auto-cancel stale transactions ──────────────────────────────────────────
 
 export const cancelStalePendingTransactions = async (olderThanMinutes: number): Promise<string[]> => {
