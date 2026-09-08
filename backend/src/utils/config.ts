@@ -22,6 +22,25 @@ export const normalizeOrigin = (value: string | undefined | null): string => {
 const envFlag = (value: string | undefined): boolean =>
   (value || '').trim().replace(/^['"]+|['"]+$/g, '').trim().toLowerCase() === 'true';
 
+/** Read a string env var, tolerating surrounding quotes/whitespace. Returns fallback for empty. */
+const envStr = (value: string | undefined, fallback = ''): string => {
+  const cleaned = (value || '').trim().replace(/^['"]+|['"]+$/g, '').trim();
+  return cleaned || fallback;
+};
+
+/**
+ * Which role(s) this backend instance plays.
+ *  - 'kiosk' : runs on the physical kiosk. Sends heartbeats, polls for admin
+ *              commands, owns the document files, runs the retention purge.
+ *  - 'cloud' : the Railway instance. Receives sync + heartbeats, serves the
+ *              admin console, reaps offline kiosks.
+ *  - 'both'  : single-process dev / demo setup (default).
+ */
+export type InstanceRole = 'kiosk' | 'cloud' | 'both';
+const rawRole = envStr(process.env.INSTANCE_ROLE, 'both').toLowerCase();
+const instanceRole: InstanceRole =
+  rawRole === 'kiosk' || rawRole === 'cloud' ? (rawRole as InstanceRole) : 'both';
+
 export const config = {
   // Server
   env: process.env.NODE_ENV || 'development',
@@ -31,6 +50,17 @@ export const config = {
   dynamsoftLicense: process.env.DYNAMSOFT_LICENSE || '',
   adminApiToken: process.env.ADMIN_API_TOKEN || '',
   kioskApiToken: process.env.KIOSK_API_TOKEN || '',
+
+  // Fleet identity & role
+  instanceRole,
+  isKioskRole: instanceRole === 'kiosk' || instanceRole === 'both',
+  isCloudRole: instanceRole === 'cloud' || instanceRole === 'both',
+  kioskId: envStr(process.env.KIOSK_ID, 'DOCUCENTER-01'),
+  kioskLabel: envStr(process.env.KIOSK_LABEL, 'DocuCenter Kiosk 01'),
+  /** How often the kiosk emits a heartbeat / polls for commands (ms). */
+  heartbeatIntervalMs: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '20000', 10),
+  /** A kiosk with no heartbeat newer than this is considered OFFLINE (seconds). */
+  kioskOfflineAfterSeconds: parseInt(process.env.KIOSK_OFFLINE_AFTER_SECONDS || '60', 10),
   publicBaseUrl:
     process.env.PUBLIC_BASE_URL ||
     (process.env.NODE_ENV === 'production'

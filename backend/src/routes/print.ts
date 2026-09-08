@@ -11,7 +11,9 @@ import {
   printTestPage,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
-import { insertPrintJob } from '../database';
+import { insertPrintJob, getKioskById, getStorageSettings } from '../database';
+import { config } from '../utils/config';
+import { deleteDocument } from '../services/storage.service';
 import { PaperTrackerService } from '../services/paperTracker.service';
 import { PDFDocument as PDFLib } from 'pdf-lib';
 
@@ -183,11 +185,28 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { filenames, paperSize, colorMode, quality, copies } = req.body;
+    const { filenames, paperSize, colorMode, quality, copies, duplex, serviceType, unitPrice } =
+      req.body;
     const numCopies: number = Math.max(1, parseInt(String(copies ?? '1'), 10) || 1);
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
+      return;
+    }
+
+    // Server-side enforcement: admin may have disabled printing on this kiosk.
+    const selfKiosk = await getKioskById(config.kioskId);
+    if (selfKiosk?.printing_disabled || selfKiosk?.maintenance) {
+      logger.warn('Print request refused — kiosk locked', {
+        printingDisabled: selfKiosk?.printing_disabled,
+        maintenance: selfKiosk?.maintenance,
+      });
+      res.status(423).json({
+        success: false,
+        error: selfKiosk?.maintenance
+          ? 'Kiosk is in maintenance mode'
+          : 'Printing is temporarily disabled by the administrator',
+      });
       return;
     }
 
@@ -198,6 +217,11 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       colorMode,
       quality,
     });
+
+    // Page count is needed both for the job record and paper tracking — compute once.
+    const pageCounts = await Promise.all(filenames.map(countPages));
+    const totalPages = pageCounts.reduce((s: number, p: number) => s + p, 0);
+
     const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
 
     // Log to SQLite regardless of outcome
@@ -209,6 +233,11 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       status: result.success ? 'submitted' : 'failed',
       method: result.method,
       simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
+      page_count: totalPages,
+      color_mode: colorMode === 'color' ? 'color' : 'bw',
+      duplex: duplex === true || duplex === 'true',
+      unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
+      service_type: typeof serviceType === 'string' ? serviceType : 'printing',
     });
 
     if (result.success) {
@@ -220,11 +249,19 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
 
+      // Delete-after-print, if the retention policy asks for it.
+      try {
+        const { delete_after_print } = await getStorageSettings();
+        if (delete_after_print) {
+          for (const f of filenames as string[]) await deleteDocument(f);
+          logger.info('Deleted files after successful print', { count: filenames.length });
+        }
+      } catch (delErr) {
+        logger.warn('delete-after-print failed', { error: String(delErr) });
+      }
+
       // Decrement the correct tray: match by paper size, then by most paper available
       try {
-        // Sum actual page counts across all files
-        const pageCounts = await Promise.all(filenames.map(countPages));
-        const totalPages = pageCounts.reduce((s, p) => s + p, 0);
         const sheetsUsed = totalPages * numCopies;
 
         const normalizedSize = (paperSize ?? 'A4').toUpperCase();

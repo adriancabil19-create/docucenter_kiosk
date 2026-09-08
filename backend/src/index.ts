@@ -15,6 +15,10 @@ import scanRoutes from './routes/scan';
 import paperTrackerRoutes from './routes/paperTracker';
 import syncRoutes from './routes/sync';
 import transferRoutes from './routes/transfer';
+import fleetRoutes from './routes/fleet';
+import kioskRoutes from './routes/kiosk';
+import { startFleetAgent } from './services/fleet-agent.service';
+import { startRetentionJob } from './services/retention.service';
 import {
   corsMiddleware,
   securityHeadersMiddleware,
@@ -28,7 +32,12 @@ import {
   requireKioskApiToken,
   requireAdminOrKioskApiToken,
 } from './middleware/api-auth';
-import { cancelStalePendingTransactions, insertLog, initSchema } from './database';
+import {
+  cancelStalePendingTransactions,
+  insertLog,
+  initSchema,
+  ensureKiosk,
+} from './database';
 
 // Initialize Express app
 const app: Express = express();
@@ -118,6 +127,8 @@ app.use('/api/storage', requireKioskApiToken, storageRoutes);
 app.use('/api/monitoring', requireAdminApiToken, monitoringRoutes);
 app.use('/api/scan', requireKioskApiToken, scanRoutes);
 app.use('/api/paper-tracker', requireAdminOrKioskApiToken, paperTrackerRoutes);
+app.use('/api/fleet', requireAdminApiToken, fleetRoutes);
+app.use('/api/kiosk', requireKioskApiToken, kioskRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 
@@ -150,10 +161,16 @@ const PORT = config.port;
 
 // Initialize DB schema then start server
 initSchema()
-  .then(() => {
+  .then(async () => {
     logger.info('Database initialized', {
       url: process.env.DATABASE_PATH || 'docucenter.db',
     });
+
+    // Register this instance's own kiosk id, then start the fleet agent
+    // (heartbeat + command executor) and the retention purge job.
+    await ensureKiosk(config.kioskId, config.kioskLabel);
+    startFleetAgent();
+    startRetentionJob();
 
     const server = app.listen(PORT, () => {
       logger.info(`Server started`, {

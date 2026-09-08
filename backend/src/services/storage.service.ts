@@ -364,6 +364,79 @@ export const deleteDocument = (filename: string): Promise<StorageResult> => {
 };
 
 /**
+ * Delete every document (and its sidecar) from storage. Returns the count removed.
+ * Used by the admin "Delete All Files" action.
+ */
+export const deleteAllDocuments = (): Promise<{ success: boolean; deleted: number; error?: string }> => {
+  return new Promise((resolve) => {
+    try {
+      const uploadsDir = getUploadsDir();
+      const files = fs.readdirSync(uploadsDir);
+      let deleted = 0;
+      for (const filename of files) {
+        if (filename.endsWith('.meta.json')) continue;
+        try {
+          const filePath = path.join(uploadsDir, filename);
+          if (!fs.statSync(filePath).isFile()) continue;
+          fs.unlinkSync(filePath);
+          deleted += 1;
+          const fileUuid = path.basename(filename, path.extname(filename));
+          const mp = metaPath(uploadsDir, fileUuid);
+          if (fs.existsSync(mp)) fs.unlinkSync(mp);
+        } catch (e) {
+          logger.warn('deleteAllDocuments: skipped file', { filename, error: String(e) });
+        }
+      }
+      logger.info('All documents deleted', { deleted });
+      resolve({ success: true, deleted });
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Error deleting all documents', { error: err.message });
+      resolve({ success: false, deleted: 0, error: err.message });
+    }
+  });
+};
+
+/**
+ * Delete documents whose mtime is older than `retentionHours`. Server-side
+ * enforcement of the retention policy — runs on a timer on the kiosk-role
+ * backend regardless of whether the kiosk app deletes files itself.
+ */
+export const purgeExpiredDocuments = (
+  retentionHours: number,
+): Promise<{ success: boolean; deleted: number; error?: string }> => {
+  return new Promise((resolve) => {
+    try {
+      const uploadsDir = getUploadsDir();
+      const cutoff = Date.now() - Math.max(1, retentionHours) * 3600 * 1000;
+      const files = fs.readdirSync(uploadsDir);
+      let deleted = 0;
+      for (const filename of files) {
+        if (filename.endsWith('.meta.json')) continue;
+        try {
+          const filePath = path.join(uploadsDir, filename);
+          const stats = fs.statSync(filePath);
+          if (!stats.isFile() || stats.mtimeMs >= cutoff) continue;
+          fs.unlinkSync(filePath);
+          deleted += 1;
+          const fileUuid = path.basename(filename, path.extname(filename));
+          const mp = metaPath(uploadsDir, fileUuid);
+          if (fs.existsSync(mp)) fs.unlinkSync(mp);
+        } catch (e) {
+          logger.warn('purgeExpiredDocuments: skipped file', { filename, error: String(e) });
+        }
+      }
+      if (deleted > 0) logger.info('Expired documents purged', { deleted, retentionHours });
+      resolve({ success: true, deleted });
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Error purging expired documents', { error: err.message });
+      resolve({ success: false, deleted: 0, error: err.message });
+    }
+  });
+};
+
+/**
  * Get storage statistics (excludes sidecar files)
  */
 export const getStorageStats = (): Promise<{

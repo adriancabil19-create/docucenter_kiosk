@@ -15,7 +15,9 @@ export type SyncEventType =
   | 'transaction-status'
   | 'print-job'
   | 'paper-tray'
-  | 'log';
+  | 'log'
+  | 'incident'
+  | 'incident-resolve';
 
 let workerStarted = false;
 
