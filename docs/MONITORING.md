@@ -43,11 +43,13 @@ heartbeat (the heartbeat response carries `commands`), executes locally, and ACK
 |---|---|
 | `MAINTENANCE_ON` / `_OFF` | toggles `kiosks.maintenance`; the app shows a full-screen blocking panel |
 | `DISABLE_PRINTING` / `ENABLE_PRINTING` | toggles `kiosks.printing_disabled`; `/api/print/from-storage` returns **423** while set |
-| `RESTART_PRINTER` | `Restart-Service Spooler` |
-| `RESTART_APP` | logs intent; the OS watchdog performs the actual relaunch |
+| `RESTART_PRINTER` | `Restart-Service Spooler -Force` — **needs the backend to run as administrator**; the ACK carries the failure reason if it can't |
+| `RESTART_APP` | `taskkill /F /IM <KIOSK_PROCESS_NAME>.exe` — the `start-kiosk.bat` loop or `kiosk-watchdog.ps1` then relaunches it. With no supervisor running it just closes the app. |
 
 Flag commands also update the roster row immediately so the console reflects
-intent without waiting for the ACK.
+intent without waiting for the ACK. Between heartbeats the agent still polls for
+commands every ~5 s, so admin actions land quickly. Each command's outcome is
+recorded on `kiosk_commands.result` (visible in `GET /api/fleet/kiosks/:id`).
 
 ## 3. Incidents (Alerts)
 

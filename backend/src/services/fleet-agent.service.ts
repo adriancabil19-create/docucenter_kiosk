@@ -34,19 +34,44 @@ const KIOSK_ID = config.kioskId;
 let started = false;
 let lastPrinterState = 'UNKNOWN';
 
-/** Best-effort printer probe (Windows). Never throws. */
+const KIOSK_PROCESS = (process.env.KIOSK_PROCESS_NAME || 'web_doc').replace(/\.exe$/i, '');
+
+// Printer probe is expensive (spawns PowerShell) — cache it and only re-probe
+// once a minute so it doesn't contend with itself and flap.
+let printerProbeAt = 0;
+let printerProbeValue = 'UNKNOWN';
+
+/**
+ * Best-effort printer probe (Windows). Never throws, never flaps to UNKNOWN on a
+ * transient failure — the last known state is kept until a probe succeeds.
+ */
 const probePrinterState = (): string => {
   if (os.platform() !== 'win32') return 'UNKNOWN';
+
+  const now = Date.now();
+  if (now - printerProbeAt < 55_000) return printerProbeValue;
+  printerProbeAt = now;
+
   try {
     const out = execSync(
-      'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
-      { encoding: 'utf8', timeout: 5000, windowsHide: true },
+      'powershell -NoProfile -Command "Get-CimInstance -ClassName Win32_Printer | ' +
+        'Select-Object -ExpandProperty Name"',
+      { encoding: 'utf8', timeout: 12000, windowsHide: true },
     );
     const names = out.split('\n').map((s) => s.trim()).filter(Boolean);
-    const real = names.filter((n) => !/pdf|xps|fax|onenote|microsoft/i.test(n));
-    return real.length > 0 ? 'READY' : 'OFFLINE';
+    const configured = config.print.printerName.trim().toLowerCase();
+    const configuredPresent =
+      !!configured &&
+      names.some(
+        (n) => n.toLowerCase().includes(configured) || configured.includes(n.toLowerCase()),
+      );
+    const realPrinters = names.filter((n) => !/pdf|xps|fax|onenote|microsoft print/i.test(n));
+
+    printerProbeValue = configuredPresent || realPrinters.length > 0 ? 'READY' : 'OFFLINE';
+    return printerProbeValue;
   } catch {
-    return 'UNKNOWN';
+    // Timeout / PowerShell contention — keep whatever we last knew.
+    return printerProbeValue;
   }
 };
 
@@ -104,12 +129,43 @@ const ackRemote = async (id: string, ok: boolean, result: string): Promise<void>
 
 const restartPrintSpooler = (): string => {
   if (os.platform() !== 'win32') return 'skipped (non-Windows)';
-  execSync('powershell -NoProfile -Command "Restart-Service -Name Spooler -Force"', {
-    encoding: 'utf8',
-    timeout: 15000,
-    windowsHide: true,
-  });
-  return 'print spooler restarted';
+  try {
+    execSync('powershell -NoProfile -Command "Restart-Service -Name Spooler -Force"', {
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true,
+    });
+    return 'print spooler restarted';
+  } catch (err) {
+    // Restarting a service needs elevation; a non-admin backend can't do it.
+    throw new Error(
+      `could not restart spooler — run the backend as administrator (${String(err).slice(0, 160)})`,
+    );
+  }
+};
+
+/**
+ * Kill the kiosk app process so the supervisor (start-kiosk.bat loop /
+ * kiosk-watchdog.ps1) relaunches it. With no supervisor running this simply
+ * closes the app.
+ */
+const killKioskApp = (): string => {
+  if (os.platform() !== 'win32') return 'skipped (non-Windows)';
+  try {
+    execSync(`taskkill /F /IM ${KIOSK_PROCESS}.exe /T`, {
+      encoding: 'utf8',
+      timeout: 10000,
+      windowsHide: true,
+    });
+    return `killed ${KIOSK_PROCESS}.exe — supervisor will relaunch it`;
+  } catch (err) {
+    const msg = String(err);
+    // taskkill exits non-zero when the process isn't running.
+    if (/not found|128/i.test(msg)) {
+      return `${KIOSK_PROCESS}.exe was not running — supervisor will start it`;
+    }
+    throw new Error(`taskkill failed: ${msg.slice(0, 160)}`);
+  }
 };
 
 const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
@@ -137,15 +193,13 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         result = restartPrintSpooler();
         break;
       case 'RESTART_APP':
-        // The OS watchdog owns the actual relaunch. Record the intent so the
-        // recovery incident on next boot has context.
-        result = 'restart requested — handled by kiosk watchdog';
+        result = killKioskApp();
         await insertIncident({
           kiosk_id: KIOSK_ID,
           device: 'app',
           error_code: 'RESTART_REQUESTED',
           severity: 'info',
-          message: 'Admin requested a kiosk application restart',
+          message: `Admin requested a kiosk application restart (${result})`,
         });
         break;
       default:
@@ -160,40 +214,70 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
   }
 };
 
-const tick = async (): Promise<void> => {
+const applyReply = async (reply: DownlinkReply): Promise<void> => {
+  const storage = reply.settings?.storage;
+  if (storage) {
+    const current = await getStorageSettings();
+    if (
+      current.delete_after_print !== storage.delete_after_print ||
+      current.retention_hours !== storage.retention_hours
+    ) {
+      await updateStorageSettings(storage);
+      logger.info('Fleet agent: storage settings applied', storage);
+    }
+  }
+  for (const cmd of reply.commands ?? []) {
+    await executeCommand(cmd);
+  }
+};
+
+/** Full heartbeat + command drain — on the heartbeat interval. */
+const heartbeatTick = async (): Promise<void> => {
   try {
-    const reply = await sendHeartbeat();
-
-    const storage = reply.settings?.storage;
-    if (storage) {
-      const current = await getStorageSettings();
-      if (
-        current.delete_after_print !== storage.delete_after_print ||
-        current.retention_hours !== storage.retention_hours
-      ) {
-        await updateStorageSettings(storage);
-        logger.info('Fleet agent: storage settings applied', storage);
-      }
-    }
-
-    for (const cmd of reply.commands ?? []) {
-      await executeCommand(cmd);
-    }
+    await applyReply(await sendHeartbeat());
   } catch (err) {
     logger.warn('Fleet agent: heartbeat tick failed', { error: String(err) });
+  }
+};
+
+/** Lightweight command-only poll between heartbeats, so admin actions land fast. */
+const commandTick = async (): Promise<void> => {
+  try {
+    if (cloudMode) {
+      const res = await fetch(
+        `${SYNC_URL}/api/sync/commands?kiosk_id=${encodeURIComponent(KIOSK_ID)}`,
+        {
+          headers: { 'X-Sync-Secret': SYNC_SECRET },
+          signal: AbortSignal.timeout(8000),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await applyReply((await res.json()) as DownlinkReply);
+    } else {
+      const [commands, storage] = await Promise.all([
+        claimPendingCommands(KIOSK_ID),
+        getStorageSettings(),
+      ]);
+      await applyReply({ commands, settings: { storage } });
+    }
+  } catch (err) {
+    logger.warn('Fleet agent: command tick failed', { error: String(err) });
   }
 };
 
 export const startFleetAgent = (): void => {
   if (started || !config.isKioskRole) return;
   started = true;
+  const cmdIntervalMs = Math.min(5000, config.heartbeatIntervalMs);
   logger.info('Fleet agent started', {
     kioskId: KIOSK_ID,
-    intervalMs: config.heartbeatIntervalMs,
+    heartbeatMs: config.heartbeatIntervalMs,
+    commandPollMs: cmdIntervalMs,
     transport: cloudMode ? 'cloud-http' : 'local-db',
   });
-  void tick();
-  setInterval(() => void tick(), config.heartbeatIntervalMs);
+  void heartbeatTick();
+  setInterval(() => void heartbeatTick(), config.heartbeatIntervalMs);
+  setInterval(() => void commandTick(), cmdIntervalMs);
 };
 
 export const currentPrinterState = (): string => lastPrinterState;

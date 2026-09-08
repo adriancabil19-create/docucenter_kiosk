@@ -14,6 +14,7 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
   const [retentionHours, setRetentionHours] = useState(String(initial?.retention_hours ?? 24));
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<'purge' | 'deleteAll' | null>(null);
+  const [armDeleteAll, setArmDeleteAll] = useState(false);
 
   const save = async () => {
     const hours = parseInt(retentionHours, 10);
@@ -50,7 +51,12 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
   };
 
   const runDeleteAll = async () => {
-    if (!window.confirm('Delete ALL stored documents on the kiosk? This cannot be undone.')) return;
+    if (!armDeleteAll) {
+      setArmDeleteAll(true);
+      setTimeout(() => setArmDeleteAll(false), 4000);
+      return;
+    }
+    setArmDeleteAll(false);
     setBusy('deleteAll');
     try {
       const res = await deleteAllStorage();
@@ -100,8 +106,14 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
         <Button size="sm" variant="flat" onPress={runPurge} isLoading={busy === 'purge'}>
           Purge expired now
         </Button>
-        <Button size="sm" variant="flat" color="danger" onPress={runDeleteAll} isLoading={busy === 'deleteAll'}>
-          Delete all files
+        <Button
+          size="sm"
+          variant="flat"
+          color="danger"
+          onPress={runDeleteAll}
+          isLoading={busy === 'deleteAll'}
+        >
+          {armDeleteAll ? 'Confirm — delete everything?' : 'Delete all files'}
         </Button>
       </div>
     </div>

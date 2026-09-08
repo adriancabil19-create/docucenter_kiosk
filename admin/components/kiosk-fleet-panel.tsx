@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button, addToast } from '@heroui/react';
 import type { Kiosk, KioskCommandName } from '@/lib/types';
 import { getKiosks, sendKioskCommand } from '@/lib/api';
@@ -43,21 +43,74 @@ function DeviceChip({ label, state }: { label: string; state: string }) {
   );
 }
 
-function KioskCard({
-  kiosk,
-  onDone,
+/**
+ * Command button with an inline two-step confirm for the disruptive actions —
+ * first click arms it (relabels to "Confirm?"), second click within 4s fires.
+ * Avoids window.confirm(), which some embedded/hardened browsers suppress.
+ */
+function CmdButton({
+  label,
+  confirmLabel,
+  command,
+  color,
+  busy,
+  onRun,
 }: {
-  kiosk: Kiosk;
-  onDone: () => void;
+  label: string;
+  confirmLabel?: string;
+  command: KioskCommandName;
+  color?: 'default' | 'primary' | 'success' | 'warning' | 'danger';
+  busy: KioskCommandName | null;
+  onRun: (command: KioskCommandName) => void;
 }) {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const disarm = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    setArmed(false);
+  };
+
+  const handle = () => {
+    if (!confirmLabel) {
+      onRun(command);
+      return;
+    }
+    if (armed) {
+      disarm();
+      onRun(command);
+    } else {
+      setArmed(true);
+      timer.current = setTimeout(() => setArmed(false), 4000);
+    }
+  };
+
+  return (
+    <Button
+      size="sm"
+      variant="flat"
+      color={armed ? 'danger' : color ?? 'default'}
+      isLoading={busy === command}
+      onPress={handle}
+    >
+      {armed ? (confirmLabel ?? `Confirm ${label}?`) : label}
+    </Button>
+  );
+}
+
+function KioskCard({ kiosk, onDone }: { kiosk: Kiosk; onDone: () => void }) {
   const [busy, setBusy] = useState<KioskCommandName | null>(null);
 
-  const run = async (command: KioskCommandName, confirmMsg?: string) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+  const run = async (command: KioskCommandName) => {
     setBusy(command);
     try {
       await sendKioskCommand(kiosk.kiosk_id, command);
-      addToast({ title: 'Command queued', description: `${command} → ${kiosk.kiosk_id}`, color: 'success' });
+      addToast({
+        title: 'Command sent',
+        description: `${command} → ${kiosk.kiosk_id}. Applies on the kiosk's next poll (~5s).`,
+        color: 'success',
+      });
       onDone();
     } catch (err) {
       addToast({ title: 'Command failed', description: (err as Error).message, color: 'danger' });
@@ -85,6 +138,11 @@ function KioskCard({
       <div className="mt-3 flex flex-wrap gap-2">
         <DeviceChip label="Printer" state={kiosk.printer_state} />
         <DeviceChip label="Scanner" state={kiosk.scanner_state} />
+        {kiosk.maintenance && (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
+            Maintenance
+          </span>
+        )}
         {kiosk.printing_disabled && (
           <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-700">
             Printing disabled
@@ -99,35 +157,37 @@ function KioskCard({
 
       <div className="mt-4 flex flex-wrap gap-2">
         {kiosk.maintenance ? (
-          <Button size="sm" color="success" variant="flat" isLoading={busy === 'MAINTENANCE_OFF'}
-            onPress={() => run('MAINTENANCE_OFF')}>
-            End maintenance
-          </Button>
+          <CmdButton label="End maintenance" command="MAINTENANCE_OFF" color="success" busy={busy} onRun={run} />
         ) : (
-          <Button size="sm" color="warning" variant="flat" isLoading={busy === 'MAINTENANCE_ON'}
-            onPress={() => run('MAINTENANCE_ON', 'Put this kiosk into maintenance mode? Customers will not be able to start transactions.')}>
-            Maintenance mode
-          </Button>
+          <CmdButton
+            label="Maintenance mode"
+            confirmLabel="Confirm — block customers?"
+            command="MAINTENANCE_ON"
+            color="warning"
+            busy={busy}
+            onRun={run}
+          />
         )}
         {kiosk.printing_disabled ? (
-          <Button size="sm" variant="flat" isLoading={busy === 'ENABLE_PRINTING'}
-            onPress={() => run('ENABLE_PRINTING')}>
-            Enable printing
-          </Button>
+          <CmdButton label="Enable printing" command="ENABLE_PRINTING" busy={busy} onRun={run} />
         ) : (
-          <Button size="sm" variant="flat" isLoading={busy === 'DISABLE_PRINTING'}
-            onPress={() => run('DISABLE_PRINTING')}>
-            Disable printing
-          </Button>
+          <CmdButton label="Disable printing" command="DISABLE_PRINTING" busy={busy} onRun={run} />
         )}
-        <Button size="sm" variant="flat" isLoading={busy === 'RESTART_PRINTER'}
-          onPress={() => run('RESTART_PRINTER', 'Restart the print spooler on this kiosk?')}>
-          Restart printer
-        </Button>
-        <Button size="sm" color="danger" variant="flat" isLoading={busy === 'RESTART_APP'}
-          onPress={() => run('RESTART_APP', 'Request a restart of the kiosk application?')}>
-          Restart app
-        </Button>
+        <CmdButton
+          label="Restart printer"
+          confirmLabel="Confirm restart printer?"
+          command="RESTART_PRINTER"
+          busy={busy}
+          onRun={run}
+        />
+        <CmdButton
+          label="Restart app"
+          confirmLabel="Confirm restart app?"
+          command="RESTART_APP"
+          color="danger"
+          busy={busy}
+          onRun={run}
+        />
       </div>
     </div>
   );
