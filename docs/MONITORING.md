@@ -80,7 +80,7 @@ now pass those fields.
 
 Admin **Analytics** page (`/analytics`), range today / 7 d / 30 d / all.
 
-## 5. Storage retention
+## 5. Storage retention & metadata
 
 Singleton `storage_settings` (`delete_after_print`, `retention_hours`).
 
@@ -90,6 +90,22 @@ Singleton `storage_settings` (`delete_after_print`, `retention_hours`).
 - `delete_after_print` is honoured in `/api/print/from-storage` after a
   successful job.
 - Manual actions: **Purge expired now**, **Delete all files**.
+
+**Metadata only reaches the cloud.** When a file is uploaded on a kiosk,
+`storage.service` writes a row to `storage_documents` (name, format, pages,
+`size_bytes`, mime) and forwards it via the outbox (`storage-doc` /
+`storage-doc-delete`). The **bytes never leave the kiosk.** The admin Storage
+table reads `GET /api/fleet/storage-documents` — so it works against the cloud
+backend, which holds no files. Deletes/purges write tombstones
+(`deleted_at`), pruned after 30 days.
+
+## 8. DB housekeeping
+
+`maintenance.service.ts` runs on every role, every 6 h (`pruneOldRows`):
+`activity_logs` 30 d, sent `sync_outbox` 2 d, `sync_received_events` 7 d,
+finished `kiosk_commands` 7 d, document tombstones 30 d, resolved `incidents`
+60 d. The request logger also stops logging successful health / heartbeat /
+command-poll / nav-summary calls so hosted log drains stay cheap.
 
 ## 6. Offline resilience (kiosk app)
 

@@ -151,6 +151,22 @@ export const initSchema = async (): Promise<void> => {
       updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- Metadata ONLY for documents uploaded on a kiosk. The file bytes never
+    -- leave the kiosk — this is what the admin console lists.
+    CREATE TABLE IF NOT EXISTS storage_documents (
+      id            TEXT PRIMARY KEY,
+      kiosk_id      TEXT NOT NULL DEFAULT 'DOCUCENTER-01',
+      name          TEXT NOT NULL,
+      original_name TEXT,
+      format        TEXT,
+      pages         INTEGER NOT NULL DEFAULT 1,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      size_label    TEXT,
+      mime_type     TEXT,
+      created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      deleted_at    TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
@@ -159,6 +175,7 @@ export const initSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending  ON sync_outbox(status, next_attempt_at, created_at);
     CREATE INDEX IF NOT EXISTS idx_incidents_status     ON incidents(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_commands_pending     ON kiosk_commands(kiosk_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_storage_docs_live    ON storage_documents(deleted_at, created_at);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -992,6 +1009,137 @@ export const updateStorageSettings = async (patch: {
     },
   });
   return getStorageSettings();
+};
+
+// ─── Storage document metadata (bytes stay on the kiosk) ─────────────────────
+
+export interface StorageDocMeta {
+  id: string;
+  kiosk_id: string;
+  name: string;
+  original_name: string | null;
+  format: string | null;
+  pages: number;
+  size_bytes: number;
+  size_label: string | null;
+  mime_type: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface StorageDocMetaInput {
+  id: string;
+  kiosk_id?: string;
+  name: string;
+  original_name?: string;
+  format?: string;
+  pages?: number;
+  size_bytes?: number;
+  size_label?: string;
+  mime_type?: string;
+  created_at?: string;
+}
+
+/** Upsert one document's metadata locally and forward it to the cloud. */
+export const upsertStorageDocMeta = async (doc: StorageDocMetaInput): Promise<void> => {
+  try {
+    await getDb().execute({
+      sql: `INSERT INTO storage_documents
+              (id, kiosk_id, name, original_name, format, pages, size_bytes, size_label, mime_type, created_at, deleted_at)
+            VALUES
+              (@id, @kiosk_id, @name, @original_name, @format, @pages, @size_bytes, @size_label, @mime_type,
+               COALESCE(@created_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), NULL)
+            ON CONFLICT(id) DO UPDATE SET
+              name = @name, original_name = @original_name, format = @format,
+              pages = @pages, size_bytes = @size_bytes, size_label = @size_label,
+              mime_type = @mime_type, deleted_at = NULL`,
+      args: {
+        id: doc.id,
+        kiosk_id: doc.kiosk_id ?? 'DOCUCENTER-01',
+        name: doc.name,
+        original_name: doc.original_name ?? null,
+        format: doc.format ?? null,
+        pages: Math.max(1, Math.trunc(doc.pages ?? 1)),
+        size_bytes: Math.max(0, Math.trunc(doc.size_bytes ?? 0)),
+        size_label: doc.size_label ?? null,
+        mime_type: doc.mime_type ?? null,
+        created_at: doc.created_at ?? null,
+      },
+    });
+    syncEvent('storage-doc', doc);
+  } catch (err) {
+    logger.warn('Failed to upsert storage doc meta', { id: doc.id, error: String(err) });
+  }
+};
+
+/** Mark a document's metadata deleted (kept as a tombstone, not removed). */
+export const softDeleteStorageDocMeta = async (id: string, forward = true): Promise<void> => {
+  try {
+    await getDb().execute({
+      sql: `UPDATE storage_documents
+            SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE id = @id AND deleted_at IS NULL`,
+      args: { id },
+    });
+    if (forward) syncEvent('storage-doc-delete', { id });
+  } catch (err) {
+    logger.warn('Failed to soft-delete storage doc meta', { id, error: String(err) });
+  }
+};
+
+export const getStorageDocMetas = async (
+  opts: { includeDeleted?: boolean; limit?: number } = {},
+): Promise<StorageDocMeta[]> => {
+  const limit = Math.min(opts.limit ?? 500, 2000);
+  const where = opts.includeDeleted ? '' : ' WHERE deleted_at IS NULL';
+  const result = await getDb().execute({
+    sql: `SELECT * FROM storage_documents${where} ORDER BY created_at DESC LIMIT @limit`,
+    args: { limit },
+  });
+  return toRows<Record<string, unknown>>(result).map((r) => ({
+    id: String(r.id),
+    kiosk_id: String(r.kiosk_id),
+    name: String(r.name),
+    original_name: (r.original_name as string) ?? null,
+    format: (r.format as string) ?? null,
+    pages: Number(r.pages ?? 1),
+    size_bytes: Number(r.size_bytes ?? 0),
+    size_label: (r.size_label as string) ?? null,
+    mime_type: (r.mime_type as string) ?? null,
+    created_at: String(r.created_at),
+    deleted_at: (r.deleted_at as string) ?? null,
+  }));
+};
+
+// ─── Housekeeping: keep the DB small on the free tier ────────────────────────
+
+/** Delete old rows from the churny tables. Safe to run often. Returns counts. */
+export const pruneOldRows = async (): Promise<Record<string, number>> => {
+  const db = getDb();
+  const runs: Array<[string, string]> = [
+    // Activity logs: keep 30 days.
+    ['activity_logs', `DELETE FROM activity_logs WHERE created_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`],
+    // Sent sync events: keep 2 days.
+    ['sync_outbox', `DELETE FROM sync_outbox WHERE status = 'sent' AND sent_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 days')`],
+    // Idempotency ledger: keep 7 days.
+    ['sync_received_events', `DELETE FROM sync_received_events WHERE received_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
+    // Finished commands: keep 7 days.
+    ['kiosk_commands', `DELETE FROM kiosk_commands WHERE status IN ('acked','failed') AND acked_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
+    // Deleted-document tombstones: keep 30 days.
+    ['storage_documents', `DELETE FROM storage_documents WHERE deleted_at IS NOT NULL AND deleted_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`],
+    // Resolved incidents: keep 60 days.
+    ['incidents', `DELETE FROM incidents WHERE status = 'resolved' AND resolved_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-60 days')`],
+  ];
+  const counts: Record<string, number> = {};
+  for (const [table, sql] of runs) {
+    try {
+      const res = await db.execute(sql);
+      counts[table] = res.rowsAffected ?? 0;
+    } catch (err) {
+      logger.warn('pruneOldRows failed for a table', { table, error: String(err) });
+    }
+  }
+  return counts;
 };
 
 // ─── Analytics aggregation ───────────────────────────────────────────────────

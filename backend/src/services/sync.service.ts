@@ -17,7 +17,9 @@ export type SyncEventType =
   | 'paper-tray'
   | 'log'
   | 'incident'
-  | 'incident-resolve';
+  | 'incident-resolve'
+  | 'storage-doc'
+  | 'storage-doc-delete';
 
 let workerStarted = false;
 

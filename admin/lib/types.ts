@@ -178,6 +178,21 @@ export interface StorageSettings {
   updated_at: string;
 }
 
+/** Document metadata synced from a kiosk — the file bytes stay on the kiosk. */
+export interface StorageDocMeta {
+  id: string;
+  kiosk_id: string;
+  name: string;
+  original_name: string | null;
+  format: string | null;
+  pages: number;
+  size_bytes: number;
+  size_label: string | null;
+  mime_type: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
 // ─── Analytics ────────────────────────────────────────────────────────────────
 
 export interface Analytics {
@@ -283,6 +298,12 @@ export interface IncidentsResponse {
 export interface StorageSettingsResponse {
   success: boolean;
   settings: StorageSettings;
+}
+
+export interface StorageDocumentsResponse {
+  success: boolean;
+  documents: StorageDocMeta[];
+  count: number;
 }
 
 export interface AnalyticsResponse {

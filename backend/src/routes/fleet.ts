@@ -20,6 +20,7 @@ import {
   getOpenIncidentCount,
   getStorageSettings,
   updateStorageSettings,
+  getStorageDocMetas,
   getAnalytics,
   insertLog,
   type KioskCommandName,
@@ -184,6 +185,18 @@ router.put('/storage-settings', async (req: Request, res: Response): Promise<voi
     await insertLog('info', 'storage', 'Retention policy updated by admin', { ...settings });
     res.json({ success: true, settings });
   } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.get('/storage-documents', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const includeDeleted = req.query.includeDeleted === 'true';
+    const limit = Math.min(parseInt(String(req.query.limit ?? '500'), 10) || 500, 2000);
+    const documents = await getStorageDocMetas({ includeDeleted, limit });
+    res.json({ success: true, documents, count: documents.length });
+  } catch (err) {
+    logger.error('Fleet: storage-documents failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

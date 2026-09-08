@@ -81,15 +81,30 @@ export const securityHeadersMiddleware = (
 };
 
 /**
- * Request logging middleware
+ * Request logging middleware.
+ *
+ * High-frequency machine endpoints (health, heartbeat, the ~5 s command poll,
+ * admin nav-summary polling) are logged only when they fail — otherwise they
+ * bury the useful lines and, on a hosted log drain, cost money.
  */
+const QUIET_WHEN_OK = [
+  '/health',
+  '/api/sync/heartbeat',
+  '/api/sync/commands',
+  '/api/fleet/summary',
+  '/api/kiosk/self',
+];
+
 export const requestLoggingMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
 
   res.on('finish', () => {
+    const ok = res.statusCode < 400;
+    if (ok && QUIET_WHEN_OK.some((p) => req.path === p || req.path.startsWith(`${p}/`))) return;
+
     const duration = Date.now() - start;
-    const level = res.statusCode >= 400 ? 'warn' : 'info';
-    logger[level as 'warn' | 'info'](`${req.method} ${req.path}`, {
+    const level = ok ? 'info' : 'warn';
+    logger[level](`${req.method} ${req.path}`, {
       status: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,

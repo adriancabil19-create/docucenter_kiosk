@@ -19,6 +19,7 @@ import fleetRoutes from './routes/fleet';
 import kioskRoutes from './routes/kiosk';
 import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
+import { startMaintenanceJob } from './services/maintenance.service';
 import {
   corsMiddleware,
   securityHeadersMiddleware,
@@ -171,6 +172,7 @@ initSchema()
     await ensureKiosk(config.kioskId, config.kioskLabel);
     startFleetAgent();
     startRetentionJob();
+    startMaintenanceJob();
 
     const server = app.listen(PORT, () => {
       logger.info(`Server started`, {

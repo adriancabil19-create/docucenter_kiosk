@@ -20,8 +20,11 @@ import {
   claimPendingCommands,
   ackCommand,
   getStorageSettings,
+  upsertStorageDocMeta,
+  softDeleteStorageDocMeta,
   TransactionRow,
   PrintJobRow,
+  StorageDocMetaInput,
 } from '../database';
 import { getDb } from '../database';
 
@@ -197,6 +200,39 @@ router.post('/incident', async (req: Request, res: Response): Promise<void> => {
     res.json({ success: true, id });
   } catch (err) {
     logger.warn('Sync: incident failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/storage-doc', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const doc = req.body as StorageDocMetaInput;
+    if (!doc?.id || !doc?.name) {
+      res.status(400).json({ success: false, error: 'id and name required' });
+      return;
+    }
+    await upsertStorageDocMeta({ ...doc });
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: storage-doc failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/storage-doc-delete', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id } = req.body as { id?: string };
+    if (!id) {
+      res.status(400).json({ success: false, error: 'id required' });
+      return;
+    }
+    // forward = false: this instance is the cloud endpoint, nothing downstream.
+    await softDeleteStorageDocMeta(id, false);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: storage-doc-delete failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

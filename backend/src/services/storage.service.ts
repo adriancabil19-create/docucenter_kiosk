@@ -3,6 +3,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
+import { upsertStorageDocMeta, softDeleteStorageDocMeta } from '../database';
 
 interface StorageDocument {
   id: string;
@@ -183,6 +184,19 @@ export const saveFile = (
         pages: document.pages,
       });
 
+      // Sync metadata only — bytes stay on this machine.
+      void upsertStorageDocMeta({
+        id: fileUuid,
+        kiosk_id: config.kioskId,
+        name: filename,
+        original_name: originalFileName,
+        format: document.format,
+        pages: document.pages,
+        size_bytes: fileBuffer.length,
+        size_label: document.size,
+        mime_type: mimeType,
+      });
+
       resolve({ success: true, data: document });
     } catch (error) {
       const err = error as Error;
@@ -352,6 +366,7 @@ export const deleteDocument = (filename: string): Promise<StorageResult> => {
         }
       }
 
+      void softDeleteStorageDocMeta(fileUuid);
       logger.info('Document deleted', { filename });
 
       resolve({ success: true });
@@ -383,6 +398,7 @@ export const deleteAllDocuments = (): Promise<{ success: boolean; deleted: numbe
           const fileUuid = path.basename(filename, path.extname(filename));
           const mp = metaPath(uploadsDir, fileUuid);
           if (fs.existsSync(mp)) fs.unlinkSync(mp);
+          void softDeleteStorageDocMeta(fileUuid);
         } catch (e) {
           logger.warn('deleteAllDocuments: skipped file', { filename, error: String(e) });
         }
@@ -422,6 +438,7 @@ export const purgeExpiredDocuments = (
           const fileUuid = path.basename(filename, path.extname(filename));
           const mp = metaPath(uploadsDir, fileUuid);
           if (fs.existsSync(mp)) fs.unlinkSync(mp);
+          void softDeleteStorageDocMeta(fileUuid);
         } catch (e) {
           logger.warn('purgeExpiredDocuments: skipped file', { filename, error: String(e) });
         }
