@@ -70,7 +70,7 @@ function Row({ incident, onResolved }: { incident: Incident; onResolved: () => v
 export function IncidentsPanel({ initial }: { initial: Incident[] | null }) {
   const [tab, setTab] = useState<'open' | 'resolved'>('open');
   const fetcher = useMemo(() => () => getIncidents(tab, 150).then((r) => r.incidents), [tab]);
-  const { data, error, loading, refresh, updatedAt } = usePoll<Incident[]>(fetcher, 12000, initial);
+  const { data, error, loading, refresh, updatedAt } = usePoll<Incident[]>(fetcher, 20000, initial);
   const incidents = data ?? initial ?? [];
 
   return (

@@ -38,7 +38,7 @@ class BackendConfig {
   static const String kioskIncidentUrl = '$serverUrl/api/kiosk/incidents';
 
   /// How often the app polls its runtime flags / connectivity.
-  static const Duration kioskRuntimePollInterval = Duration(seconds: 10);
+  static const Duration kioskRuntimePollInterval = Duration(seconds: 15);
 
     /// Upload endpoint on the Railway transfer relay (kiosk → phone)
     static const String transferUploadUrl = '$railwayUrl/api/transfer/upload';

@@ -35,7 +35,7 @@ export function NavSidebar() {
     load();
     const t = setInterval(() => {
       if (document.visibilityState === 'visible') load();
-    }, 15000);
+    }, 30000);
     return () => {
       alive = false;
       clearInterval(t);

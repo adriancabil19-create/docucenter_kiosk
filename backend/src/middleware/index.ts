@@ -4,15 +4,31 @@ import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 
 /**
- * Rate limiting middleware
+ * Rate limiting middleware.
+ *
+ * The limiter exists to protect the public / payment surface. It is skipped for:
+ *  - the health check,
+ *  - loopback traffic (kiosk app ⇄ local backend, fleet agent ⇄ localhost),
+ *  - machine-to-machine and admin monitoring endpoints, which carry their own
+ *    auth (X-Sync-Secret, kiosk token, admin bearer) and are polled on a timer.
+ * Without these exemptions the ~10–20 s poll loops trip the global 100-req
+ * window within a minute or two.
  */
+const RATE_LIMIT_EXEMPT_PREFIXES = ['/api/sync/', '/api/kiosk/', '/api/fleet/', '/api/monitoring/'];
+
+const isLoopback = (ip: string | undefined): boolean =>
+  ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+
 export const rateLimitMiddleware = rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMaxRequests,
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req: any) => req.path === '/health',
+  skip: (req: any) =>
+    req.path === '/health' ||
+    isLoopback(req.ip) ||
+    RATE_LIMIT_EXEMPT_PREFIXES.some((p) => req.path.startsWith(p)),
   handler: (req: any, res: any) => {
     logger.warn('Rate limit exceeded', { ip: req.ip, path: req.path });
     res.status(429).json({

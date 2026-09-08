@@ -76,7 +76,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function AnalyticsPanel({ initial }: { initial: Analytics | null }) {
   const [rangeKey, setRangeKey] = useState<RangeKey>('30d');
   const fetcher = useMemo(() => () => getAnalytics(rangeFor(rangeKey)).then((r) => r.analytics), [rangeKey]);
-  const { data, error, loading, refresh, updatedAt } = usePoll<Analytics>(fetcher, 30000, initial);
+  const { data, error, loading, refresh, updatedAt } = usePoll<Analytics>(fetcher, 45000, initial);
 
   const a = data ?? initial;
 

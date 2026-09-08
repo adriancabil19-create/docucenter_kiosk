@@ -135,7 +135,7 @@ function KioskCard({
 
 export function KioskFleetPanel({ initial }: { initial: Kiosk[] | null }) {
   const fetcher = useMemo(() => () => getKiosks().then((r) => r.kiosks), []);
-  const { data, error, loading, refresh, updatedAt } = usePoll<Kiosk[]>(fetcher, 8000, initial);
+  const { data, error, loading, refresh, updatedAt } = usePoll<Kiosk[]>(fetcher, 15000, initial);
   const kiosks = data ?? initial ?? [];
 
   return (
