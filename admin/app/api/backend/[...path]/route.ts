@@ -6,7 +6,12 @@ import { backendFetch } from '@/lib/backend';
 // backend URL or the admin bearer token — this handler adds them server-side
 // after checking the admin session. Only the paths the console actually uses
 // are forwarded, so it cannot be turned into an open relay.
-const ALLOWED_PREFIXES = ['api/monitoring/', 'api/paper-tracker/', 'api/storage/'];
+const ALLOWED_PREFIXES = [
+  'api/monitoring/',
+  'api/paper-tracker/',
+  'api/storage/',
+  'api/fleet/',
+];
 const ALLOWED_EXACT = ['health'];
 
 function isAllowed(path: string): boolean {

@@ -2,26 +2,56 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { getFleetSummary } from '@/lib/api';
+import type { FleetSummary } from '@/lib/types';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '📊' },
+  { href: '/kiosks', label: 'Kiosks', icon: '🖥️' },
+  { href: '/alerts', label: 'Alerts', icon: '🚨' },
+  { href: '/analytics', label: 'Analytics', icon: '📈' },
   { href: '/transactions', label: 'Transactions', icon: '💳' },
   { href: '/payments', label: 'Payments', icon: '💰' },
   { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️' },
   { href: '/paper', label: 'Paper Trays', icon: '📄' },
+  { href: '/storage', label: 'Storage', icon: '🗄️' },
   { href: '/logs', label: 'Activity Logs', icon: '📋' },
-  { href: '/kiosk', label: 'Kiosk Status', icon: '🖥️' },
+  { href: '/kiosk', label: 'Kiosk Status', icon: '🩺' },
   { href: '/legal', label: 'Legal & Privacy', icon: '📜' },
 ];
 
 export function NavSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [summary, setSummary] = useState<FleetSummary | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      getFleetSummary()
+        .then((r) => alive && setSummary(r.summary))
+        .catch(() => {});
+    load();
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 15000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
     router.refresh();
+  };
+
+  const badgeFor = (href: string): number | null => {
+    if (href === '/alerts' && summary && summary.openIncidents > 0) return summary.openIncidents;
+    if (href === '/kiosks' && summary && summary.kiosks.offline > 0) return summary.kiosks.offline;
+    return null;
   };
 
   return (
@@ -41,6 +71,7 @@ export function NavSidebar() {
       <nav aria-label="Primary" className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {NAV_ITEMS.map(({ href, label, icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
+          const badge = badgeFor(href);
           return (
             <Link
               key={href}
@@ -55,7 +86,12 @@ export function NavSidebar() {
               <span className="text-base" aria-hidden="true">
                 {icon}
               </span>
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge != null && (
+                <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}

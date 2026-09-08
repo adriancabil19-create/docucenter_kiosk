@@ -39,6 +39,11 @@ export interface PrintJob {
   status: PrintJobStatus;
   method: string | null;
   simulated: boolean;
+  page_count?: number;
+  color_mode?: string;
+  duplex?: boolean;
+  unit_price?: number;
+  service_type?: string;
   created_at: string;
 }
 
@@ -107,6 +112,109 @@ export interface MonitoringStats {
   realPrintJobs: number;
 }
 
+// ─── Fleet: kiosks ────────────────────────────────────────────────────────────
+
+export type KioskLiveStatus = 'ONLINE' | 'OFFLINE' | 'MAINTENANCE';
+
+export interface Kiosk {
+  kiosk_id: string;
+  label: string | null;
+  app_version: string | null;
+  printer_state: string;
+  scanner_state: string;
+  current_job_id: string | null;
+  maintenance: boolean;
+  printing_disabled: boolean;
+  meta: Record<string, unknown> | null;
+  first_seen: string;
+  last_seen: string;
+  online: boolean;
+  status: KioskLiveStatus;
+}
+
+export type KioskCommandName =
+  | 'MAINTENANCE_ON'
+  | 'MAINTENANCE_OFF'
+  | 'DISABLE_PRINTING'
+  | 'ENABLE_PRINTING'
+  | 'RESTART_PRINTER'
+  | 'RESTART_APP';
+
+export interface KioskCommand {
+  id: string;
+  kiosk_id: string;
+  command: KioskCommandName;
+  params: Record<string, unknown> | null;
+  status: 'pending' | 'delivered' | 'acked' | 'failed';
+  result: string | null;
+  created_by: string | null;
+  created_at: string;
+  delivered_at: string | null;
+  acked_at: string | null;
+}
+
+// ─── Incidents ────────────────────────────────────────────────────────────────
+
+export type IncidentSeverity = 'info' | 'warning' | 'critical';
+
+export interface Incident {
+  id: string;
+  kiosk_id: string;
+  device: string;
+  error_code: string;
+  severity: IncidentSeverity;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  status: 'open' | 'resolved';
+  created_at: string;
+  resolved_at: string | null;
+}
+
+// ─── Storage retention ────────────────────────────────────────────────────────
+
+export interface StorageSettings {
+  delete_after_print: boolean;
+  retention_hours: number;
+  updated_at: string;
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+export interface Analytics {
+  range: DateRange;
+  revenue: {
+    total: number;
+    byService: Array<{ service_type: string; revenue: number; count: number }>;
+    byDay: Array<{ day: string; revenue: number; count: number }>;
+    avgTransactionValue: number;
+  };
+  transactions: {
+    total: number;
+    success: number;
+    failed: number;
+    cancelled: number;
+    pending: number;
+  };
+  jobs: {
+    totalJobs: number;
+    totalSheets: number;
+    color: number;
+    bw: number;
+    duplex: number;
+    simplex: number;
+    byPaperSize: Array<{ paper_size: string; count: number; sheets: number }>;
+  };
+  peaks: {
+    byHour: Array<{ hour: number; count: number }>;
+    byWeekday: Array<{ weekday: number; count: number }>;
+  };
+}
+
+export interface FleetSummary {
+  openIncidents: number;
+  kiosks: { total: number; online: number; offline: number };
+}
+
 // ─── API Wrappers ─────────────────────────────────────────────────────────────
 
 export interface StatsResponse {
@@ -152,4 +260,49 @@ export interface HealthResponse {
   success: boolean;
   status: string;
   timestamp: string;
+}
+
+export interface KiosksResponse {
+  success: boolean;
+  kiosks: Kiosk[];
+  count: number;
+}
+
+export interface KioskDetailResponse {
+  success: boolean;
+  kiosk: Kiosk;
+  commands: KioskCommand[];
+}
+
+export interface IncidentsResponse {
+  success: boolean;
+  incidents: Incident[];
+  count: number;
+}
+
+export interface StorageSettingsResponse {
+  success: boolean;
+  settings: StorageSettings;
+}
+
+export interface AnalyticsResponse {
+  success: boolean;
+  analytics: Analytics;
+}
+
+export interface FleetSummaryResponse {
+  success: boolean;
+  summary: FleetSummary;
+}
+
+export interface CommandQueuedResponse {
+  success: boolean;
+  commandId: string;
+}
+
+export interface MutationResponse {
+  success: boolean;
+  message?: string;
+  deleted?: number;
+  error?: string;
 }

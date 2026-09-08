@@ -13,6 +13,15 @@ import type {
   KioskStatusResponse,
   HealthResponse,
   DateRange,
+  KiosksResponse,
+  KioskDetailResponse,
+  IncidentsResponse,
+  StorageSettingsResponse,
+  AnalyticsResponse,
+  FleetSummaryResponse,
+  CommandQueuedResponse,
+  MutationResponse,
+  KioskCommandName,
 } from './types';
 
 export type { DateRange };
@@ -118,3 +127,64 @@ export const deleteDocument = (filename: string): Promise<{ success: boolean; me
 // ─── Health ───────────────────────────────────────────────────────────────────
 
 export const getHealth = (): Promise<HealthResponse> => apiFetch<HealthResponse>('/health');
+
+// ─── Fleet ────────────────────────────────────────────────────────────────────
+
+export const getKiosks = (): Promise<KiosksResponse> =>
+  apiFetch<KiosksResponse>('/api/fleet/kiosks');
+
+export const getKiosk = (id: string): Promise<KioskDetailResponse> =>
+  apiFetch<KioskDetailResponse>(`/api/fleet/kiosks/${encodeURIComponent(id)}`);
+
+export const sendKioskCommand = (
+  id: string,
+  command: KioskCommandName,
+  params?: Record<string, unknown>,
+): Promise<CommandQueuedResponse> =>
+  apiFetch<CommandQueuedResponse>(`/api/fleet/kiosks/${encodeURIComponent(id)}/commands`, {
+    method: 'POST',
+    body: JSON.stringify({ command, ...(params ? { params } : {}) }),
+  });
+
+export const getIncidents = (
+  status?: 'open' | 'resolved',
+  limit = 100,
+): Promise<IncidentsResponse> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set('status', status);
+  return apiFetch<IncidentsResponse>(`/api/fleet/incidents?${params.toString()}`);
+};
+
+export const resolveIncident = (id: string): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/fleet/incidents/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+  });
+
+export const getStorageSettings = (): Promise<StorageSettingsResponse> =>
+  apiFetch<StorageSettingsResponse>('/api/fleet/storage-settings');
+
+export const updateStorageSettings = (patch: {
+  delete_after_print?: boolean;
+  retention_hours?: number;
+}): Promise<StorageSettingsResponse> =>
+  apiFetch<StorageSettingsResponse>('/api/fleet/storage-settings', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+
+export const purgeStorage = (): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>('/api/fleet/storage/purge', { method: 'POST' });
+
+export const deleteAllStorage = (): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>('/api/fleet/storage/delete-all', { method: 'POST' });
+
+export const getAnalytics = (range?: DateRange): Promise<AnalyticsResponse> => {
+  const params = new URLSearchParams();
+  if (range?.from) params.set('from', range.from);
+  if (range?.to) params.set('to', range.to);
+  const qs = params.toString();
+  return apiFetch<AnalyticsResponse>(`/api/fleet/analytics${qs ? `?${qs}` : ''}`);
+};
+
+export const getFleetSummary = (): Promise<FleetSummaryResponse> =>
+  apiFetch<FleetSummaryResponse>('/api/fleet/summary');
