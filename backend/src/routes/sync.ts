@@ -214,7 +214,9 @@ router.post('/storage-doc', async (req: Request, res: Response): Promise<void> =
       res.status(400).json({ success: false, error: 'id and name required' });
       return;
     }
-    await upsertStorageDocMeta({ ...doc });
+    // Never let a stale/reordered upload event revive a document the operator
+    // has since deleted, and don't bounce the event back out.
+    await upsertStorageDocMeta({ ...doc }, { clearDeleted: false, forward: false });
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: storage-doc failed', { error: String(err) });

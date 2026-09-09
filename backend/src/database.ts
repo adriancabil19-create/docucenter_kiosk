@@ -1313,8 +1313,20 @@ export interface StorageDocMetaInput {
   created_at?: string;
 }
 
-/** Upsert one document's metadata locally and forward it to the cloud. */
-export const upsertStorageDocMeta = async (doc: StorageDocMetaInput): Promise<void> => {
+/**
+ * Upsert one document's metadata locally and forward it to the cloud.
+ *
+ * `clearDeleted` (default true) revives a tombstoned row on conflict — right for
+ * a genuine local (re)upload. The cloud sync receiver passes `false`: a stale or
+ * out-of-order `storage-doc` event must NOT resurrect a document the operator
+ * has since deleted.
+ */
+export const upsertStorageDocMeta = async (
+  doc: StorageDocMetaInput,
+  opts: { clearDeleted?: boolean; forward?: boolean } = {},
+): Promise<void> => {
+  const clearDeleted = opts.clearDeleted !== false;
+  const forward = opts.forward !== false;
   try {
     await getDb().execute({
       sql: `INSERT INTO storage_documents
@@ -1325,7 +1337,7 @@ export const upsertStorageDocMeta = async (doc: StorageDocMetaInput): Promise<vo
             ON CONFLICT(id) DO UPDATE SET
               name = @name, original_name = @original_name, format = @format,
               pages = @pages, size_bytes = @size_bytes, size_label = @size_label,
-              mime_type = @mime_type, deleted_at = NULL`,
+              mime_type = @mime_type${clearDeleted ? ', deleted_at = NULL' : ''}`,
       args: {
         id: doc.id,
         kiosk_id: doc.kiosk_id ?? 'DOCUCENTER-01',
@@ -1339,7 +1351,7 @@ export const upsertStorageDocMeta = async (doc: StorageDocMetaInput): Promise<vo
         created_at: doc.created_at ?? null,
       },
     });
-    syncEvent('storage-doc', doc);
+    if (forward) syncEvent('storage-doc', doc);
   } catch (err) {
     logger.warn('Failed to upsert storage doc meta', { id: doc.id, error: String(err) });
   }
@@ -1358,6 +1370,21 @@ export const softDeleteStorageDocMeta = async (id: string, forward = true): Prom
   } catch (err) {
     logger.warn('Failed to soft-delete storage doc meta', { id, error: String(err) });
   }
+};
+
+/**
+ * Tombstone every live document row on this instance. Used by the admin
+ * "Delete files + records" action so the metadata clears immediately on the
+ * box the console reads from, independent of the kiosk's own delete + sync.
+ * Returns how many rows were tombstoned.
+ */
+export const tombstoneAllStorageDocMetas = async (): Promise<number> => {
+  const res = await getDb().execute(
+    `UPDATE storage_documents
+     SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+     WHERE deleted_at IS NULL`,
+  );
+  return res.rowsAffected ?? 0;
 };
 
 export const getStorageDocMetas = async (

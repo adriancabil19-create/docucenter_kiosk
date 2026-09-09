@@ -354,6 +354,7 @@ export interface MutationResponse {
   success: boolean;
   message?: string;
   deleted?: number;
+  tombstoned?: number;
   queued?: number;
   error?: string;
 }

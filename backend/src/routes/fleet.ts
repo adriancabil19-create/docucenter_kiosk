@@ -24,6 +24,7 @@ import {
   updatePricingSettings,
   type PricingInput,
   getStorageDocMetas,
+  tombstoneAllStorageDocMetas,
   getAnalytics,
   insertLog,
   type KioskCommandName,
@@ -232,9 +233,15 @@ router.get('/storage-documents', async (req: Request, res: Response): Promise<vo
 });
 
 /**
- * The files live on the kiosks, not on this (possibly cloud) instance. So run
- * the op locally only when THIS instance is a kiosk, and dispatch a command to
- * every other known kiosk to do the same.
+ * The file bytes live on the kiosks. So:
+ *  - if THIS instance is itself a kiosk, run the op on its own files;
+ *  - queue the same op for every known kiosk so they clear their bytes;
+ *  - for a full "delete + records" wipe, also tombstone the metadata right here
+ *    (on the box the console reads from) so the list clears immediately, without
+ *    waiting on the kiosk's delete + its storage-doc-delete sync landing.
+ *
+ * deleteAllDocuments / purgeExpiredDocuments are idempotent, so a kiosk that
+ * both ran locally and receives the queued command is harmless.
  */
 type StorageOp = 'PURGE_STORAGE' | 'DELETE_ALL_FILES' | 'DELETE_ALL_FILES_KEEP_META';
 
@@ -242,6 +249,7 @@ const runStorageOp = async (op: StorageOp, res: Response): Promise<void> => {
   try {
     let localDeleted = 0;
     let queued = 0;
+    let tombstoned = 0;
 
     if (config.isKioskRole) {
       if (op === 'PURGE_STORAGE') {
@@ -253,14 +261,27 @@ const runStorageOp = async (op: StorageOp, res: Response): Promise<void> => {
       }
     }
 
+    // "Delete files + records" → clear the metadata the admin sees, now.
+    if (op === 'DELETE_ALL_FILES') {
+      tombstoned = await tombstoneAllStorageDocMetas();
+    }
+
     for (const k of await getKiosks()) {
-      if (config.isKioskRole && k.kiosk_id === config.kioskId) continue;
+      // Only skip self on a dedicated kiosk box, where the local run already
+      // covered this kiosk. A "both" instance may not actually own the files
+      // (e.g. a mis-set cloud), so it must still queue the command.
+      if (config.instanceRole === 'kiosk' && k.kiosk_id === config.kioskId) continue;
       await enqueueCommand(k.kiosk_id, op, undefined, 'admin');
       queued += 1;
     }
 
-    await insertLog('info', 'storage', `Admin ${op}: ${localDeleted} local, ${queued} queued`, {});
-    res.json({ success: true, deleted: localDeleted, queued });
+    await insertLog(
+      'info',
+      'storage',
+      `Admin ${op}: ${localDeleted} files here, ${tombstoned} records cleared, ${queued} queued`,
+      {},
+    );
+    res.json({ success: true, deleted: localDeleted, tombstoned, queued });
   } catch (err) {
     logger.error(`Fleet: ${op} failed`, { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });

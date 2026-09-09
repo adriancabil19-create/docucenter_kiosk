@@ -41,9 +41,10 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
     }
   };
 
-  const summarise = (res: { deleted?: number; queued?: number }) => {
+  const summarise = (res: { deleted?: number; tombstoned?: number; queued?: number }) => {
     const parts: string[] = [];
-    if (res.deleted) parts.push(`${res.deleted} removed here`);
+    if (res.deleted) parts.push(`${res.deleted} file${res.deleted === 1 ? '' : 's'} removed here`);
+    if (res.tombstoned) parts.push(`${res.tombstoned} record${res.tombstoned === 1 ? '' : 's'} cleared`);
     if (res.queued) parts.push(`sent to ${res.queued} kiosk${res.queued === 1 ? '' : 's'}`);
     return parts.length ? parts.join(' · ') : 'Nothing to do.';
   };
@@ -63,7 +64,7 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
   // Two-step arm/confirm shared by both destructive buttons.
   const runDelete = async (
     which: 'deleteAll' | 'deleteFilesOnly',
-    call: () => Promise<{ deleted?: number; queued?: number }>,
+    call: () => Promise<{ deleted?: number; tombstoned?: number; queued?: number }>,
   ) => {
     if (armed !== which) {
       setArmed(which);
