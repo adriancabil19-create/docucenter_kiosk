@@ -318,15 +318,92 @@ class Footer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Slim kiosk footer: one credit line + the legal links. The full
-    // project / university / team detail lives on the About page.
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
     return Container(
       color: const Color(0xFF111827), // gray-900
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Footer content grid
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1344),
+            child: isMobile
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildFooterColumn(
+                        context,
+                        'DOCUCENTER Kiosk',
+                        'Self-Service Document Processing Station with Real-Time Monitoring and Automated Payment System',
+                      ),
+                      const SizedBox(height: 24),
+                      _buildFooterColumn(
+                        context,
+                        'University',
+                        'University of Cebu\nLapu-Lapu and Mandaue Campus\nCollege of Computer Engineering',
+                      ),
+                      const SizedBox(height: 24),
+                      _buildFooterColumn(
+                        context,
+                        'Project Information',
+                        'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
+                      ),
+                      const SizedBox(height: 24),
+                      _buildFooterColumn(
+                        context,
+                        'Operator',
+                        'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
+                      ),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _buildFooterColumn(
+                          context,
+                          'DOCUCENTER Kiosk',
+                          'Self-Service Document Processing Station with Real-Time Monitoring and Automated Payment System',
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: _buildFooterColumn(
+                          context,
+                          'University',
+                          'University of Cebu\nLapu-Lapu and Mandaue Campus\nCollege of Computer Engineering',
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: _buildFooterColumn(
+                          context,
+                          'Project Information',
+                          'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: _buildFooterColumn(
+                          context,
+                          'Operator',
+                          'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          // Divider
+          const SizedBox(height: 16),
+          Container(
+            height: 1,
+            color: const Color(0xFF1F2937), // gray-800
+          ),
+          const SizedBox(height: 14),
+          // Legal links
           if (onNavigate != null)
             Wrap(
               alignment: WrapAlignment.center,
@@ -342,11 +419,13 @@ class Footer extends StatelessWidget {
                 _buildFooterLink(context, 'Refund Policy', 'legal'),
               ],
             ),
-          const SizedBox(height: 6),
+          // Copyright
+          const SizedBox(height: 12),
           Text(
-            '© 2025–2026 DocuCenter · University of Cebu – Lapu-Lapu and Mandaue Campus',
+            '© 2025–2026 DocuCenter — an undergraduate thesis prototype by '
+            'Charles Adrian L. Cabil, University of Cebu – Lapu-Lapu and Mandaue Campus.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFFCBD1DC), // AA contrast on gray-900
+              color: const Color(0xFFCBD1DC), // lighter grey for AA contrast on gray-900
             ),
             textAlign: TextAlign.center,
           ),
@@ -379,6 +458,32 @@ class Footer extends StatelessWidget {
     );
   }
 
+  Widget _buildFooterColumn(
+    BuildContext context,
+    String title,
+    String content,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          content,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: const Color(0xFFA3A9B8), // gray-400
+            height: 1.5,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class HomePage extends StatefulWidget {
