@@ -48,6 +48,11 @@ class _MainAppState extends State<MainApp> {
   // killing the process.
   Key _shellKey = UniqueKey();
 
+  // Bumped every time the user navigates to Services, so re-entering it from
+  // the header always lands on the service picker rather than the last-open
+  // service.
+  int _servicesEntries = 0;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +83,7 @@ class _MainAppState extends State<MainApp> {
     setState(() {
       _previousPage = _currentPage;
       _currentPage = page;
+      if (page == 'services') _servicesEntries++;
     });
   }
 
@@ -107,6 +113,7 @@ class _MainAppState extends State<MainApp> {
                   currentPage: _currentPage,
                   previousPage: _previousPage,
                   onNavigate: _navigate,
+                  servicesEntries: _servicesEntries,
                 ),
               ),
             ],
@@ -493,11 +500,16 @@ class HomePage extends StatefulWidget {
   final String previousPage;
   final ValueChanged<String> onNavigate;
 
+  /// Increments each time the user navigates to Services — used to key the
+  /// ServicesPage so it resets to the picker on every fresh entry.
+  final int servicesEntries;
+
   const HomePage({
     super.key,
     required this.currentPage,
     required this.previousPage,
     required this.onNavigate,
+    this.servicesEntries = 0,
   });
 
   @override
@@ -519,7 +531,10 @@ class _HomePageState extends State<HomePage> {
       case 'payment':
         return PAYMONGOPaymentPage(onNavigate: widget.onNavigate);
       case 'services':
-        return ServicesPage(onNavigate: widget.onNavigate);
+        return ServicesPage(
+          key: ValueKey('services-${widget.servicesEntries}'),
+          onNavigate: widget.onNavigate,
+        );
       case 'about':
         return AboutPage(onNavigate: widget.onNavigate);
       case 'legal':

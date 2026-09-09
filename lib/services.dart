@@ -16,7 +16,9 @@ class ServicesPage extends StatefulWidget {
 }
 
 class _ServicesPageState extends State<ServicesPage> {
-  String _activeService = 'printing';
+  /// null → show the service picker. Otherwise only the chosen service's
+  /// interface is shown, with a "Back to Services" button.
+  String? _activeService;
   List<StorageDocument> _savedDocuments = [];
   List<StorageDocument> _selectedDocsForPrint = [];
   bool _printingFromStorage = false;
@@ -91,12 +93,23 @@ class _ServicesPageState extends State<ServicesPage> {
     });
   }
 
+  static const Map<String, String> _serviceTitles = {
+    'printing': 'Printing',
+    'scanning': 'Scanning',
+    'photocopying': 'Photocopying',
+    'storage': 'Storage',
+  };
+
   @override
   Widget build(BuildContext context) {
+    return _activeService == null ? _buildServicePicker(context) : _buildServiceView(context);
+  }
+
+  /// Step 1 — pick a service. Nothing else is shown.
+  Widget _buildServicePicker(BuildContext context) {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Header
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
             child: Column(
@@ -111,7 +124,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Select a service below to access printing, scanning, or photocopying features',
+                  'Choose a service to get started',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: const Color(0xFF4B5563),
                   ),
@@ -120,30 +133,78 @@ class _ServicesPageState extends State<ServicesPage> {
               ],
             ),
           ),
-
-          // Service Selection Buttons
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: GridView.count(
-              crossAxisCount: MediaQuery.of(context).size.width < 768 ? 1 : 4,
-              childAspectRatio: 1.2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1100),
+              child: GridView.count(
+                crossAxisCount: MediaQuery.of(context).size.width < 768 ? 1 : 4,
+                childAspectRatio: 1.2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildServiceButton('printing', 'Printing', 'Print documents & images', Icons.print),
+                  _buildServiceButton('scanning', 'Scanning', 'Digitize physical documents', Icons.document_scanner),
+                  _buildServiceButton('photocopying', 'Photocopying', 'Make copies of documents', Icons.copy),
+                  _buildServiceButton('storage', 'Storage', 'View saved documents', Icons.folder_open),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Step 2 — the chosen service only, with a Back button. The app header
+  /// stays above this (it lives in main.dart).
+  Widget _buildServiceView(BuildContext context) {
+    // While picking documents to print, "Back" returns to the Printing screen
+    // rather than all the way out to the picker.
+    final backToPrinting = _activeService == 'storage' && _printingFromStorage;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 16, 0),
+            child: Row(
               children: [
-                _buildServiceButton('printing', 'Printing', 'Print documents & images', Icons.print),
-                _buildServiceButton('scanning', 'Scanning', 'Digitize physical documents', Icons.document_scanner),
-                _buildServiceButton('photocopying', 'Photocopying', 'Make copies of documents', Icons.copy),
-                _buildServiceButton('storage', 'Storage', 'View saved documents', Icons.folder_open),
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    if (backToPrinting) {
+                      _activeService = 'printing';
+                      _printingFromStorage = false;
+                    } else {
+                      _activeService = null;
+                      _printingFromStorage = false;
+                    }
+                  }),
+                  icon: const Icon(Icons.arrow_back, size: 20),
+                  label: Text(backToPrinting ? 'Back to Printing' : 'Back to Services'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF2563EB),
+                    minimumSize: const Size(0, 44),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _serviceTitles[_activeService] ?? '',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: const Color(0xFF003D99),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-
-          // Service Content
           Container(
             color: Colors.white,
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             padding: const EdgeInsets.all(32),
             child: _buildActiveServiceWidget(),
           ),
