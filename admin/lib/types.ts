@@ -152,7 +152,7 @@ export interface KioskCommand {
   kiosk_id: string;
   command: KioskCommandName;
   params: Record<string, unknown> | null;
-  status: 'pending' | 'delivered' | 'acked' | 'failed';
+  status: 'pending' | 'delivered' | 'acked' | 'failed' | 'superseded';
   result: string | null;
   attempts: number;
   created_by: string | null;

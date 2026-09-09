@@ -938,7 +938,7 @@ export interface KioskCommandRow {
   kiosk_id: string;
   command: KioskCommandName;
   params: Record<string, unknown> | null;
-  status: 'pending' | 'delivered' | 'acked' | 'failed';
+  status: 'pending' | 'delivered' | 'acked' | 'failed' | 'superseded';
   result: string | null;
   attempts: number;
   created_by: string | null;
@@ -952,6 +952,16 @@ const MAX_COMMAND_ATTEMPTS = 6;
 /** A 'delivered' command with no ACK older than this is eligible for re-delivery (seconds). */
 const COMMAND_REDELIVER_AFTER_SECONDS = 90;
 
+/**
+ * Toggle pairs. Queuing one makes an older, still-unACKed sibling meaningless —
+ * without this, a stale un-ACKed MAINTENANCE_ON could be re-delivered after the
+ * operator has already turned maintenance off, flipping it back on.
+ */
+const SUPERSEDE_GROUPS: KioskCommandName[][] = [
+  ['MAINTENANCE_ON', 'MAINTENANCE_OFF'],
+  ['DISABLE_PRINTING', 'ENABLE_PRINTING'],
+];
+
 export const enqueueCommand = async (
   kioskId: string,
   command: KioskCommandName,
@@ -959,7 +969,8 @@ export const enqueueCommand = async (
   createdBy?: string,
 ): Promise<string> => {
   const id = randomUUID();
-  await getDb().execute({
+  const db = getDb();
+  await db.execute({
     sql: `INSERT INTO kiosk_commands (id, kiosk_id, command, params, created_by)
           VALUES (@id, @kioskId, @command, @params, @createdBy)`,
     args: {
@@ -970,6 +981,25 @@ export const enqueueCommand = async (
       createdBy: createdBy ?? null,
     },
   });
+
+  // Retire any older, not-yet-ACKed command in the same toggle group so it can
+  // never be replayed against the operator's newer intent.
+  const group = SUPERSEDE_GROUPS.find((g) => g.includes(command));
+  if (group) {
+    const placeholders = group.map((_, i) => `@c${i}`).join(', ');
+    const args: Record<string, string> = { kioskId, id };
+    group.forEach((c, i) => (args[`c${i}`] = c));
+    await db.execute({
+      sql: `UPDATE kiosk_commands
+            SET status = 'superseded',
+                result = COALESCE(result, 'superseded by a newer command'),
+                acked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE kiosk_id = @kioskId AND id != @id
+              AND status IN ('pending', 'delivered')
+              AND command IN (${placeholders})`,
+      args,
+    });
+  }
   return id;
 };
 
@@ -1222,7 +1252,7 @@ export const pruneOldRows = async (): Promise<Record<string, number>> => {
     // Idempotency ledger: keep 7 days.
     ['sync_received_events', `DELETE FROM sync_received_events WHERE received_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
     // Finished commands: keep 7 days.
-    ['kiosk_commands', `DELETE FROM kiosk_commands WHERE status IN ('acked','failed') AND acked_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
+    ['kiosk_commands', `DELETE FROM kiosk_commands WHERE status IN ('acked','failed','superseded') AND acked_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
     // Deleted-document tombstones: keep 30 days.
     ['storage_documents', `DELETE FROM storage_documents WHERE deleted_at IS NOT NULL AND deleted_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`],
     // Resolved incidents: keep 60 days.

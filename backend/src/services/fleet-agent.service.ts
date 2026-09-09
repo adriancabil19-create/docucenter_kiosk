@@ -308,7 +308,7 @@ const commandTick = async (): Promise<void> => {
 export const startFleetAgent = (): void => {
   if (started || !config.isKioskRole) return;
   started = true;
-  const cmdIntervalMs = Math.min(5000, config.heartbeatIntervalMs);
+  const cmdIntervalMs = Math.min(config.commandPollIntervalMs, config.heartbeatIntervalMs);
   logger.info('Fleet agent started', {
     kioskId: KIOSK_ID,
     heartbeatMs: config.heartbeatIntervalMs,

@@ -56,12 +56,22 @@ intent without waiting for the ACK. Between heartbeats the agent still polls for
 commands every ~5 s, so admin actions land quickly. Each command's outcome is
 recorded on `kiosk_commands.result` (visible in `GET /api/fleet/kiosks/:id`).
 
+**Latency.** The agent polls for commands every `COMMAND_POLL_INTERVAL_MS`
+(default 2 s, floored at 1 s) — independent of the 20 s heartbeat. The Flutter
+app re-reads `/api/kiosk/self` every 3 s. So an admin action lands on the kiosk
+UI in ~2–5 s.
+
 **Delivery guarantee.** `claimPendingCommands` hands out `pending` commands *and*
 re-hands any `delivered` command that has gone 90 s with no ACK (kiosk crash,
 lost ACK, flaky link), bumping `kiosk_commands.attempts` each time. After 6
 attempts with no ACK the command is marked `failed` so it stops and shows in the
 history rather than stalling silently. Executors are idempotent, so a
 re-delivered command is safe to run twice.
+
+**Superseding.** Toggle pairs — `MAINTENANCE_ON`/`_OFF`,
+`DISABLE_PRINTING`/`ENABLE_PRINTING` — supersede each other: queuing one marks any
+older not-yet-ACKed sibling `superseded` so a stale `MAINTENANCE_ON` can't be
+re-delivered after the operator has already ended maintenance.
 
 ## 3. Incidents (Alerts)
 

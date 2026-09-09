@@ -118,9 +118,9 @@ class KioskRuntime extends ChangeNotifier {
 
   void _registerFailure() {
     _consecutiveFailures++;
-    // Two consecutive misses (~20s) before we call it offline — tolerates a
-    // single dropped request without alarming the user.
-    if (_consecutiveFailures >= 2 && _connected) {
+    // Three consecutive misses (~9s at the 3s poll) before we call it offline —
+    // tolerates a couple of dropped requests without alarming the user.
+    if (_consecutiveFailures >= 3 && _connected) {
       _connected = false;
       notifyListeners();
     }

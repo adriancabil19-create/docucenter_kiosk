@@ -57,8 +57,16 @@ export const config = {
   isCloudRole: instanceRole === 'cloud' || instanceRole === 'both',
   kioskId: envStr(process.env.KIOSK_ID, 'DOCUCENTER-01'),
   kioskLabel: envStr(process.env.KIOSK_LABEL, 'DocuCenter Kiosk 01'),
-  /** How often the kiosk emits a heartbeat / polls for commands (ms). */
+  /** How often the kiosk emits a heartbeat (ms). Liveness only — not latency-critical. */
   heartbeatIntervalMs: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '20000', 10),
+  /**
+   * How often the kiosk polls for pending admin commands (ms). This is the
+   * admin→kiosk control latency; keep it short. Floored at 1000 ms.
+   */
+  commandPollIntervalMs: Math.max(
+    1000,
+    parseInt(process.env.COMMAND_POLL_INTERVAL_MS || '2000', 10) || 2000,
+  ),
   /** A kiosk with no heartbeat newer than this is considered OFFLINE (seconds). */
   kioskOfflineAfterSeconds: parseInt(process.env.KIOSK_OFFLINE_AFTER_SECONDS || '60', 10),
   publicBaseUrl:
