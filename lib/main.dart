@@ -323,7 +323,7 @@ class Footer extends StatelessWidget {
     return Container(
       color: const Color(0xFF111827), // gray-900
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -339,19 +339,19 @@ class Footer extends StatelessWidget {
                         'DOCUCENTER Kiosk',
                         'Self-Service Document Processing Station with Real-Time Monitoring and Automated Payment System',
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
                         'University',
                         'University of Cebu\nLapu-Lapu and Mandaue Campus\nCollege of Computer Engineering',
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
                         'Project Information',
                         'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
                         'Operator',
@@ -397,18 +397,18 @@ class Footer extends StatelessWidget {
                   ),
           ),
           // Divider
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           Container(
             height: 1,
             color: const Color(0xFF1F2937), // gray-800
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           // Legal links
           if (onNavigate != null)
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 8,
-              runSpacing: 4,
+              runSpacing: 2,
               children: [
                 _buildFooterLink(context, 'Privacy Policy', 'legal'),
                 _buildFooterDot(),
@@ -420,12 +420,13 @@ class Footer extends StatelessWidget {
               ],
             ),
           // Copyright
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             '© 2025–2026 DocuCenter — an undergraduate thesis prototype by '
             'Charles Adrian L. Cabil, University of Cebu – Lapu-Lapu and Mandaue Campus.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: const Color(0xFFCBD1DC), // lighter grey for AA contrast on gray-900
+              fontSize: 11,
             ),
             textAlign: TextAlign.center,
           ),
@@ -451,7 +452,7 @@ class Footer extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: 13,
+          fontSize: 12,
           decoration: TextDecoration.underline,
         ),
       ),
@@ -468,17 +469,18 @@ class Footer extends StatelessWidget {
       children: [
         Text(
           title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 5),
         Text(
           content,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: const Color(0xFFA3A9B8), // gray-400
-            height: 1.5,
+            fontSize: 11,
+            height: 1.45,
           ),
         ),
       ],
@@ -531,21 +533,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildHomePageContent() {
-    // Kiosk home is a launcher, not a brochure: a compact hero + the footer,
-    // one screen, no scroll. The thesis/rationale/team content lives on the
-    // About page (in the header nav).
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          _buildHeroSection(context),
-          Footer(onNavigate: widget.onNavigate),
-        ],
-      ),
+    // Kiosk home is a launcher, not a brochure: a compact hero + the footer.
+    // Sticky-footer layout — the hero fills the space between the header and
+    // the footer so its gradient carries to the bottom (no dead strip under
+    // the footer), and it scrolls only if the window is too short to fit.
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: _buildHeroSection(context),
+              ),
+            ),
+          ),
+        ),
+        Footer(onNavigate: widget.onNavigate),
+      ],
     );
   }
 
   Widget _buildHeroSection(BuildContext context) {
     return Container(
+      // Centre the content when the hero is stretched to fill the viewport.
+      alignment: Alignment.center,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
