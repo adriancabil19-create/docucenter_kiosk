@@ -208,6 +208,8 @@ export const initSchema = async (): Promise<void> => {
   await addColumn(`ALTER TABLE kiosk_commands ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`);
   // kiosks: timestamp bumped when the admin asks the app to soft-reload.
   await addColumn(`ALTER TABLE kiosks ADD COLUMN reload_at TEXT`);
+  // activity_logs: how many identical lines this row represents (see insertLog).
+  await addColumn(`ALTER TABLE activity_logs ADD COLUMN count INTEGER NOT NULL DEFAULT 1`);
   // Device state is now strictly ONLINE / OFFLINE — normalise any legacy values.
   try {
     await db.execute(
@@ -599,8 +601,12 @@ export interface ActivityLogRow {
   category: string;
   message: string;
   metadata: string | null;
+  count: number;
   created_at: string;
 }
+
+/** Repeats of the same line inside this window fold into one row, not new rows. */
+const LOG_COALESCE_MINUTES = 10;
 
 export const insertLog = async (
   level: 'info' | 'warn' | 'error',
@@ -609,9 +615,37 @@ export const insertLog = async (
   metadata?: Record<string, unknown>,
 ): Promise<void> => {
   try {
-    await getDb().execute({
+    const db = getDb();
+    const meta = metadata ? JSON.stringify(metadata) : null;
+
+    // If the identical line was logged very recently, bump its count and
+    // timestamp instead of inserting another row. Stops a misbehaving repeater
+    // (e.g. a command that never ACKs and keeps re-running) from flooding the
+    // table and the sync outbox.
+    const recent = await db.execute({
+      sql: `SELECT id, count FROM activity_logs
+            WHERE level = @level AND category = @category AND message = @message
+              AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', @window)
+            ORDER BY id DESC LIMIT 1`,
+      args: { level, category, message, window: `-${LOG_COALESCE_MINUTES} minutes` },
+    });
+    const hit = firstRow<{ id: number; count: number }>(recent);
+
+    if (hit) {
+      await db.execute({
+        sql: `UPDATE activity_logs
+              SET count = count + 1,
+                  metadata = @metadata,
+                  created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+              WHERE id = @id`,
+        args: { id: hit.id, metadata: meta },
+      });
+      return; // already forwarded to the cloud when the first one landed
+    }
+
+    await db.execute({
       sql: `INSERT INTO activity_logs (level, category, message, metadata) VALUES (@level, @category, @message, @metadata)`,
-      args: { level, category, message, metadata: metadata ? JSON.stringify(metadata) : null },
+      args: { level, category, message, metadata: meta },
     });
     syncEvent('log', { level, category, message, metadata });
   } catch (err) {
@@ -623,7 +657,7 @@ export const getRecentLogs = async (limit = 50, range?: DateRange): Promise<Acti
   const args: Record<string, string | number> = { limit };
   const where = rangeClause(range, args);
   const result = await getDb().execute({
-    sql: `SELECT id, level, category, message, metadata, created_at FROM activity_logs${where} ORDER BY created_at DESC LIMIT @limit`,
+    sql: `SELECT id, level, category, message, metadata, count, created_at FROM activity_logs${where} ORDER BY created_at DESC LIMIT @limit`,
     args,
   });
   return toRows<ActivityLogRow>(result);
@@ -1356,10 +1390,15 @@ export const getStorageDocMetas = async (
 export const pruneOldRows = async (): Promise<Record<string, number>> => {
   const db = getDb();
   const runs: Array<[string, string]> = [
-    // Activity logs: keep 30 days.
+    // Activity logs: keep 30 days …
     ['activity_logs', `DELETE FROM activity_logs WHERE created_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`],
-    // Sent sync events: keep 2 days.
+    // … and a hard cap so a burst can't blow up the table between prunes.
+    ['activity_logs_cap', `DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 10000)`],
+    // Sync outbox: drop delivered rows after 2 days, dead-lettered rows after 1,
+    // and abandon anything still unsent after a week (cloud unreachable / mis-set).
     ['sync_outbox', `DELETE FROM sync_outbox WHERE status = 'sent' AND sent_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-2 days')`],
+    ['sync_outbox_failed', `DELETE FROM sync_outbox WHERE status = 'failed' AND created_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 days')`],
+    ['sync_outbox_stale', `DELETE FROM sync_outbox WHERE status = 'pending' AND created_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
     // Idempotency ledger: keep 7 days.
     ['sync_received_events', `DELETE FROM sync_received_events WHERE received_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`],
     // Finished commands: keep 7 days.

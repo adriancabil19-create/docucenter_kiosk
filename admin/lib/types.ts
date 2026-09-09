@@ -81,6 +81,8 @@ export interface ActivityLog {
   category: string;
   message: string;
   metadata: string | null;
+  /** How many identical lines this row represents (repeats are coalesced). */
+  count: number;
   created_at: string;
 }
 

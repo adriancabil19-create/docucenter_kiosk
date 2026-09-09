@@ -230,7 +230,11 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         const { retention_hours } = await getStorageSettings();
         const r = await purgeExpiredDocuments(retention_hours);
         result = `purged ${r.deleted} expired file(s)`;
-        await insertLog('info', 'storage', `Admin purge: ${result}`, { kioskId: KIOSK_ID });
+        // Only worth an activity-log row when it actually removed something —
+        // a re-delivered command that finds nothing to do shouldn't add noise.
+        if (r.deleted > 0) {
+          await insertLog('info', 'storage', `Admin purge: ${result}`, { kioskId: KIOSK_ID });
+        }
         break;
       }
       case 'DELETE_ALL_FILES': {

@@ -21,6 +21,9 @@ export type SyncEventType =
   | 'storage-doc'
   | 'storage-doc-delete';
 
+/** Give up on an outbox row after this many failed POSTs (~1 day with backoff). */
+const MAX_SYNC_ATTEMPTS = 25;
+
 let workerStarted = false;
 
 export const syncEvent = (type: SyncEventType, payload: unknown): void => {
@@ -81,12 +84,25 @@ export const flushSyncOutbox = async (): Promise<void> => {
         args: { id: eventId },
       });
     } catch (err) {
+      const nextAttempts = attempts + 1;
+      // ~25 tries with exponential backoff is roughly a day of trying. After
+      // that, dead-letter it so the outbox can't grow without bound when the
+      // cloud is unreachable or SYNC_URL/SYNC_SECRET are wrong. Housekeeping
+      // then clears 'failed' rows.
+      if (nextAttempts >= MAX_SYNC_ATTEMPTS) {
+        await getDb().execute({
+          sql: `UPDATE sync_outbox SET status = 'failed', attempts = @a WHERE id = @id`,
+          args: { id: eventId, a: nextAttempts },
+        });
+        logger.error('Cloud sync event dead-lettered', { type, eventId, attempts: nextAttempts });
+        continue;
+      }
       const nextDelay = Math.min(3600, 2 ** Math.min(attempts, 10));
       await getDb().execute({
-        sql: `UPDATE sync_outbox SET attempts = attempts + 1,
+        sql: `UPDATE sync_outbox SET attempts = @a,
                 next_attempt_at = datetime('now', '+' || @delay || ' seconds')
               WHERE id = @id`,
-        args: { id: eventId, delay: nextDelay },
+        args: { id: eventId, a: nextAttempts, delay: nextDelay },
       });
       logger.warn('Cloud sync retry scheduled', { type, eventId, error: String(err) });
     }

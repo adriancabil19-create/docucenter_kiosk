@@ -176,6 +176,11 @@ export function ActivityLogTable({ initialData }: Props) {
               <TableCell className="text-xs font-medium text-slate-600">{log.category}</TableCell>
               <TableCell>
                 <span className="text-sm text-slate-800">{log.message}</span>
+                {log.count > 1 && (
+                  <Chip size="sm" variant="flat" color="default" className="ml-2 align-middle">
+                    ×{log.count}
+                  </Chip>
+                )}
                 {log.metadata && (
                   <pre className="mt-0.5 overflow-x-auto text-xs text-slate-400">
                     {(() => {
