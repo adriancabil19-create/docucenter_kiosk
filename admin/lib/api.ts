@@ -182,8 +182,13 @@ export const updateStorageSettings = (patch: {
 export const purgeStorage = (): Promise<MutationResponse> =>
   apiFetch<MutationResponse>('/api/fleet/storage/purge', { method: 'POST' });
 
+/** Delete file bytes AND tombstone the metadata — documents leave the admin list too. */
 export const deleteAllStorage = (): Promise<MutationResponse> =>
   apiFetch<MutationResponse>('/api/fleet/storage/delete-all', { method: 'POST' });
+
+/** Delete file bytes on the kiosks only — the metadata rows (and admin list) stay. */
+export const deleteAllStorageKeepMeta = (): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>('/api/fleet/storage/delete-all-keep-meta', { method: 'POST' });
 
 export const getAnalytics = (range?: DateRange): Promise<AnalyticsResponse> => {
   const params = new URLSearchParams();

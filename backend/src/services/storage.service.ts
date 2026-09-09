@@ -379,10 +379,20 @@ export const deleteDocument = (filename: string): Promise<StorageResult> => {
 };
 
 /**
- * Delete every document (and its sidecar) from storage. Returns the count removed.
- * Used by the admin "Delete All Files" action.
+ * Delete every document's bytes from this kiosk's storage. Returns the count removed.
+ * Used by the admin "Delete all files" actions.
+ *
+ *  - default (`keepMeta` false): also tombstones the `storage_documents` rows and
+ *    forwards the deletes to the cloud, so the file disappears from the admin
+ *    Storage list too. "Delete files + records."
+ *  - `keepMeta` true: only the bytes (and sidecars) are removed on the kiosk; the
+ *    metadata rows stay, so the admin still lists the documents. "Free kiosk disk,
+ *    keep the records."
  */
-export const deleteAllDocuments = (): Promise<{ success: boolean; deleted: number; error?: string }> => {
+export const deleteAllDocuments = (
+  opts: { keepMeta?: boolean } = {},
+): Promise<{ success: boolean; deleted: number; keptMeta: boolean; error?: string }> => {
+  const keepMeta = opts.keepMeta === true;
   return new Promise((resolve) => {
     try {
       const uploadsDir = getUploadsDir();
@@ -398,17 +408,17 @@ export const deleteAllDocuments = (): Promise<{ success: boolean; deleted: numbe
           const fileUuid = path.basename(filename, path.extname(filename));
           const mp = metaPath(uploadsDir, fileUuid);
           if (fs.existsSync(mp)) fs.unlinkSync(mp);
-          void softDeleteStorageDocMeta(fileUuid);
+          if (!keepMeta) void softDeleteStorageDocMeta(fileUuid);
         } catch (e) {
           logger.warn('deleteAllDocuments: skipped file', { filename, error: String(e) });
         }
       }
-      logger.info('All documents deleted', { deleted });
-      resolve({ success: true, deleted });
+      logger.info('All document files deleted', { deleted, keepMeta });
+      resolve({ success: true, deleted, keptMeta: keepMeta });
     } catch (error) {
       const err = error as Error;
       logger.error('Error deleting all documents', { error: err.message });
-      resolve({ success: false, deleted: 0, error: err.message });
+      resolve({ success: false, deleted: 0, keptMeta: keepMeta, error: err.message });
     }
   });
 };

@@ -43,12 +43,35 @@ class _MainAppState extends State<MainApp> {
   // page and losing their in-progress job.
   String _previousPage = 'home';
 
+  // Swapped for a fresh key when the operator issues "Restart app" — forces the
+  // whole UI subtree to be torn down and rebuilt (a soft reload), without
+  // killing the process.
+  Key _shellKey = UniqueKey();
+
   @override
   void initState() {
     super.initState();
     // Begin polling this kiosk's runtime flags (offline / maintenance /
     // printing-disabled) from the local backend.
     KioskRuntime.instance.start();
+    // "Restart app" command → soft reload rather than a process kill.
+    KioskRuntime.instance.onReloadRequested = _softReload;
+  }
+
+  @override
+  void dispose() {
+    KioskRuntime.instance.onReloadRequested = null;
+    super.dispose();
+  }
+
+  /// Reset the kiosk to a pristine home screen and rebuild the UI subtree.
+  void _softReload() {
+    if (!mounted) return;
+    setState(() {
+      _currentPage = 'home';
+      _previousPage = 'home';
+      _shellKey = UniqueKey();
+    });
   }
 
   void _navigate(String page) {
@@ -72,6 +95,7 @@ class _MainAppState extends State<MainApp> {
       home: Scaffold(
         body: KioskShell(
           child: Column(
+            key: _shellKey,
             mainAxisSize: MainAxisSize.max,
             children: [
               Header(

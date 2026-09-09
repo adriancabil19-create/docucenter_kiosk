@@ -35,8 +35,10 @@ router.get('/self', async (_req: Request, res: Response): Promise<void> => {
       label: config.kioskLabel,
       maintenance: kiosk?.maintenance ?? false,
       printing_disabled: kiosk?.printing_disabled ?? false,
-      printer_state: kiosk?.printer_state ?? 'UNKNOWN',
-      scanner_state: kiosk?.scanner_state ?? 'UNKNOWN',
+      printer_state: kiosk?.printer_state ?? 'OFFLINE',
+      scanner_state: kiosk?.scanner_state ?? 'OFFLINE',
+      // Bumped by a RESTART_APP command — the app soft-reloads when it changes.
+      reload_at: kiosk?.reload_at ?? null,
       storage,
       openIncidents,
       serverTime: new Date().toISOString(),

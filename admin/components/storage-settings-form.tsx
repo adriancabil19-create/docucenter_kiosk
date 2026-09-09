@@ -7,14 +7,17 @@ import {
   updateStorageSettings,
   purgeStorage,
   deleteAllStorage,
+  deleteAllStorageKeepMeta,
 } from '@/lib/api';
+
+type BusyOp = 'purge' | 'deleteAll' | 'deleteFilesOnly' | null;
 
 export function StorageSettingsForm({ initial }: { initial: StorageSettings | null }) {
   const [deleteAfterPrint, setDeleteAfterPrint] = useState(initial?.delete_after_print ?? false);
   const [retentionHours, setRetentionHours] = useState(String(initial?.retention_hours ?? 24));
   const [saving, setSaving] = useState(false);
-  const [busy, setBusy] = useState<'purge' | 'deleteAll' | null>(null);
-  const [armDeleteAll, setArmDeleteAll] = useState(false);
+  const [busy, setBusy] = useState<BusyOp>(null);
+  const [armed, setArmed] = useState<'deleteAll' | 'deleteFilesOnly' | null>(null);
 
   const save = async () => {
     const hours = parseInt(retentionHours, 10);
@@ -57,16 +60,20 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
     }
   };
 
-  const runDeleteAll = async () => {
-    if (!armDeleteAll) {
-      setArmDeleteAll(true);
-      setTimeout(() => setArmDeleteAll(false), 4000);
+  // Two-step arm/confirm shared by both destructive buttons.
+  const runDelete = async (
+    which: 'deleteAll' | 'deleteFilesOnly',
+    call: () => Promise<{ deleted?: number; queued?: number }>,
+  ) => {
+    if (armed !== which) {
+      setArmed(which);
+      setTimeout(() => setArmed((a) => (a === which ? null : a)), 4000);
       return;
     }
-    setArmDeleteAll(false);
-    setBusy('deleteAll');
+    setArmed(null);
+    setBusy(which === 'deleteAll' ? 'deleteAll' : 'deleteFilesOnly');
     try {
-      const res = await deleteAllStorage();
+      const res = await call();
       addToast({ title: 'Delete dispatched', description: summarise(res), color: 'success' });
     } catch (err) {
       addToast({ title: 'Delete failed', description: (err as Error).message, color: 'danger' });
@@ -116,13 +123,29 @@ export function StorageSettingsForm({ initial }: { initial: StorageSettings | nu
         <Button
           size="sm"
           variant="flat"
+          color="warning"
+          onPress={() => runDelete('deleteFilesOnly', deleteAllStorageKeepMeta)}
+          isLoading={busy === 'deleteFilesOnly'}
+        >
+          {armed === 'deleteFilesOnly' ? 'Confirm — wipe kiosk files?' : 'Delete files, keep records'}
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
           color="danger"
-          onPress={runDeleteAll}
+          onPress={() => runDelete('deleteAll', deleteAllStorage)}
           isLoading={busy === 'deleteAll'}
         >
-          {armDeleteAll ? 'Confirm — delete everything?' : 'Delete all files'}
+          {armed === 'deleteAll' ? 'Confirm — delete everything?' : 'Delete files + records'}
         </Button>
       </div>
+
+      <p className="text-xs text-slate-500">
+        <span className="font-medium">Delete files, keep records</span> frees disk on every kiosk but
+        leaves the document list here intact.{' '}
+        <span className="font-medium">Delete files + records</span> also removes the documents from
+        this list. Both run on the kiosk that owns the files, on its next poll (~5&nbsp;s).
+      </p>
     </div>
   );
 }

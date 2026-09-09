@@ -26,19 +26,14 @@ const relative = (iso: string) => {
 };
 
 function DeviceChip({ label, state }: { label: string; state: string }) {
-  const good = /READY|ONLINE|OK/i.test(state);
-  const bad = /OFFLINE|ERROR|JAM/i.test(state);
+  const online = state === 'ONLINE';
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-        good
-          ? 'bg-green-500/15 text-green-700'
-          : bad
-            ? 'bg-red-500/15 text-red-700'
-            : 'bg-slate-500/15 text-slate-600'
+        online ? 'bg-green-500/15 text-green-700' : 'bg-red-500/15 text-red-700'
       }`}
     >
-      {label}: {state}
+      {label}: {online ? 'Online' : 'Offline'}
     </span>
   );
 }
@@ -174,8 +169,8 @@ function KioskCard({ kiosk, onDone }: { kiosk: Kiosk; onDone: () => void }) {
           <CmdButton label="Disable printing" command="DISABLE_PRINTING" busy={busy} onRun={run} />
         )}
         <CmdButton
-          label="Restart printer"
-          confirmLabel="Confirm restart printer?"
+          label="Restart print spooler"
+          confirmLabel="Confirm restart spooler?"
           command="RESTART_PRINTER"
           busy={busy}
           onRun={run}
@@ -189,6 +184,12 @@ function KioskCard({ kiosk, onDone }: { kiosk: Kiosk; onDone: () => void }) {
           onRun={run}
         />
       </div>
+
+      <p className="mt-2 text-xs text-slate-400">
+        “Restart print spooler” restarts the Windows spooler to clear a stuck queue — it does not
+        power-cycle the printer, and needs the kiosk backend running as Administrator. “Restart app”
+        soft-reloads the kiosk UI to the home screen without killing the process.
+      </p>
     </div>
   );
 }

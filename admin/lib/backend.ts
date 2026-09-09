@@ -207,6 +207,9 @@ export const purgeStorage = (): Promise<MutationResponse> =>
 export const deleteAllStorage = (): Promise<MutationResponse> =>
   apiFetch<MutationResponse>('/api/fleet/storage/delete-all', { method: 'POST' });
 
+export const deleteAllStorageKeepMeta = (): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>('/api/fleet/storage/delete-all-keep-meta', { method: 'POST' });
+
 export const getAnalytics = (range?: DateRange): Promise<AnalyticsResponse> => {
   const params = new URLSearchParams();
   if (range?.from) params.set('from', range.from);

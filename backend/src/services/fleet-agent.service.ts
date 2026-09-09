@@ -22,8 +22,10 @@ import {
   getStorageSettings,
   updateStorageSettings,
   setKioskFlags,
+  setKioskReload,
   insertIncident,
   insertLog,
+  type DeviceState,
   type KioskCommandRow,
   type KioskCommandName,
 } from '../database';
@@ -34,46 +36,70 @@ const cloudMode = !!SYNC_URL && !!SYNC_SECRET;
 const KIOSK_ID = config.kioskId;
 
 let started = false;
-let lastPrinterState = 'UNKNOWN';
+let lastPrinterState: DeviceState = 'OFFLINE';
 
-const KIOSK_PROCESS = (process.env.KIOSK_PROCESS_NAME || 'web_doc').replace(/\.exe$/i, '');
-
-// Printer probe is expensive (spawns PowerShell) — cache it and only re-probe
+// Device probe is expensive (spawns PowerShell) — cache it and only re-probe
 // once a minute so it doesn't contend with itself and flap.
-let printerProbeAt = 0;
-let printerProbeValue = 'UNKNOWN';
+let deviceProbeAt = 0;
+let deviceProbeValue: DeviceState = 'OFFLINE';
 
 /**
- * Best-effort printer probe (Windows). Never throws, never flaps to UNKNOWN on a
- * transient failure — the last known state is kept until a probe succeeds.
+ * Probe the Brother MFC-J2730DW (printer + scanner in one unit). Result is
+ * strictly ONLINE / OFFLINE — there is no "unknown" state.
+ *
+ * ONLINE means: the device is installed AND Windows does not have it flagged
+ * WorkOffline AND it is not reporting an error/paper-out condition. A powered-off
+ * or unplugged unit reports WorkOffline (or PrinterStatus 1) and comes back
+ * OFFLINE. On a non-Windows host, or a transient PowerShell failure, the last
+ * known value is kept (starts OFFLINE) rather than flapping.
  */
-const probePrinterState = (): string => {
-  if (os.platform() !== 'win32') return 'UNKNOWN';
+const probeDeviceState = (): DeviceState => {
+  if (os.platform() !== 'win32') return deviceProbeValue;
 
   const now = Date.now();
-  if (now - printerProbeAt < 55_000) return printerProbeValue;
-  printerProbeAt = now;
+  if (now - deviceProbeAt < 55_000) return deviceProbeValue;
+  deviceProbeAt = now;
 
   try {
+    // One line per printer: "Name|WorkOffline|PrinterStatus|DetectedErrorState".
+    // Single quotes only inside the -Command string so it survives cmd.exe.
     const out = execSync(
-      'powershell -NoProfile -Command "Get-CimInstance -ClassName Win32_Printer | ' +
-        'Select-Object -ExpandProperty Name"',
+      "powershell -NoProfile -Command \"Get-CimInstance -ClassName Win32_Printer | " +
+        "ForEach-Object { $_.Name + '|' + $_.WorkOffline + '|' + $_.PrinterStatus + '|' + $_.DetectedErrorState }\"",
       { encoding: 'utf8', timeout: 12000, windowsHide: true },
     );
-    const names = out.split('\n').map((s) => s.trim()).filter(Boolean);
-    const configured = config.print.printerName.trim().toLowerCase();
-    const configuredPresent =
-      !!configured &&
-      names.some(
-        (n) => n.toLowerCase().includes(configured) || configured.includes(n.toLowerCase()),
-      );
-    const realPrinters = names.filter((n) => !/pdf|xps|fax|onenote|microsoft print/i.test(n));
 
-    printerProbeValue = configuredPresent || realPrinters.length > 0 ? 'READY' : 'OFFLINE';
-    return printerProbeValue;
+    const rows = out
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name, workOffline, printerStatus, errState] = line.split('|');
+        return {
+          name: (name ?? '').toLowerCase(),
+          workOffline: /true/i.test(workOffline ?? ''),
+          // Win32_Printer.PrinterStatus: 1 = Other, 2 = Unknown, 3 = Idle/Ready,
+          // 4 = Printing, 5 = Warmup. DetectedErrorState: 2 = No Error.
+          printerStatus: Number(printerStatus ?? '0'),
+          errState: Number(errState ?? '2'),
+        };
+      })
+      .filter((r) => r.name && !/pdf|xps|fax|onenote|microsoft print/i.test(r.name));
+
+    const configured = config.print.printerName.trim().toLowerCase();
+    const candidates = configured
+      ? rows.filter((r) => r.name.includes(configured) || configured.includes(r.name))
+      : rows;
+
+    const anyOnline = (candidates.length ? candidates : rows).some(
+      (r) => !r.workOffline && r.printerStatus !== 1 && (r.errState === 2 || r.errState === 0),
+    );
+
+    deviceProbeValue = anyOnline ? 'ONLINE' : 'OFFLINE';
+    return deviceProbeValue;
   } catch {
     // Timeout / PowerShell contention — keep whatever we last knew.
-    return printerProbeValue;
+    return deviceProbeValue;
   }
 };
 
@@ -84,14 +110,16 @@ interface DownlinkReply {
 
 /** Send the heartbeat and get back commands + settings. */
 const sendHeartbeat = async (): Promise<DownlinkReply> => {
-  const printerState = probePrinterState();
-  lastPrinterState = printerState;
+  // The MFC-J2730DW is printer + scanner in one unit, so a single probe drives
+  // both states.
+  const deviceState = probeDeviceState();
+  lastPrinterState = deviceState;
   const payload = {
     kiosk_id: KIOSK_ID,
     label: config.kioskLabel,
     app_version: process.env.APP_VERSION || '1.0.0',
-    printer_state: printerState,
-    scanner_state: 'UNKNOWN',
+    printer_state: deviceState,
+    scanner_state: deviceState,
     current_job_id: null as string | null,
     meta: { host: os.hostname(), platform: os.platform(), role: config.instanceRole },
   };
@@ -129,44 +157,27 @@ const ackRemote = async (id: string, ok: boolean, result: string): Promise<void>
   }
 };
 
+/**
+ * Restart the Windows Print Spooler service. This clears a jammed print queue and
+ * recovers a "printer offline" that Windows has latched — it does NOT power-cycle
+ * the Brother MFC-J2730DW itself (no standard driver/USB/network path can).
+ * Restarting a service needs elevation, so the backend must run as Administrator.
+ */
 const restartPrintSpooler = (): string => {
-  if (os.platform() !== 'win32') return 'skipped (non-Windows)';
+  if (os.platform() !== 'win32') return 'skipped (non-Windows host)';
   try {
     execSync('powershell -NoProfile -Command "Restart-Service -Name Spooler -Force"', {
       encoding: 'utf8',
       timeout: 15000,
       windowsHide: true,
     });
-    return 'print spooler restarted';
-  } catch (err) {
-    // Restarting a service needs elevation; a non-admin backend can't do it.
-    throw new Error(
-      `could not restart spooler — run the backend as administrator (${String(err).slice(0, 160)})`,
-    );
-  }
-};
-
-/**
- * Kill the kiosk app process so the supervisor (start-kiosk.bat loop /
- * kiosk-watchdog.ps1) relaunches it. With no supervisor running this simply
- * closes the app.
- */
-const killKioskApp = (): string => {
-  if (os.platform() !== 'win32') return 'skipped (non-Windows)';
-  try {
-    execSync(`taskkill /F /IM ${KIOSK_PROCESS}.exe /T`, {
-      encoding: 'utf8',
-      timeout: 10000,
-      windowsHide: true,
-    });
-    return `killed ${KIOSK_PROCESS}.exe — supervisor will relaunch it`;
+    return 'Windows print spooler restarted (queue cleared)';
   } catch (err) {
     const msg = String(err);
-    // taskkill exits non-zero when the process isn't running.
-    if (/not found|128/i.test(msg)) {
-      return `${KIOSK_PROCESS}.exe was not running — supervisor will start it`;
-    }
-    throw new Error(`taskkill failed: ${msg.slice(0, 160)}`);
+    const elevation = /access is denied|cannot open|PermissionDenied|1722|5/i.test(msg)
+      ? ' — the kiosk backend must run as Administrator to restart a service'
+      : '';
+    throw new Error(`could not restart the print spooler${elevation} (${msg.slice(0, 160)})`);
   }
 };
 
@@ -195,13 +206,17 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         result = restartPrintSpooler();
         break;
       case 'RESTART_APP':
-        result = killKioskApp();
+        // Soft reload: bump the reload marker the Flutter app polls. The app
+        // resets itself to the home screen and re-inits — the process is not
+        // killed.
+        await setKioskReload(KIOSK_ID);
+        result = 'app soft-reload signalled';
         await insertIncident({
           kiosk_id: KIOSK_ID,
           device: 'app',
           error_code: 'RESTART_REQUESTED',
           severity: 'info',
-          message: `Admin requested a kiosk application restart (${result})`,
+          message: 'Admin requested a kiosk app soft reload',
         });
         break;
       case 'PURGE_STORAGE': {
@@ -213,8 +228,18 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
       }
       case 'DELETE_ALL_FILES': {
         const r = await deleteAllDocuments();
-        result = `deleted ${r.deleted} file(s)`;
-        await insertLog('warn', 'storage', `Admin delete-all: ${result}`, { kioskId: KIOSK_ID });
+        result = `deleted ${r.deleted} file(s) + records`;
+        await insertLog('warn', 'storage', `Admin delete-all (files + records): ${result}`, {
+          kioskId: KIOSK_ID,
+        });
+        break;
+      }
+      case 'DELETE_ALL_FILES_KEEP_META': {
+        const r = await deleteAllDocuments({ keepMeta: true });
+        result = `deleted ${r.deleted} file(s), kept records`;
+        await insertLog('warn', 'storage', `Admin delete-all (files only): ${result}`, {
+          kioskId: KIOSK_ID,
+        });
         break;
       }
       default:
@@ -295,4 +320,4 @@ export const startFleetAgent = (): void => {
   setInterval(() => void commandTick(), cmdIntervalMs);
 };
 
-export const currentPrinterState = (): string => lastPrinterState;
+export const currentPrinterState = (): DeviceState => lastPrinterState;

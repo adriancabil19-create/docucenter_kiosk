@@ -38,6 +38,7 @@ const VALID_COMMANDS: KioskCommandName[] = [
   'RESTART_APP',
   'PURGE_STORAGE',
   'DELETE_ALL_FILES',
+  'DELETE_ALL_FILES_KEEP_META',
 ];
 
 /** Flag-type commands whose effect we also reflect immediately on the roster row. */
@@ -208,10 +209,9 @@ router.get('/storage-documents', async (req: Request, res: Response): Promise<vo
  * the op locally only when THIS instance is a kiosk, and dispatch a command to
  * every other known kiosk to do the same.
  */
-const runStorageOp = async (
-  op: 'PURGE_STORAGE' | 'DELETE_ALL_FILES',
-  res: Response,
-): Promise<void> => {
+type StorageOp = 'PURGE_STORAGE' | 'DELETE_ALL_FILES' | 'DELETE_ALL_FILES_KEEP_META';
+
+const runStorageOp = async (op: StorageOp, res: Response): Promise<void> => {
   try {
     let localDeleted = 0;
     let queued = 0;
@@ -221,7 +221,8 @@ const runStorageOp = async (
         const { retention_hours } = await getStorageSettings();
         localDeleted = (await purgeExpiredDocuments(retention_hours)).deleted;
       } else {
-        localDeleted = (await deleteAllDocuments()).deleted;
+        localDeleted = (await deleteAllDocuments({ keepMeta: op === 'DELETE_ALL_FILES_KEEP_META' }))
+          .deleted;
       }
     }
 
@@ -240,8 +241,15 @@ const runStorageOp = async (
 };
 
 router.post('/storage/purge', (_req: Request, res: Response) => runStorageOp('PURGE_STORAGE', res));
+// "Delete files + records" — wipes bytes on every kiosk and tombstones the
+// metadata so the documents also leave the admin Storage list.
 router.post('/storage/delete-all', (_req: Request, res: Response) =>
   runStorageOp('DELETE_ALL_FILES', res),
+);
+// "Delete files, keep records" — frees kiosk disk but leaves the metadata rows,
+// so the admin still lists the documents.
+router.post('/storage/delete-all-keep-meta', (_req: Request, res: Response) =>
+  runStorageOp('DELETE_ALL_FILES_KEEP_META', res),
 );
 
 // ─── Analytics & nav summary ────────────────────────────────────────────────

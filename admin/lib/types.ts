@@ -116,15 +116,19 @@ export interface MonitoringStats {
 
 export type KioskLiveStatus = 'ONLINE' | 'OFFLINE' | 'MAINTENANCE';
 
+/** Device liveness is strictly binary — there is no "unknown". */
+export type DeviceState = 'ONLINE' | 'OFFLINE';
+
 export interface Kiosk {
   kiosk_id: string;
   label: string | null;
   app_version: string | null;
-  printer_state: string;
-  scanner_state: string;
+  printer_state: DeviceState;
+  scanner_state: DeviceState;
   current_job_id: string | null;
   maintenance: boolean;
   printing_disabled: boolean;
+  reload_at: string | null;
   meta: Record<string, unknown> | null;
   first_seen: string;
   last_seen: string;
@@ -140,7 +144,8 @@ export type KioskCommandName =
   | 'RESTART_PRINTER'
   | 'RESTART_APP'
   | 'PURGE_STORAGE'
-  | 'DELETE_ALL_FILES';
+  | 'DELETE_ALL_FILES'
+  | 'DELETE_ALL_FILES_KEEP_META';
 
 export interface KioskCommand {
   id: string;
@@ -149,6 +154,7 @@ export interface KioskCommand {
   params: Record<string, unknown> | null;
   status: 'pending' | 'delivered' | 'acked' | 'failed';
   result: string | null;
+  attempts: number;
   created_by: string | null;
   created_at: string;
   delivered_at: string | null;

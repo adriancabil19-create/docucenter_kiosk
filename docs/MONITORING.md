@@ -27,7 +27,11 @@ heartbeat every `HEARTBEAT_INTERVAL_MS` (default 20 s):
 - single process → writes straight to the local `kiosks` table
 
 Each beat carries `printer_state`, `scanner_state`, `app_version`, host metadata.
-A kiosk is **OFFLINE** when its `last_seen` is older than
+`printer_state` / `scanner_state` are strictly **ONLINE** / **OFFLINE** (no
+"unknown"): one PowerShell probe of the Brother MFC-J2730DW — which is printer +
+scanner in one unit — drives both. ONLINE means the device is installed, not
+`WorkOffline`, and not in an error/paper-out state; a powered-off or unplugged
+unit reads OFFLINE. A kiosk is **OFFLINE** when its `last_seen` is older than
 `KIOSK_OFFLINE_AFTER_SECONDS` (default 60). Heartbeats deliberately do **not** go
 through the retrying outbox — a stale queued beat would be misleading.
 
@@ -43,14 +47,21 @@ heartbeat (the heartbeat response carries `commands`), executes locally, and ACK
 |---|---|
 | `MAINTENANCE_ON` / `_OFF` | toggles `kiosks.maintenance`; the app shows a full-screen blocking panel |
 | `DISABLE_PRINTING` / `ENABLE_PRINTING` | toggles `kiosks.printing_disabled`; `/api/print/from-storage` returns **423** while set |
-| `RESTART_PRINTER` | `Restart-Service Spooler -Force` — **needs the backend to run as administrator**; the ACK carries the failure reason if it can't |
-| `RESTART_APP` | `taskkill /F /IM <KIOSK_PROCESS_NAME>.exe` — the `start-kiosk.bat` loop or `kiosk-watchdog.ps1` then relaunches it. With no supervisor running it just closes the app. |
-| `PURGE_STORAGE` / `DELETE_ALL_FILES` | run the retention purge / wipe on the kiosk that owns the files. The admin Storage buttons enqueue these for every known kiosk (and run locally too when the admin's backend is itself the kiosk). |
+| `RESTART_PRINTER` | `Restart-Service Spooler -Force` — restarts the **Windows print spooler** to clear a jammed queue / latched "printer offline". **Needs the backend to run as administrator**; the ACK carries the failure reason if it can't. Does **not** power-cycle the Brother MFC-J2730DW (no standard path can). The admin button is labelled "Restart print spooler". |
+| `RESTART_APP` | Bumps `kiosks.reload_at`. The Flutter app polls `/api/kiosk/self`, sees the change, and performs an **in-app soft reload** — resets to the home screen and rebuilds its UI subtree. The process is **not** killed. |
+| `PURGE_STORAGE` / `DELETE_ALL_FILES` / `DELETE_ALL_FILES_KEEP_META` | run the retention purge / full wipe / files-only wipe on the kiosk that owns the files. `DELETE_ALL_FILES` also tombstones the metadata (documents leave the admin list); `DELETE_ALL_FILES_KEEP_META` deletes only the bytes and keeps the records. The admin Storage buttons enqueue these for every known kiosk (and run locally too when the admin's backend is itself the kiosk). |
 
 Flag commands also update the roster row immediately so the console reflects
 intent without waiting for the ACK. Between heartbeats the agent still polls for
 commands every ~5 s, so admin actions land quickly. Each command's outcome is
 recorded on `kiosk_commands.result` (visible in `GET /api/fleet/kiosks/:id`).
+
+**Delivery guarantee.** `claimPendingCommands` hands out `pending` commands *and*
+re-hands any `delivered` command that has gone 90 s with no ACK (kiosk crash,
+lost ACK, flaky link), bumping `kiosk_commands.attempts` each time. After 6
+attempts with no ACK the command is marked `failed` so it stops and shows in the
+history rather than stalling silently. Executors are idempotent, so a
+re-delivered command is safe to run twice.
 
 ## 3. Incidents (Alerts)
 
@@ -110,10 +121,11 @@ command-poll / nav-summary calls so hosted log drains stay cheap.
 
 ## 6. Offline resilience (kiosk app)
 
-`KioskRuntime` polls `/api/kiosk/self` every 10 s. Two consecutive misses →
+`KioskRuntime` polls `/api/kiosk/self` every 6 s. Two consecutive misses →
 non-blocking "Connection lost" banner (auto-retries). `maintenance` →
-full-screen panel. `printing_disabled` → banner. The local services keep working
-while the internet (payments relay) is down.
+full-screen panel. `printing_disabled` → banner. A changed `reload_at` →
+soft reload. The local services keep working while the internet (payments relay)
+is down.
 
 ## 7. OS watchdog
 

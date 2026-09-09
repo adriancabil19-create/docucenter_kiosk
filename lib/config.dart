@@ -37,8 +37,10 @@ class BackendConfig {
   static const String kioskSelfUrl = '$serverUrl/api/kiosk/self';
   static const String kioskIncidentUrl = '$serverUrl/api/kiosk/incidents';
 
-  /// How often the app polls its runtime flags / connectivity.
-  static const Duration kioskRuntimePollInterval = Duration(seconds: 15);
+  /// How often the app polls its runtime flags / connectivity. Kept short so
+  /// maintenance mode and "Restart app" land quickly; the endpoint is loopback
+  /// and exempt from rate limiting / request logging.
+  static const Duration kioskRuntimePollInterval = Duration(seconds: 6);
 
     /// Upload endpoint on the Railway transfer relay (kiosk → phone)
     static const String transferUploadUrl = '$railwayUrl/api/transfer/upload';

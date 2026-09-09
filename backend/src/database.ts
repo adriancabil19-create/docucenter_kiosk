@@ -193,6 +193,23 @@ export const initSchema = async (): Promise<void> => {
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN duplex INTEGER NOT NULL DEFAULT 0`);
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN unit_price REAL NOT NULL DEFAULT 0`);
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN service_type TEXT NOT NULL DEFAULT 'printing'`);
+  // kiosk_commands: re-delivery bookkeeping so a command that is claimed but
+  // never ACKed (kiosk crash, lost ACK, flaky link) is handed out again instead
+  // of silently stalling as 'delivered' forever.
+  await addColumn(`ALTER TABLE kiosk_commands ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`);
+  // kiosks: timestamp bumped when the admin asks the app to soft-reload.
+  await addColumn(`ALTER TABLE kiosks ADD COLUMN reload_at TEXT`);
+  // Device state is now strictly ONLINE / OFFLINE — normalise any legacy values.
+  try {
+    await db.execute(
+      `UPDATE kiosks SET printer_state = 'OFFLINE' WHERE printer_state NOT IN ('ONLINE','OFFLINE')`,
+    );
+    await db.execute(
+      `UPDATE kiosks SET scanner_state = 'OFFLINE' WHERE scanner_state NOT IN ('ONLINE','OFFLINE')`,
+    );
+  } catch {
+    /* fresh DB — nothing to normalise */
+  }
 
   // Seed the storage-settings singleton.
   await db.execute(
@@ -671,15 +688,23 @@ export const incrementPaperTray = async (trayName: string, sheetsAdded: number):
 
 // ─── Fleet: kiosks & heartbeats ──────────────────────────────────────────────
 
+/** Device liveness is strictly binary — there is no "unknown". */
+export type DeviceState = 'ONLINE' | 'OFFLINE';
+
+/** Coerce any legacy / unexpected value to ONLINE | OFFLINE. */
+export const normDeviceState = (v: unknown): DeviceState =>
+  String(v ?? '').toUpperCase() === 'ONLINE' ? 'ONLINE' : 'OFFLINE';
+
 export interface KioskRow {
   kiosk_id: string;
   label: string | null;
   app_version: string | null;
-  printer_state: string;
-  scanner_state: string;
+  printer_state: DeviceState;
+  scanner_state: DeviceState;
   current_job_id: string | null;
   maintenance: boolean;
   printing_disabled: boolean;
+  reload_at: string | null;
   meta: Record<string, unknown> | null;
   first_seen: string;
   last_seen: string;
@@ -728,11 +753,12 @@ const mapKiosk = (r: Record<string, unknown>): KioskRow => ({
   kiosk_id: String(r.kiosk_id),
   label: (r.label as string) ?? null,
   app_version: (r.app_version as string) ?? null,
-  printer_state: String(r.printer_state ?? 'UNKNOWN'),
-  scanner_state: String(r.scanner_state ?? 'UNKNOWN'),
+  printer_state: normDeviceState(r.printer_state),
+  scanner_state: normDeviceState(r.scanner_state),
   current_job_id: (r.current_job_id as string) ?? null,
   maintenance: Number(r.maintenance) === 1,
   printing_disabled: Number(r.printing_disabled) === 1,
+  reload_at: (r.reload_at as string) ?? null,
   meta: r.meta ? (JSON.parse(String(r.meta)) as Record<string, unknown>) : null,
   first_seen: String(r.first_seen),
   last_seen: String(r.last_seen),
@@ -778,6 +804,19 @@ export const setKioskFlags = async (
       printing_disabled:
         flags.printing_disabled === undefined ? null : flags.printing_disabled ? 1 : 0,
     },
+  });
+};
+
+/**
+ * Stamp `kiosks.reload_at` so the Flutter app, which polls `/api/kiosk/self`,
+ * sees the value change and performs an in-app soft reload (no process kill).
+ */
+export const setKioskReload = async (kioskId: string): Promise<void> => {
+  const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  await getDb().execute({
+    sql: `INSERT INTO kiosks (kiosk_id, reload_at) VALUES (@kioskId, @now)
+          ON CONFLICT(kiosk_id) DO UPDATE SET reload_at = @now`,
+    args: { kioskId, now },
   });
 };
 
@@ -891,7 +930,8 @@ export type KioskCommandName =
   | 'RESTART_PRINTER'
   | 'RESTART_APP'
   | 'PURGE_STORAGE'
-  | 'DELETE_ALL_FILES';
+  | 'DELETE_ALL_FILES'
+  | 'DELETE_ALL_FILES_KEEP_META';
 
 export interface KioskCommandRow {
   id: string;
@@ -900,11 +940,17 @@ export interface KioskCommandRow {
   params: Record<string, unknown> | null;
   status: 'pending' | 'delivered' | 'acked' | 'failed';
   result: string | null;
+  attempts: number;
   created_by: string | null;
   created_at: string;
   delivered_at: string | null;
   acked_at: string | null;
 }
+
+/** After this many hand-outs with no ACK, a command is marked failed, not retried forever. */
+const MAX_COMMAND_ATTEMPTS = 6;
+/** A 'delivered' command with no ACK older than this is eligible for re-delivery (seconds). */
+const COMMAND_REDELIVER_AFTER_SECONDS = 90;
 
 export const enqueueCommand = async (
   kioskId: string,
@@ -934,27 +980,69 @@ const mapCommand = (r: Record<string, unknown>): KioskCommandRow => ({
   params: r.params ? (JSON.parse(String(r.params)) as Record<string, unknown>) : null,
   status: String(r.status) as KioskCommandRow['status'],
   result: (r.result as string) ?? null,
+  attempts: Number(r.attempts ?? 0),
   created_by: (r.created_by as string) ?? null,
   created_at: String(r.created_at),
   delivered_at: (r.delivered_at as string) ?? null,
   acked_at: (r.acked_at as string) ?? null,
 });
 
-/** Pending commands for a kiosk, marking them 'delivered' as they are handed out. */
+/**
+ * Hand a kiosk its outstanding commands.
+ *
+ * Returns commands that are either brand new ('pending') or were handed out
+ * before but never ACKed and have gone stale ('delivered' older than
+ * COMMAND_REDELIVER_AFTER_SECONDS). Each returned row's `attempts` is bumped and
+ * only *those* rows are touched — a command inserted a millisecond later is not
+ * swept up and lost. Once a command has been handed out MAX_COMMAND_ATTEMPTS
+ * times with no ACK it is marked 'failed' so it stops and shows up in the
+ * command history instead of stalling forever.
+ */
 export const claimPendingCommands = async (kioskId: string): Promise<KioskCommandRow[]> => {
-  const result = await getDb().execute({
+  const db = getDb();
+
+  // Give up on commands that have been retried too many times.
+  await db.execute({
+    sql: `UPDATE kiosk_commands
+          SET status = 'failed',
+              result = COALESCE(result, 'no ACK after ' || attempts || ' attempts'),
+              acked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE kiosk_id = @kioskId AND status = 'delivered'
+            AND acked_at IS NULL AND attempts >= @maxAttempts`,
+    args: { kioskId, maxAttempts: MAX_COMMAND_ATTEMPTS },
+  });
+
+  const result = await db.execute({
     sql: `SELECT * FROM kiosk_commands
-          WHERE kiosk_id = @kioskId AND status = 'pending'
+          WHERE kiosk_id = @kioskId
+            AND (
+              status = 'pending'
+              OR (
+                status = 'delivered' AND acked_at IS NULL
+                AND attempts < @maxAttempts
+                AND delivered_at < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', @staleWindow)
+              )
+            )
           ORDER BY created_at ASC LIMIT 20`,
-    args: { kioskId },
+    args: {
+      kioskId,
+      maxAttempts: MAX_COMMAND_ATTEMPTS,
+      staleWindow: `-${COMMAND_REDELIVER_AFTER_SECONDS} seconds`,
+    },
   });
   const rows = toRows<Record<string, unknown>>(result).map(mapCommand);
   if (rows.length) {
-    await getDb().execute({
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map((_, i) => `@id${i}`).join(', ');
+    const args: Record<string, string> = {};
+    ids.forEach((id, i) => (args[`id${i}`] = id));
+    await db.execute({
       sql: `UPDATE kiosk_commands
-            SET status = 'delivered', delivered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE kiosk_id = @kioskId AND status = 'pending'`,
-      args: { kioskId },
+            SET status = 'delivered',
+                delivered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                attempts = attempts + 1
+            WHERE id IN (${placeholders})`,
+      args,
     });
   }
   return rows;

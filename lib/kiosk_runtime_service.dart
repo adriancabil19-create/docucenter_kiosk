@@ -23,15 +23,25 @@ class KioskRuntime extends ChangeNotifier {
   bool _connected = true;
   bool _maintenance = false;
   bool _printingDisabled = false;
-  String _printerState = 'UNKNOWN';
+  String _printerState = 'OFFLINE';
   int _openIncidents = 0;
   int _consecutiveFailures = 0;
+
+  /// Last `reload_at` value seen from the backend. When it changes (after the
+  /// first primed poll) the admin has issued a "Restart app" command and the app
+  /// should soft-reload — [onReloadRequested] is invoked.
+  String? _reloadAt;
 
   bool get connected => _connected;
   bool get maintenance => _maintenance;
   bool get printingDisabled => _printingDisabled;
   String get printerState => _printerState;
   int get openIncidents => _openIncidents;
+
+  /// Set by the app shell. Called when the admin requests a soft reload — the
+  /// app should reset to the home screen and re-initialise, without the process
+  /// being killed.
+  VoidCallback? onReloadRequested;
 
   /// Show the offline banner only after connectivity has actually been lost
   /// (two misses in a row) and we were primed with a good response before.
@@ -65,6 +75,7 @@ class KioskRuntime extends ChangeNotifier {
       }
 
       final data = json.decode(res.body) as Map<String, dynamic>;
+      final wasPrimed = _primed;
       _consecutiveFailures = 0;
       _primed = true;
 
@@ -81,10 +92,22 @@ class KioskRuntime extends ChangeNotifier {
           () => _maintenance = data['maintenance'] == true);
       set(data['printing_disabled'] == true, _printingDisabled,
           () => _printingDisabled = data['printing_disabled'] == true);
-      set((data['printer_state'] ?? 'UNKNOWN').toString(), _printerState,
-          () => _printerState = (data['printer_state'] ?? 'UNKNOWN').toString());
+      final printer = (data['printer_state'] ?? 'OFFLINE').toString().toUpperCase();
+      set(printer == 'ONLINE' ? 'ONLINE' : 'OFFLINE', _printerState,
+          () => _printerState = printer == 'ONLINE' ? 'ONLINE' : 'OFFLINE');
       set((data['openIncidents'] as num?)?.toInt() ?? 0, _openIncidents,
           () => _openIncidents = (data['openIncidents'] as num?)?.toInt() ?? 0);
+
+      // "Restart app" downlink: a changed reload_at after the first primed poll
+      // means the operator asked for a soft reload.
+      final reloadAt = data['reload_at']?.toString();
+      if (wasPrimed && reloadAt != null && reloadAt != _reloadAt) {
+        _reloadAt = reloadAt;
+        debugPrint('KioskRuntime: soft-reload requested (reload_at=$reloadAt)');
+        onReloadRequested?.call();
+      } else {
+        _reloadAt = reloadAt;
+      }
 
       if (changed) notifyListeners();
     } catch (e) {
