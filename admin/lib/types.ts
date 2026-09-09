@@ -186,6 +186,25 @@ export interface StorageSettings {
   updated_at: string;
 }
 
+// ─── Kiosk pricing ───────────────────────────────────────────────────────────
+
+/** Per-page price for one colour mode (pesos). */
+export interface TierPrice {
+  bw: number;
+  color: number;
+}
+
+export interface PricingSettings {
+  print: { draft: TierPrice; standard: TierPrice };
+  photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
+  updated_at: string;
+}
+
+export interface PricingSettingsResponse {
+  success: boolean;
+  settings: PricingSettings;
+}
+
 /** Document metadata synced from a kiosk — the file bytes stay on the kiosk. */
 export interface StorageDocMeta {
   id: string;

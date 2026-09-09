@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../storage_service.dart';
+import '../kiosk_runtime_service.dart';
 import 'payment_page.dart';
 
 class PrintingInterface extends StatefulWidget {
@@ -29,26 +30,41 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
   int _copies = 1;
   late final TextEditingController _copiesController;
 
+  /// Per-page price for the current quality + colour, from the admin-configured
+  /// price list (falls back to the built-in defaults before the first poll).
+  double get _costPerPage =>
+      KioskRuntime.instance.pricing.printTier(_quality).forMode(_colorMode);
+
+  /// "1.50" but "2" — drop a redundant ".00".
+  static String _peso(double v) {
+    final s = v.toStringAsFixed(2);
+    return s.endsWith('.00') ? s.substring(0, s.length - 3) : s;
+  }
+
+  static String _qualityLabel(String name, PagePrice p) =>
+      '$name (₱${_peso(p.bw)} B&W / ₱${_peso(p.color)} Color)';
+
   double _calculateCost() {
-    double costPerPage;
-    if (_quality == 'draft') {
-      costPerPage = _colorMode == 'color' ? 2 : 1.5;
-    } else {
-      costPerPage = _colorMode == 'color' ? 3 : 2;
-    }
     final totalPages =
         widget.selectedDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
-    return costPerPage * totalPages * _copies;
+    return _costPerPage * totalPages * _copies;
+  }
+
+  void _onPricingChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void initState() {
     super.initState();
     _copiesController = TextEditingController(text: _copies.toString());
+    // Relabel the quality options / recompute cost when the admin retunes prices.
+    KioskRuntime.instance.addListener(_onPricingChanged);
   }
 
   @override
   void dispose() {
+    KioskRuntime.instance.removeListener(_onPricingChanged);
     _copiesController.dispose();
     super.dispose();
   }
@@ -300,7 +316,12 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                             _quality,
                             ['draft', 'standard'],
                             (val) => setState(() => _quality = val),
-                            ['Draft (₱1.50 B&W / ₱2 Color)', 'Standard (₱2 B&W / ₱3 Color)'],
+                            [
+                              _qualityLabel('Draft',
+                                  KioskRuntime.instance.pricing.printDraft),
+                              _qualityLabel('Standard',
+                                  KioskRuntime.instance.pricing.printStandard),
+                            ],
                           ),
                           const SizedBox(height: 16),
                           Text(

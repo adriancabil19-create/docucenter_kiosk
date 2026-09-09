@@ -27,6 +27,10 @@ class KioskRuntime extends ChangeNotifier {
   int _openIncidents = 0;
   int _consecutiveFailures = 0;
 
+  /// Per-page prices set by the admin. Defaults match the historical hard-coded
+  /// rates so the app is usable before the first poll completes.
+  KioskPricing _pricing = KioskPricing.defaults;
+
   /// Last `reload_at` value seen from the backend. When it changes (after the
   /// first primed poll) the admin has issued a "Restart app" command and the app
   /// should soft-reload — [onReloadRequested] is invoked.
@@ -37,6 +41,10 @@ class KioskRuntime extends ChangeNotifier {
   bool get printingDisabled => _printingDisabled;
   String get printerState => _printerState;
   int get openIncidents => _openIncidents;
+
+  /// Current admin-configured per-page prices. Always non-null (defaults until
+  /// the first poll lands).
+  KioskPricing get pricing => _pricing;
 
   /// Set by the app shell. Called when the admin requests a soft reload — the
   /// app should reset to the home screen and re-initialise, without the process
@@ -98,6 +106,12 @@ class KioskRuntime extends ChangeNotifier {
       set((data['openIncidents'] as num?)?.toInt() ?? 0, _openIncidents,
           () => _openIncidents = (data['openIncidents'] as num?)?.toInt() ?? 0);
 
+      final nextPricing = KioskPricing.fromJson(data['pricing']);
+      if (nextPricing.signature != _pricing.signature) {
+        _pricing = nextPricing;
+        changed = true;
+      }
+
       // "Restart app" downlink: a changed reload_at after the first primed poll
       // means the operator asked for a soft reload.
       final reloadAt = data['reload_at']?.toString();
@@ -153,4 +167,82 @@ class KioskRuntime extends ChangeNotifier {
       debugPrint('reportIncident failed: $e');
     }
   }
+}
+
+/// Per-page price for one colour mode (pesos).
+class PagePrice {
+  final double bw;
+  final double color;
+  const PagePrice(this.bw, this.color);
+
+  /// Price for the given mode string ('color' → colour, anything else → B&W).
+  double forMode(String colorMode) => colorMode == 'color' ? color : bw;
+
+  factory PagePrice.fromJson(dynamic j, PagePrice fallback) {
+    if (j is! Map) return fallback;
+    double pick(String k, double f) {
+      final v = j[k];
+      return v is num && v >= 0 ? v.toDouble() : f;
+    }
+
+    return PagePrice(pick('bw', fallback.bw), pick('color', fallback.color));
+  }
+}
+
+/// The kiosk price list, mirrored from the admin. Scanning is free and absent.
+class KioskPricing {
+  final PagePrice printDraft;
+  final PagePrice printStandard;
+  final PagePrice copyDraft;
+  final PagePrice copyStandard;
+  final PagePrice copyHigh;
+
+  const KioskPricing({
+    required this.printDraft,
+    required this.printStandard,
+    required this.copyDraft,
+    required this.copyStandard,
+    required this.copyHigh,
+  });
+
+  /// Historical hard-coded rates — used until the first poll and as field
+  /// fallbacks for anything the backend omits.
+  static const KioskPricing defaults = KioskPricing(
+    printDraft: PagePrice(1.5, 2),
+    printStandard: PagePrice(2, 3),
+    copyDraft: PagePrice(1, 3),
+    copyStandard: PagePrice(2, 4),
+    copyHigh: PagePrice(3, 5),
+  );
+
+  /// Per-page price for printing at a quality tier ('draft' | 'standard').
+  PagePrice printTier(String quality) =>
+      quality == 'draft' ? printDraft : printStandard;
+
+  /// Per-page price for photocopying at a quality tier ('high'|'standard'|'draft').
+  PagePrice copyTier(String quality) => quality == 'high'
+      ? copyHigh
+      : quality == 'draft'
+          ? copyDraft
+          : copyStandard;
+
+  factory KioskPricing.fromJson(dynamic j) {
+    if (j is! Map) return defaults;
+    final p = j['print'];
+    final c = j['photocopy'];
+    Map? m(dynamic x) => x is Map ? x : null;
+    return KioskPricing(
+      printDraft: PagePrice.fromJson(m(p)?['draft'], defaults.printDraft),
+      printStandard: PagePrice.fromJson(m(p)?['standard'], defaults.printStandard),
+      copyDraft: PagePrice.fromJson(m(c)?['draft'], defaults.copyDraft),
+      copyStandard: PagePrice.fromJson(m(c)?['standard'], defaults.copyStandard),
+      copyHigh: PagePrice.fromJson(m(c)?['high'], defaults.copyHigh),
+    );
+  }
+
+  /// Compact value key for cheap change detection.
+  String get signature =>
+      '${printDraft.bw}/${printDraft.color}|${printStandard.bw}/${printStandard.color}|'
+      '${copyDraft.bw}/${copyDraft.color}|${copyStandard.bw}/${copyStandard.color}|'
+      '${copyHigh.bw}/${copyHigh.color}';
 }

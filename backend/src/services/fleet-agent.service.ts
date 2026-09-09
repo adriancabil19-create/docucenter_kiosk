@@ -21,6 +21,9 @@ import {
   ackCommand,
   getStorageSettings,
   updateStorageSettings,
+  getPricingSettings,
+  updatePricingSettings,
+  pricingSignature,
   setKioskFlags,
   setKioskReload,
   insertIncident,
@@ -28,6 +31,7 @@ import {
   type DeviceState,
   type KioskCommandRow,
   type KioskCommandName,
+  type PricingSettings,
 } from '../database';
 import { purgeExpiredDocuments, deleteAllDocuments } from './storage.service';
 
@@ -105,7 +109,10 @@ const probeDeviceState = (): DeviceState => {
 
 interface DownlinkReply {
   commands: KioskCommandRow[];
-  settings?: { storage?: { delete_after_print: boolean; retention_hours: number } };
+  settings?: {
+    storage?: { delete_after_print: boolean; retention_hours: number };
+    pricing?: PricingSettings;
+  };
 }
 
 /** Send the heartbeat and get back commands + settings. */
@@ -266,6 +273,19 @@ const applyReply = async (reply: DownlinkReply): Promise<void> => {
       logger.info('Fleet agent: storage settings applied', storage);
     }
   }
+
+  const pricing = reply.settings?.pricing;
+  if (pricing) {
+    const current = await getPricingSettings();
+    if (pricingSignature(current) !== pricingSignature(pricing)) {
+      await updatePricingSettings(pricing);
+      logger.info('Fleet agent: pricing applied', {
+        print: pricing.print,
+        photocopy: pricing.photocopy,
+      });
+    }
+  }
+
   for (const cmd of reply.commands ?? []) {
     await executeCommand(cmd);
   }

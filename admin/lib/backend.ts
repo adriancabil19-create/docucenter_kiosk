@@ -23,6 +23,7 @@ import type {
   KioskDetailResponse,
   IncidentsResponse,
   StorageSettingsResponse,
+  PricingSettingsResponse,
   StorageDocumentsResponse,
   AnalyticsResponse,
   FleetSummaryResponse,
@@ -188,6 +189,9 @@ export const resolveIncident = (id: string): Promise<MutationResponse> =>
 
 export const getStorageSettings = (): Promise<StorageSettingsResponse> =>
   apiFetch<StorageSettingsResponse>('/api/fleet/storage-settings');
+
+export const getPricingSettings = (): Promise<PricingSettingsResponse> =>
+  apiFetch<PricingSettingsResponse>('/api/fleet/pricing-settings');
 
 export const getStorageDocuments = (limit = 500): Promise<StorageDocumentsResponse> =>
   apiFetch<StorageDocumentsResponse>(`/api/fleet/storage-documents?limit=${limit}`);

@@ -151,6 +151,15 @@ export const initSchema = async (): Promise<void> => {
       updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- Singleton (id = 1) kiosk pricing. Held as a JSON blob so the admin can
+    -- retune rates (supply cost changes) without a schema migration; the kiosk
+    -- picks it up on its next poll.
+    CREATE TABLE IF NOT EXISTS pricing_settings (
+      id         INTEGER PRIMARY KEY CHECK (id = 1),
+      data       TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
     -- Metadata ONLY for documents uploaded on a kiosk. The file bytes never
     -- leave the kiosk — this is what the admin console lists.
     CREATE TABLE IF NOT EXISTS storage_documents (
@@ -215,6 +224,7 @@ export const initSchema = async (): Promise<void> => {
   await db.execute(
     `INSERT OR IGNORE INTO storage_settings (id, delete_after_print, retention_hours) VALUES (1, 0, 24)`,
   );
+  await db.execute(`INSERT OR IGNORE INTO pricing_settings (id, data) VALUES (1, '{}')`);
 
   // Step 3: Seed + enforce static paper sizes
   await db.executeMultiple(`
@@ -1138,6 +1148,107 @@ export const updateStorageSettings = async (patch: {
   });
   return getStorageSettings();
 };
+
+// ─── Kiosk pricing ──────────────────────────────────────────────────────────
+
+/** Per-page price for one colour mode. */
+export interface TierPrice {
+  bw: number;
+  color: number;
+}
+
+/**
+ * The complete kiosk price list. `print` has two quality tiers, `photocopy`
+ * three. Scanning is free and not represented here.
+ */
+export interface PricingSettings {
+  print: { draft: TierPrice; standard: TierPrice };
+  photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
+  updated_at: string;
+}
+
+export type PricingInput = {
+  print?: { draft?: Partial<TierPrice>; standard?: Partial<TierPrice> };
+  photocopy?: {
+    draft?: Partial<TierPrice>;
+    standard?: Partial<TierPrice>;
+    high?: Partial<TierPrice>;
+  };
+};
+
+/** Falls back to these when a field is missing or invalid. */
+const DEFAULT_PRICING: Omit<PricingSettings, 'updated_at'> = {
+  print: { draft: { bw: 1.5, color: 2 }, standard: { bw: 2, color: 3 } },
+  photocopy: {
+    draft: { bw: 1, color: 3 },
+    standard: { bw: 2, color: 4 },
+    high: { bw: 3, color: 5 },
+  },
+};
+
+/** Non-negative peso amount, 2 dp; `fallback` for anything unusable. */
+const money = (v: unknown, fallback: number): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.round(n * 100) / 100;
+};
+
+const mergeTier = (base: TierPrice, over: Partial<TierPrice> | undefined): TierPrice => ({
+  bw: money(over?.bw, base.bw),
+  color: money(over?.color, base.color),
+});
+
+const normalizePricing = (raw: PricingInput | undefined): Omit<PricingSettings, 'updated_at'> => ({
+  print: {
+    draft: mergeTier(DEFAULT_PRICING.print.draft, raw?.print?.draft),
+    standard: mergeTier(DEFAULT_PRICING.print.standard, raw?.print?.standard),
+  },
+  photocopy: {
+    draft: mergeTier(DEFAULT_PRICING.photocopy.draft, raw?.photocopy?.draft),
+    standard: mergeTier(DEFAULT_PRICING.photocopy.standard, raw?.photocopy?.standard),
+    high: mergeTier(DEFAULT_PRICING.photocopy.high, raw?.photocopy?.high),
+  },
+});
+
+export const getPricingSettings = async (): Promise<PricingSettings> => {
+  const result = await getDb().execute(`SELECT * FROM pricing_settings WHERE id = 1`);
+  const row = firstRow<Record<string, unknown>>(result);
+  let parsed: PricingInput = {};
+  try {
+    parsed = row?.data ? (JSON.parse(String(row.data)) as PricingInput) : {};
+  } catch {
+    parsed = {};
+  }
+  return { ...normalizePricing(parsed), updated_at: String(row?.updated_at ?? '') };
+};
+
+/** Deep-merge `patch` onto the current prices, validate, and persist. */
+export const updatePricingSettings = async (patch: PricingInput): Promise<PricingSettings> => {
+  const cur = await getPricingSettings();
+  const merged = normalizePricing({
+    print: {
+      draft: { ...cur.print.draft, ...patch?.print?.draft },
+      standard: { ...cur.print.standard, ...patch?.print?.standard },
+    },
+    photocopy: {
+      draft: { ...cur.photocopy.draft, ...patch?.photocopy?.draft },
+      standard: { ...cur.photocopy.standard, ...patch?.photocopy?.standard },
+      high: { ...cur.photocopy.high, ...patch?.photocopy?.high },
+    },
+  });
+  await getDb().execute({
+    sql: `INSERT INTO pricing_settings (id, data, updated_at)
+          VALUES (1, @data, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+          ON CONFLICT(id) DO UPDATE SET
+            data = @data, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
+    args: { data: JSON.stringify(merged) },
+  });
+  return getPricingSettings();
+};
+
+/** Stable JSON of the price list (no timestamp) — for change detection. */
+export const pricingSignature = (p: PricingSettings | Omit<PricingSettings, 'updated_at'>): string =>
+  JSON.stringify({ print: p.print, photocopy: p.photocopy });
 
 // ─── Storage document metadata (bytes stay on the kiosk) ─────────────────────
 

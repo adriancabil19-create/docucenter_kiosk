@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../scanner_status.dart';
+import '../kiosk_runtime_service.dart';
 import 'payment_page.dart';
 
 class PhotocopyingInterface extends StatefulWidget {
@@ -43,12 +44,19 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
       const Duration(seconds: 3),
       (_) => _refreshAdfStatus(),
     );
+    // Recompute the cost breakdown when the admin retunes prices.
+    KioskRuntime.instance.addListener(_onPricingChanged);
   }
 
   @override
   void dispose() {
+    KioskRuntime.instance.removeListener(_onPricingChanged);
     _adfStatusTimer?.cancel();
     super.dispose();
+  }
+
+  void _onPricingChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<bool> _refreshAdfStatus() async {
@@ -59,15 +67,11 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   }
 
   // ── Pricing: cost per page per copy ──────────────────────────────────────
-  // Color: High=₱5, Standard=₱4, Draft=₱3  |  B&W: High=₱3, Standard=₱2, Draft=₱1
+  // Rates come from the admin console (KioskRuntime.pricing); the built-in
+  // defaults are Color: High ₱5 / Standard ₱4 / Draft ₱3, B&W ₱3 / ₱2 / ₱1.
 
-  double get _costPerPage {
-    if (_colorMode == 'color') {
-      return _quality == 'high' ? 5.0 : _quality == 'standard' ? 4.0 : 3.0;
-    } else {
-      return _quality == 'high' ? 3.0 : _quality == 'standard' ? 2.0 : 1.0;
-    }
-  }
+  double get _costPerPage =>
+      KioskRuntime.instance.pricing.copyTier(_quality).forMode(_colorMode);
 
   double get _totalCost => _costPerPage * _pageCount * _copies;
 

@@ -17,6 +17,8 @@ import type {
   KioskDetailResponse,
   IncidentsResponse,
   StorageSettingsResponse,
+  PricingSettings,
+  PricingSettingsResponse,
   StorageDocumentsResponse,
   AnalyticsResponse,
   FleetSummaryResponse,
@@ -175,6 +177,17 @@ export const updateStorageSettings = (patch: {
   retention_hours?: number;
 }): Promise<StorageSettingsResponse> =>
   apiFetch<StorageSettingsResponse>('/api/fleet/storage-settings', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+
+export const getPricingSettings = (): Promise<PricingSettingsResponse> =>
+  apiFetch<PricingSettingsResponse>('/api/fleet/pricing-settings');
+
+export const updatePricingSettings = (
+  patch: Partial<Pick<PricingSettings, 'print' | 'photocopy'>>,
+): Promise<PricingSettingsResponse> =>
+  apiFetch<PricingSettingsResponse>('/api/fleet/pricing-settings', {
     method: 'PUT',
     body: JSON.stringify(patch),
   });

@@ -20,6 +20,7 @@ import {
   claimPendingCommands,
   ackCommand,
   getStorageSettings,
+  getPricingSettings,
   upsertStorageDocMeta,
   softDeleteStorageDocMeta,
   TransactionRow,
@@ -156,13 +157,14 @@ router.post('/heartbeat', async (req: Request, res: Response): Promise<void> => 
       current_job_id: body.current_job_id ?? null,
       meta: body.meta,
     });
-    // Reply with anything the kiosk needs to apply locally: pending commands and
-    // the current retention policy. Keeps the downlink to a single round-trip.
-    const [commands, storage] = await Promise.all([
+    // Reply with anything the kiosk needs to apply locally: pending commands,
+    // the retention policy, and the price list. One round-trip.
+    const [commands, storage, pricing] = await Promise.all([
       claimPendingCommands(body.kiosk_id),
       getStorageSettings(),
+      getPricingSettings(),
     ]);
-    res.json({ success: true, commands, settings: { storage } });
+    res.json({ success: true, commands, settings: { storage, pricing } });
   } catch (err) {
     logger.warn('Sync: heartbeat failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
@@ -261,11 +263,12 @@ router.get('/commands', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ success: false, error: 'kiosk_id required' });
       return;
     }
-    const [commands, storage] = await Promise.all([
+    const [commands, storage, pricing] = await Promise.all([
       claimPendingCommands(kioskId),
       getStorageSettings(),
+      getPricingSettings(),
     ]);
-    res.json({ success: true, commands, settings: { storage } });
+    res.json({ success: true, commands, settings: { storage, pricing } });
   } catch (err) {
     logger.warn('Sync: command poll failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });

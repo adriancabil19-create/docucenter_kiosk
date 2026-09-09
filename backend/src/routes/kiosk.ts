@@ -14,6 +14,7 @@ import {
   getKioskById,
   ensureKiosk,
   getStorageSettings,
+  getPricingSettings,
   getOpenIncidentCount,
   insertIncident,
 } from '../database';
@@ -24,9 +25,10 @@ const router = Router();
 router.get('/self', async (_req: Request, res: Response): Promise<void> => {
   try {
     await ensureKiosk(config.kioskId, config.kioskLabel);
-    const [kiosk, storage, openIncidents] = await Promise.all([
+    const [kiosk, storage, pricing, openIncidents] = await Promise.all([
       getKioskById(config.kioskId),
       getStorageSettings(),
+      getPricingSettings(),
       getOpenIncidentCount(),
     ]);
     res.json({
@@ -40,6 +42,7 @@ router.get('/self', async (_req: Request, res: Response): Promise<void> => {
       // Bumped by a RESTART_APP command — the app soft-reloads when it changes.
       reload_at: kiosk?.reload_at ?? null,
       storage,
+      pricing,
       openIncidents,
       serverTime: new Date().toISOString(),
     });

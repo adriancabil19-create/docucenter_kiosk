@@ -20,6 +20,9 @@ import {
   getOpenIncidentCount,
   getStorageSettings,
   updateStorageSettings,
+  getPricingSettings,
+  updatePricingSettings,
+  type PricingInput,
   getStorageDocMetas,
   getAnalytics,
   insertLog,
@@ -188,6 +191,30 @@ router.put('/storage-settings', async (req: Request, res: Response): Promise<voi
     await insertLog('info', 'storage', 'Retention policy updated by admin', { ...settings });
     res.json({ success: true, settings });
   } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// ─── Kiosk pricing ─────────────────────────────────────────────────────────
+
+router.get('/pricing-settings', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    res.json({ success: true, settings: await getPricingSettings() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.put('/pricing-settings', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const settings = await updatePricingSettings((req.body ?? {}) as PricingInput);
+    await insertLog('info', 'pricing', 'Kiosk pricing updated by admin', {
+      print: settings.print,
+      photocopy: settings.photocopy,
+    });
+    res.json({ success: true, settings });
+  } catch (err) {
+    logger.error('Fleet: update pricing failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });
