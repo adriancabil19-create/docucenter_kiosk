@@ -197,6 +197,7 @@ class _MainAppState extends State<MainApp> {
                             currentPage: _currentPage,
                             onNavigate: _navigate,
                           ),
+                          const KioskBanners(),
                           Expanded(
                             child: HomePage(
                               currentPage: _currentPage,

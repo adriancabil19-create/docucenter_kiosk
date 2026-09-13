@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../kiosk_runtime_service.dart';
 
-/// Wraps the whole app UI and layers connectivity / maintenance state on top:
-///
-///  * a non-blocking amber banner when the local backend is unreachable,
-///  * a non-blocking banner when the admin has disabled printing,
-///  * a full-screen blocking panel when the kiosk is in maintenance mode.
+/// Wraps the whole app UI and layers a full-screen blocking panel on top
+/// when the kiosk is in maintenance mode.
 ///
 /// Rebuilds only when [KioskRuntime] notifies, so the rest of the tree is
-/// untouched in the common (healthy) case.
+/// untouched in the common (healthy) case. Non-blocking status banners live
+/// in [KioskBanners] instead — that one sits in normal document flow (below
+/// the header), rather than overlaying it.
 class KioskShell extends StatelessWidget {
   const KioskShell({super.key, required this.child});
 
@@ -24,52 +23,58 @@ class KioskShell extends StatelessWidget {
         return Stack(
           children: [
             Positioned.fill(child: child),
-
-            // Status banners stack under the top edge, newest concern first.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (rt.showOffline)
-                      _Banner(
-                        color: const Color(0xFFB45309),
-                        icon: Icons.wifi_off,
-                        text: 'Connection lost — some services are temporarily unavailable. '
-                            'Retrying automatically…',
-                        onAction: rt.refresh,
-                        actionLabel: 'Retry now',
-                      ),
-                    if (rt.printingDisabled && !rt.maintenance)
-                      const _Banner(
-                        color: Color(0xFF9A3412),
-                        icon: Icons.print_disabled,
-                        text: 'Printing is temporarily disabled by the operator.',
-                      ),
-                    if (rt.outOfPaper && !rt.maintenance)
-                      const _Banner(
-                        color: Color(0xFFB91C1C),
-                        icon: Icons.inventory_2_outlined,
-                        text: 'Out of paper — Printing and Photocopying are unavailable '
-                            'until a staff member refills the trays.',
-                      )
-                    else if (rt.paperRunningLow && !rt.maintenance)
-                      const _Banner(
-                        color: Color(0xFFB45309),
-                        icon: Icons.inventory_2_outlined,
-                        text: 'Paper is running low — Printing and Photocopying may be '
-                            'interrupted soon.',
-                      ),
-                  ],
-                ),
-              ),
-            ),
-
             if (rt.maintenance) const _MaintenanceOverlay(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Non-blocking status banners — connectivity, admin-disabled printing, and
+/// paper levels. Placed as a normal widget (typically right after the
+/// header) so it pushes content down instead of covering anything.
+class KioskBanners extends StatelessWidget {
+  const KioskBanners({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: KioskRuntime.instance,
+      builder: (context, _) {
+        final rt = KioskRuntime.instance;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (rt.showOffline)
+              _Banner(
+                color: const Color(0xFFB45309),
+                icon: Icons.wifi_off,
+                text: 'Connection lost — some services are temporarily unavailable. '
+                    'Retrying automatically…',
+                onAction: rt.refresh,
+                actionLabel: 'Retry now',
+              ),
+            if (rt.printingDisabled && !rt.maintenance)
+              const _Banner(
+                color: Color(0xFF9A3412),
+                icon: Icons.print_disabled,
+                text: 'Printing is temporarily disabled by the operator.',
+              ),
+            if (rt.outOfPaper && !rt.maintenance)
+              const _Banner(
+                color: Color(0xFFB91C1C),
+                icon: Icons.inventory_2_outlined,
+                text: 'Out of paper — Printing and Photocopying are unavailable '
+                    'until a staff member refills the trays.',
+              )
+            else if (rt.paperRunningLow && !rt.maintenance)
+              const _Banner(
+                color: Color(0xFFB45309),
+                icon: Icons.inventory_2_outlined,
+                text: 'Paper is running low — Printing and Photocopying may be '
+                    'interrupted soon.',
+              ),
           ],
         );
       },

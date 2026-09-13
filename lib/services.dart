@@ -295,6 +295,7 @@ class _ServicesPageState extends State<ServicesPage> {
         onTap: () => _handleServiceChange(serviceId),
         borderRadius: BorderRadius.circular(16),
         child: Stack(
+          fit: StackFit.expand,
           children: [
             Container(
               decoration: BoxDecoration(
