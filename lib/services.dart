@@ -63,17 +63,9 @@ class _ServicesPageState extends State<ServicesPage> {
   static const _paperServices = {'printing', 'photocopying'};
 
   void _handleServiceChange(String service) {
-    if (_paperServices.contains(service) && KioskRuntime.instance.outOfPaper) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Out of paper — this service is unavailable until a staff member refills the trays.',
-          ),
-          backgroundColor: Color(0xFFB91C1C),
-        ),
-      );
-      return;
-    }
+    // Blocked (out-of-paper) tiles disable their own tap in _buildServiceButton
+    // — the persistent banner under the header already explains why, so no
+    // extra popup here.
     setState(() {
       _activeService = service;
     });
@@ -292,7 +284,7 @@ class _ServicesPageState extends State<ServicesPage> {
       enabled: !isOutOfPaper,
       label: isOutOfPaper ? '$title. Out of paper — unavailable' : '$title. $subtitle',
       child: InkWell(
-        onTap: () => _handleServiceChange(serviceId),
+        onTap: isOutOfPaper ? null : () => _handleServiceChange(serviceId),
         borderRadius: BorderRadius.circular(16),
         child: Stack(
           fit: StackFit.expand,
