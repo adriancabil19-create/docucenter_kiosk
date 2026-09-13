@@ -15,6 +15,11 @@ const Map<int, ({int cols, int rows})> _layoutGrid = {
   9: (cols: 3, rows: 3),
 };
 
+/// Hard cap on images in a single layout job — mirrors MAX_IMAGES in
+/// backend/src/routes/print.ts. Enforced here too so the customer is
+/// stopped *before* paying for a job the backend will otherwise reject.
+const int kMaxImagesPerPrintJob = 30;
+
 class ImagePrintSettingsInterface extends StatefulWidget {
   final Function() onBrowseStorage;
   final List<StorageDocument> selectedDocs;
@@ -103,6 +108,18 @@ class _ImagePrintSettingsInterfaceState extends State<ImagePrintSettingsInterfac
     final docs = widget.selectedDocs;
     if (docs.isEmpty) return;
 
+    if (docs.length > kMaxImagesPerPrintJob) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please select $kMaxImagesPerPrintJob or fewer images for one print job.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final filenames = docs.map((d) => d.name).toList();
     final perPage = _effectiveImagesPerPage;
     final totalPages = _totalPages;
@@ -157,6 +174,8 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
           colorMode: _colorMode,
           quality: _quality,
           copies: _copies,
+          unitPrice: _costPerPage,
+          serviceType: 'image-print',
         );
     widget.onNavigate('payment');
   }
@@ -495,12 +514,32 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                       ],
                     ),
                   ],
+                  if (images.length > kMaxImagesPerPrintJob) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.error_outline,
+                            size: 16, color: Theme.of(context).colorScheme.error),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Too many images selected (${images.length}) — please select '
+                            '$kMaxImagesPerPrintJob or fewer for one print job.',
+                            style: TextStyle(
+                                fontSize: 12, color: Theme.of(context).colorScheme.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
-                      onPressed: images.isEmpty || KioskRuntime.instance.outOfPaper
+                      onPressed: images.isEmpty ||
+                              images.length > kMaxImagesPerPrintJob ||
+                              KioskRuntime.instance.outOfPaper
                           ? null
                           : _handleContinue,
                       icon: const Icon(Icons.arrow_forward),

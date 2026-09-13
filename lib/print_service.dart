@@ -111,6 +111,8 @@ class PrintingService {
     String colorMode = 'color',
     String quality = 'standard',
     int copies = 1,
+    double? unitPrice,
+    String serviceType = 'image-print',
   }) async {
     try {
       final response = await http.post(
@@ -122,6 +124,8 @@ class PrintingService {
           'colorMode': colorMode,
           'quality': quality,
           'copies': copies,
+          'serviceType': serviceType,
+          if (unitPrice != null) 'unitPrice': unitPrice,
           'imageLayout': {
             'imagesPerPage': imagesPerPage,
             'imageSize': imageSize,

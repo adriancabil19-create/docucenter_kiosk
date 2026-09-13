@@ -16,12 +16,16 @@ interface PrintOptions {
   quality?: string; // 'draft' | 'standard' | 'high'
 }
 
-interface PrintResult {
+export interface PrintResult {
   success: boolean;
   jobID?: string;
   error?: string;
   method?: string;
   simulatedPaths?: string[];
+  /** Actual pages produced (image-layout jobs only) — the true count after
+   * unprocessable images were dropped, as opposed to an estimate from the
+   * originally requested file list. */
+  pagesGenerated?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,6 +174,11 @@ const LAYOUT_GRID: Record<number, { cols: number; rows: number }> = {
   9: { cols: 3, rows: 3 },
 };
 
+/** Valid images-per-page presets — the keys of LAYOUT_GRID above. Exported
+ * so callers (e.g. routes/print.ts) derive this from one source instead of
+ * maintaining a second copy that can drift out of sync. */
+export const VALID_IMAGES_PER_PAGE = new Set(Object.keys(LAYOUT_GRID).map(Number));
+
 const IMAGE_PAGE_MARGIN_PT = 18; // ~0.25in
 const IMAGE_PAGE_GUTTER_PT = 10;
 
@@ -196,13 +205,14 @@ const convertImagesToLayoutPdf = async (
 
   for (const imagePath of imagePaths) {
     try {
-      const raw = fs.readFileSync(imagePath);
+      const raw = await fs.promises.readFile(imagePath);
       const pipeline = sharp(raw).rotate().flatten({ background: '#ffffff' });
-      const normalized = await pipeline.jpeg({ quality: 92 }).toBuffer();
-      const meta = await sharp(normalized).metadata();
-      if (!meta.width || !meta.height) throw new Error('Image dimensions unavailable');
+      const { data: normalized, info } = await pipeline
+        .jpeg({ quality: 92 })
+        .toBuffer({ resolveWithObject: true });
+      if (!info.width || !info.height) throw new Error('Image dimensions unavailable');
       const img = await pdfDoc.embedJpg(normalized);
-      embedded.push({ img, widthPx: meta.width, heightPx: meta.height });
+      embedded.push({ img, widthPx: info.width, heightPx: info.height });
     } catch (err) {
       logger.warn('Skipping image that could not be processed for layout print', {
         imagePath,
@@ -240,8 +250,10 @@ const convertImagesToLayoutPdf = async (
   const fixedBoxPt = (() => {
     if (!layout.imageSize || layout.imageSize === 'auto') return null;
     if (layout.imageSize === 'custom') {
-      if (!layout.customWidthIn || !layout.customHeightIn) return null;
-      return { w: layout.customWidthIn * 72, h: layout.customHeightIn * 72 };
+      const w = layout.customWidthIn;
+      const h = layout.customHeightIn;
+      if (typeof w !== 'number' || typeof h !== 'number' || !(w > 0) || !(h > 0)) return null;
+      return { w: w * 72, h: h * 72 };
     }
     const preset = PHOTO_SIZES_IN[layout.imageSize];
     return preset ? { w: preset.w * 72, h: preset.h * 72 } : null;
@@ -302,10 +314,21 @@ export const printImageLayoutJob = async (
 
   const jobID = `JOB-${Date.now()}`;
   const validPaths: string[] = [];
+  // Filenames dropped here (unsafe path, missing file, unsupported extension)
+  // never reach convertImagesToLayoutPdf's own skip-tracking — count them
+  // too, so the reported skip count (and thus the caller's page/paper
+  // accounting) reflects every image that didn't make it into the PDF.
+  let preSkippedCount = 0;
   for (const filename of filenames) {
     const filePath = path.join(uploadsDir, filename);
-    if (!isSafePath(filePath, uploadsDir) || !fs.existsSync(filePath)) continue;
-    if (!['.jpg', '.jpeg', '.png'].includes(path.extname(filename).toLowerCase())) continue;
+    if (!isSafePath(filePath, uploadsDir) || !fs.existsSync(filePath)) {
+      preSkippedCount++;
+      continue;
+    }
+    if (!['.jpg', '.jpeg', '.png'].includes(path.extname(filename).toLowerCase())) {
+      preSkippedCount++;
+      continue;
+    }
     validPaths.push(filePath);
   }
 
@@ -315,7 +338,13 @@ export const printImageLayoutJob = async (
 
   const tempPdf = path.join(os.tmpdir(), `image_layout_${jobID}.pdf`);
   try {
-    const { skipped } = await convertImagesToLayoutPdf(validPaths, tempPdf, opts.paperSize || 'A4', opts);
+    const { pagesGenerated, skipped } = await convertImagesToLayoutPdf(
+      validPaths,
+      tempPdf,
+      opts.paperSize || 'A4',
+      opts,
+    );
+    const totalSkipped = preSkippedCount + skipped.length;
     const printRes = await printPdfFile(tempPdf, jobID, opts.paperSize, opts.colorMode, opts.quality, opts.copies);
 
     const simulatedPaths: string[] = [];
@@ -326,7 +355,12 @@ export const printImageLayoutJob = async (
 
     if (!printRes.success) {
       logger.error('Image layout print failed', { jobID, error: printRes.error });
-      return { success: false, error: 'Unable to print the selected images. Please try again.', jobID };
+      return {
+        success: false,
+        error: 'Unable to print the selected images. Please try again.',
+        jobID,
+        pagesGenerated,
+      };
     }
 
     return {
@@ -334,7 +368,8 @@ export const printImageLayoutJob = async (
       jobID,
       method: printRes.method,
       simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
-      error: skipped.length > 0 ? `${skipped.length} image(s) could not be processed and were skipped` : undefined,
+      pagesGenerated,
+      error: totalSkipped > 0 ? `${totalSkipped} image(s) could not be processed and were skipped` : undefined,
     };
   } catch (err) {
     logger.error('Image layout job failed', { jobID, error: String(err) });

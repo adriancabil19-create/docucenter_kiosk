@@ -11,6 +11,8 @@ import {
   printImageLayoutJob,
   printTestPage,
   ImageLayoutOptions,
+  PrintResult,
+  VALID_IMAGES_PER_PAGE,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
 import { insertPrintJob, getKioskById, getStorageSettings, insertLog } from '../database';
@@ -37,11 +39,10 @@ async function countPages(filename: string): Promise<number> {
 
 const router = Router();
 
-/** Hard cap on images in a single N-up print job — keeps job size sane on kiosk hardware. */
+/** Hard cap on images in a single N-up print job — keeps job size sane on kiosk hardware.
+ * Mirrored client-side in lib/pages/image_print_settings_page.dart (kMaxImagesPerPrintJob)
+ * so the customer is stopped before paying for a job this would reject. */
 const MAX_IMAGES = 30;
-
-/** Valid images-per-page presets — mirrors LAYOUT_GRID in print.service.ts. */
-const LAYOUT_GRID_SIZES = new Set([1, 2, 4, 6, 9]);
 
 /**
  * POST /api/upload-scanned
@@ -235,27 +236,30 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       quality,
     });
 
-    // Page count is needed both for the job record and paper tracking — compute once.
-    // Image-layout jobs pack N images per sheet, so the page count is derived
-    // from the layout rather than per-file (each image is not its own page).
+    // Page count is needed both for the job record and paper tracking.
+    // Image-layout jobs pack N images per sheet, and some requested images
+    // can be dropped before ever reaching the PDF (corrupt, unsafe path,
+    // deleted from disk) — so for those jobs we print first and use the
+    // actual page count the layout produced, rather than estimating from
+    // the originally requested filenames, which would overcount paper used
+    // for images that never made it onto a page.
     let totalPages: number;
+    let result: PrintResult;
     if (layout) {
-      const perPage = LAYOUT_GRID_SIZES.has(layout.imagesPerPage) ? layout.imagesPerPage : 1;
-      totalPages = Math.ceil(filenames.length / perPage);
+      result = await printImageLayoutJob(filenames, {
+        paperSize,
+        colorMode,
+        quality,
+        copies: numCopies,
+        ...layout,
+      });
+      const perPage = VALID_IMAGES_PER_PAGE.has(layout.imagesPerPage) ? layout.imagesPerPage : 1;
+      totalPages = result.pagesGenerated ?? Math.ceil(filenames.length / perPage);
     } else {
       const pageCounts = await Promise.all(filenames.map(countPages));
       totalPages = pageCounts.reduce((s: number, p: number) => s + p, 0);
+      result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
     }
-
-    const result = layout
-      ? await printImageLayoutJob(filenames, {
-          paperSize,
-          colorMode,
-          quality,
-          copies: numCopies,
-          ...layout,
-        })
-      : await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
 
     // Log to SQLite regardless of outcome
     await insertPrintJob({
