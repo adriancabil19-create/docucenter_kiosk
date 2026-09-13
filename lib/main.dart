@@ -85,10 +85,19 @@ class _MainAppState extends State<MainApp> {
 
   void _resetIdleTimer() {
     _idleTimer?.cancel();
-    _idleTimer = Timer(IdleScreen.idleTimeout, () {
-      if (!mounted) return;
-      setState(() => _showIdleScreen = true);
-    });
+    _idleTimer = Timer(IdleScreen.idleTimeout, _onIdleTimeout);
+  }
+
+  void _onIdleTimeout() {
+    if (!mounted) return;
+    // The payment screen runs its own multi-minute session (QR scan /
+    // gateway wait) with no need for repeated touches — never interrupt it
+    // with the standby screen. Just keep deferring until the user leaves it.
+    if (_currentPage == 'payment') {
+      _resetIdleTimer();
+      return;
+    }
+    setState(() => _showIdleScreen = true);
   }
 
   /// Raw pointer-down handler covering the whole app — while the idle screen

@@ -55,7 +55,7 @@ class IdleScreen extends StatefulWidget {
 
   final VoidCallback onDismiss;
 
-  static const idleTimeout = Duration(seconds: 30);
+  static const idleTimeout = Duration(minutes: 1);
 
   @override
   State<IdleScreen> createState() => _IdleScreenState();

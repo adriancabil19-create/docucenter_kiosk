@@ -18,7 +18,7 @@ class AboutPage extends StatelessWidget {
                 Text(
                   'About the Project',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: const Color(0xFF003D99),
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -26,7 +26,7 @@ class AboutPage extends StatelessWidget {
                 Text(
                   'Learn more about the team behind the DOCUCENTER Kiosk and our academic institution',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF4B5563),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -155,7 +155,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                 Text(
                   'Research Team',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF003D99),
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -173,9 +173,9 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
                   children: [
-                    _buildTeamMember('Charles Adrian Cabil', 'Lead Researcher & Developer'),
-                    _buildTeamMember('Mark Lee Duyag', 'Co-Researcher'),
-                    _buildTeamMember('Ignacio Maurice Vergara', 'Co-Researcher'),
+                    _buildTeamMember(context, 'Charles Adrian Cabil', 'Lead Researcher & Developer'),
+                    _buildTeamMember(context, 'Mark Lee Duyag', 'Co-Researcher'),
+                    _buildTeamMember(context, 'Ignacio Maurice Vergara', 'Co-Researcher'),
                   ],
                 ),
               ],
@@ -268,7 +268,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: const Color(0xFF003D99),
+                      color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -293,7 +293,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                       child: Text(
                         content,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF374151),
+                          color: Theme.of(context).colorScheme.onSurface,
                           height: 1.6,
                         ),
                       ),
@@ -304,7 +304,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                 Text(
                   content,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF374151),
+                    color: Theme.of(context).colorScheme.onSurface,
                     height: 1.6,
                   ),
                 ),
@@ -319,7 +319,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
     );
   }
 
-  Widget _buildTeamMember(String name, String role) {
+  Widget _buildTeamMember(BuildContext context, String name, String role) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -349,7 +349,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                   const SizedBox(height: 2),
                   Text(
                     role,
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -389,7 +389,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                   Text(
                     'Project Timeline',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: const Color(0xFF003D99),
+                      color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -408,9 +408,9 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                           width: 120,
                           child: Text(
                             entry.value.$1,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -438,9 +438,9 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
                               const SizedBox(height: 4),
                               Text(
                                 entry.value.$3,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: Color(0xFF6B7280),
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -470,7 +470,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
               Text(
                 'Acknowledgments',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF003D99),
+                  color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
@@ -479,25 +479,25 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
               Text(
                 'The research team would like to express our deepest gratitude to the following individuals and organizations who made this project possible:',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF374151),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildAcknowledgmentItem('Our thesis adviser, for invaluable guidance and unwavering support throughout this research journey'),
-                  _buildAcknowledgmentItem('The University of Cebu - Lapu-Lapu and Mandaue Campus administration for providing resources and facilities'),
-                  _buildAcknowledgmentItem('The College of Computer Engineering faculty for their expertise and constructive feedback'),
-                  _buildAcknowledgmentItem('Everyone who contributed feedback to the design and evaluation of this project'),
-                  _buildAcknowledgmentItem('Our families and friends for their constant encouragement and support'),
+                  _buildAcknowledgmentItem(context, 'Our thesis adviser, for invaluable guidance and unwavering support throughout this research journey'),
+                  _buildAcknowledgmentItem(context, 'The University of Cebu - Lapu-Lapu and Mandaue Campus administration for providing resources and facilities'),
+                  _buildAcknowledgmentItem(context, 'The College of Computer Engineering faculty for their expertise and constructive feedback'),
+                  _buildAcknowledgmentItem(context, 'Everyone who contributed feedback to the design and evaluation of this project'),
+                  _buildAcknowledgmentItem(context, 'Our families and friends for their constant encouragement and support'),
                 ],
               ),
               const SizedBox(height: 16),
               Text(
                 'This project is dedicated to advancing technological innovation in education and improving the campus experience for all members of the university community.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF374151),
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontStyle: FontStyle.italic,
                 ),
                 textAlign: TextAlign.center,
@@ -509,7 +509,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
     );
   }
 
-  Widget _buildAcknowledgmentItem(String text) {
+  Widget _buildAcknowledgmentItem(BuildContext context, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -529,7 +529,7 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF374151), height: 1.5),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface, height: 1.5),
             ),
           ),
         ],

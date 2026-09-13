@@ -86,7 +86,10 @@ class Strings {
       AppLanguage.en: 'View saved documents',
       AppLanguage.fil: 'Tingnan ang naka-save na dokumento',
     },
+    'services.imagePrint.title': {AppLanguage.en: 'Print Photos', AppLanguage.fil: 'I-print ang Larawan'},
     'services.backToServices': {AppLanguage.en: 'Back to Services', AppLanguage.fil: 'Bumalik sa Serbisyo'},
+    'services.backToPrinting': {AppLanguage.en: 'Back to Printing', AppLanguage.fil: 'Bumalik sa Pag-print'},
+    'services.backToImagePrint': {AppLanguage.en: 'Back to Image Print', AppLanguage.fil: 'Bumalik sa Pag-print ng Larawan'},
 
     // Settings panel
     'settings.title': {AppLanguage.en: 'Settings', AppLanguage.fil: 'Mga Setting'},
@@ -102,6 +105,45 @@ class Strings {
     'settings.textSize.large': {AppLanguage.en: 'Large', AppLanguage.fil: 'Malaki'},
     'settings.textSize.extraLarge': {AppLanguage.en: 'Extra Large', AppLanguage.fil: 'Sobrang Laki'},
     'settings.close': {AppLanguage.en: 'Done', AppLanguage.fil: 'Tapos'},
+
+    // Printing page
+    'printing.heading': {AppLanguage.en: 'Printing Service', AppLanguage.fil: 'Serbisyo ng Pag-print'},
+    'printing.subheading': {
+      AppLanguage.en: 'Configure your print settings and choose documents from storage',
+      AppLanguage.fil: 'I-set up ang iyong print settings at pumili ng dokumento mula sa storage',
+    },
+    'printing.documents': {AppLanguage.en: 'Documents', AppLanguage.fil: 'Mga Dokumento'},
+    'printing.browseStorage': {AppLanguage.en: 'Browse Storage', AppLanguage.fil: 'Tingnan ang Storage'},
+    'printing.noDocsSelected': {AppLanguage.en: 'No documents selected yet', AppLanguage.fil: 'Wala pang napiling dokumento'},
+    'printing.docsSelected': {
+      AppLanguage.en: 'document(s) selected from storage',
+      AppLanguage.fil: 'dokumentong napili mula sa storage',
+    },
+    'printing.storageHint': {
+      AppLanguage.en:
+          'Add documents from the Storage tab (scan or receive from your phone via QR), then pick them here.',
+      AppLanguage.fil:
+          'Magdagdag ng dokumento sa Storage tab (i-scan o tanggapin mula sa telepono gamit ang QR), tapos piliin dito.',
+    },
+    'printing.disclaimer': {
+      AppLanguage.en:
+          'You are responsible for having the right to copy these files. Files are used only for this job and are deleted afterwards (within 24 hours).',
+      AppLanguage.fil:
+          'Ikaw ang responsable na may karapatan kang kopyahin ang mga file na ito. Gagamitin lamang ito para sa job na ito at bubura pagkatapos (sa loob ng 24 oras).',
+    },
+    'printing.estimatedCost': {AppLanguage.en: 'Estimated Cost:', AppLanguage.fil: 'Tinatayang Halaga:'},
+    'printing.printSettings': {AppLanguage.en: 'Print Settings', AppLanguage.fil: 'Mga Setting ng Pag-print'},
+    'printing.paperSize': {AppLanguage.en: 'Paper Size', AppLanguage.fil: 'Sukat ng Papel'},
+    'printing.colorMode': {AppLanguage.en: 'Color Mode', AppLanguage.fil: 'Mode ng Kulay'},
+    'printing.quality': {AppLanguage.en: 'Print Quality', AppLanguage.fil: 'Kalidad ng Print'},
+    'printing.bw': {AppLanguage.en: 'Black & White', AppLanguage.fil: 'Itim at Puti'},
+    'printing.color': {AppLanguage.en: 'Color', AppLanguage.fil: 'Makulay'},
+    'printing.copies': {AppLanguage.en: 'Number of Copies:', AppLanguage.fil: 'Bilang ng Kopya:'},
+    'printing.preview': {AppLanguage.en: 'Preview Pages', AppLanguage.fil: 'I-preview ang mga Pahina'},
+    'printing.start': {AppLanguage.en: 'Start Printing', AppLanguage.fil: 'Simulan ang Pag-print'},
+    'printing.copy': {AppLanguage.en: 'copy', AppLanguage.fil: 'kopya'},
+    'printing.copiesShort': {AppLanguage.en: 'copies', AppLanguage.fil: 'kopya'},
+    'printing.pages': {AppLanguage.en: 'pages', AppLanguage.fil: 'pahina'},
   };
 
   static String t(String key) {

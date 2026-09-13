@@ -178,14 +178,14 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                 Text(
                   'Image Print Settings',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFF003D99),
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
                   'Choose how your pictures are arranged on the page',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF4B5563),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -215,13 +215,13 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                           const SizedBox(height: 16),
                           Container(
                             decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFD1D5DB), width: 2),
+                              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                const Icon(Icons.folder_open, size: 48, color: Color(0xFF9CA3AF)),
+                                Icon(Icons.folder_open, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 const SizedBox(height: 16),
                                 SizedBox(
                                   width: double.infinity,
@@ -241,7 +241,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                                   images.isEmpty
                                       ? 'No images selected yet'
                                       : '${images.length} image${images.length == 1 ? '' : 's'} selected from storage',
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
@@ -276,7 +276,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                   ),
                   const SizedBox(height: 16),
                   Card(
-                    color: const Color(0xFFF0F9FF),
+                    color: Theme.of(context).colorScheme.primaryContainer,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -285,11 +285,13 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Estimated Cost:', style: Theme.of(context).textTheme.bodyMedium),
+                              Text('Estimated Cost:', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              )),
                               Text(
                                 '₱${_calculateCost().toStringAsFixed(2)}',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: const Color(0xFF2563EB),
+                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -298,7 +300,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                           const SizedBox(height: 8),
                           Text(
                             '$_totalPages printed page${_totalPages == 1 ? '' : 's'} × $_copies ${_copies == 1 ? 'copy' : 'copies'} • ${_colorMode == 'color' ? 'Color' : 'B&W'}',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onPrimaryContainer),
                           ),
                         ],
                       ),
@@ -469,7 +471,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                               images.isEmpty
                                   ? 'Select images to see a preview'
                                   : 'Page 1 of $_totalPages shown • Paper: $_paperSize',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                           ),
                         ],

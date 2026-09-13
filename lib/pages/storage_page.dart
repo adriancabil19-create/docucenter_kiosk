@@ -318,10 +318,10 @@ class _StorageInterfaceState extends State<StorageInterface> {
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Scan this QR code on your phone to upload files for printing:',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       const SizedBox(height: 16),
                       QrImageView(
@@ -417,26 +417,27 @@ class _StorageInterfaceState extends State<StorageInterface> {
 
   Widget _tabButton(String label, IconData icon, _StorageTab tab, int count) {
     final isActive = _activeTab == tab;
+    final colorScheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => setState(() => _activeTab = tab),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF2563EB) : Colors.grey[100],
+          color: isActive ? const Color(0xFF2563EB) : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isActive ? const Color(0xFF2563EB) : const Color(0xFFD1D5DB)),
+          border: Border.all(color: isActive ? const Color(0xFF2563EB) : colorScheme.outlineVariant),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 18, color: isActive ? Colors.white : const Color(0xFF4B5563)),
+            Icon(icon, size: 18, color: isActive ? Colors.white : colorScheme.onSurfaceVariant),
             const SizedBox(width: 8),
             Text(
               '$label ($count)',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: isActive ? Colors.white : const Color(0xFF4B5563),
+                color: isActive ? Colors.white : colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -489,7 +490,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   Text(
                     'System Storage',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: const Color(0xFF003D99),
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,
                         ),
                   ),
@@ -500,7 +501,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
-                        ?.copyWith(color: const Color(0xFF4B5563)),
+                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -532,7 +533,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     ),
                     const SizedBox(height: 12),
                     Card(
-                      color: Colors.grey[50],
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
                       elevation: 0,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -650,8 +651,8 @@ class _StorageInterfaceState extends State<StorageInterface> {
                     });
                   },
                 ),
-                const Text('Select all',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                Text('Select all',
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 if (hasSelection) ...[
                   const SizedBox(width: 12),
                   Text('${_selectedDocs.length} selected',
@@ -690,22 +691,22 @@ class _StorageInterfaceState extends State<StorageInterface> {
                 padding: const EdgeInsets.all(48),
                 child: Column(
                   children: [
-                    const Icon(Icons.folder_open,
-                        size: 64, color: Color(0xFF9CA3AF)),
+                    Icon(Icons.folder_open,
+                        size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     const SizedBox(height: 16),
                     Text(
                       'No Documents in Storage',
                       style: Theme.of(context)
                           .textTheme
                           .titleMedium
-                          ?.copyWith(color: const Color(0xFF4B5563)),
+                          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Send documents from your phone with the QR code, or use '
                       'the Scanning service to add them.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Color(0xFF6B7280)),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 20),
                     _receiveFromPhoneButton(),
@@ -723,14 +724,14 @@ class _StorageInterfaceState extends State<StorageInterface> {
                   Icon(
                     _activeTab == _StorageTab.documents ? Icons.description : Icons.image,
                     size: 40,
-                    color: const Color(0xFF9CA3AF),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     _activeTab == _StorageTab.documents
                         ? 'No documents here yet'
                         : 'No pictures here yet',
-                    style: const TextStyle(color: Color(0xFF6B7280)),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -773,8 +774,8 @@ class _StorageInterfaceState extends State<StorageInterface> {
                             ),
                             Text(
                               '${doc.format} • ${doc.pages} pages • ${doc.size} • ${doc.date}',
-                              style: const TextStyle(
-                                  fontSize: 11, color: Color(0xFF6B7280)),
+                              style: TextStyle(
+                                  fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                           ],
                         ),

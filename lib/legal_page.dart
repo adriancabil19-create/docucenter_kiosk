@@ -159,16 +159,16 @@ Please do not scan or copy private images of another person without their consen
                           'Legal & Privacy',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                color: const Color(0xFF003D99),
+                                color: Theme.of(context).colorScheme.primary,
                                 fontWeight: FontWeight.bold,
                               ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         _effectiveDate,
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: Color(0xFF4B5563)),
+                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -230,10 +230,10 @@ Please do not scan or copy private images of another person without their consen
                         const SizedBox(height: 12),
                         SelectableText(
                           section.body,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             height: 1.6,
-                            color: Color(0xFF1F2937), // ~13:1 on white
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ],

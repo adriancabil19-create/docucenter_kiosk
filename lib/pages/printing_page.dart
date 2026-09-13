@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../storage_service.dart';
 import '../kiosk_runtime_service.dart';
+import '../strings.dart';
 import '../widgets/print_preview_dialog.dart';
 import 'payment_page.dart';
 
@@ -113,6 +114,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
   @override
   Widget build(BuildContext context) {
     final allDocs = widget.selectedDocs;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -125,16 +127,16 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Printing Service',
+                  Strings.t('printing.heading'),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFF003D99),
+                    color: colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
-                  'Configure your print settings and choose documents from storage',
+                  Strings.t('printing.subheading'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF4B5563),
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -156,7 +158,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Documents',
+                            Strings.t('printing.documents'),
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -164,20 +166,20 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           const SizedBox(height: 16),
                           Container(
                             decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFD1D5DB), width: 2),
+                              border: Border.all(color: colorScheme.outlineVariant, width: 2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                const Icon(Icons.folder_open, size: 48, color: Color(0xFF9CA3AF)),
+                                Icon(Icons.folder_open, size: 48, color: colorScheme.onSurfaceVariant),
                                 const SizedBox(height: 16),
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
                                     onPressed: widget.onBrowseStorage,
                                     icon: const Icon(Icons.folder_open),
-                                    label: const Text('Browse Storage'),
+                                    label: Text(Strings.t('printing.browseStorage')),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF2563EB),
                                       foregroundColor: Colors.white,
@@ -188,26 +190,23 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                                 const SizedBox(height: 10),
                                 Text(
                                   allDocs.isEmpty
-                                      ? 'No documents selected yet'
-                                      : '${allDocs.length} document${allDocs.length == 1 ? '' : 's'} selected from storage',
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                      ? Strings.t('printing.noDocsSelected')
+                                      : '${allDocs.length} ${Strings.t('printing.docsSelected')}',
+                                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                                 ),
                                 const SizedBox(height: 6),
-                                const Text(
-                                  'Add documents from the Storage tab (scan or receive '
-                                  'from your phone via QR), then pick them here.',
+                                Text(
+                                  Strings.t('printing.storageHint'),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), height: 1.4),
+                                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant, height: 1.4),
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(height: 12),
-                          const Text(
-                            'You are responsible for having the right to copy '
-                            'these files. Files are used only for this job and are '
-                            'deleted afterwards (within 24 hours).',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF4B5563), height: 1.4),
+                          Text(
+                            Strings.t('printing.disclaimer'),
+                            style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant, height: 1.4),
                           ),
                           // Show selected file list
                           if (allDocs.isNotEmpty) ...[
@@ -232,7 +231,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                                   ),
                                   Text(
                                     '${doc.pages}p',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                                   ),
                                 ],
                               ),
@@ -244,7 +243,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                   ),
                   const SizedBox(height: 16),
                   Card(
-                    color: const Color(0xFFF0F9FF),
+                    color: colorScheme.primaryContainer,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -254,13 +253,15 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Estimated Cost:',
-                                style: Theme.of(context).textTheme.bodyMedium,
+                                Strings.t('printing.estimatedCost'),
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onPrimaryContainer,
+                                ),
                               ),
                               Text(
                                 '₱${_calculateCost().toStringAsFixed(2)}',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: const Color(0xFF2563EB),
+                                  color: colorScheme.onPrimaryContainer,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -268,8 +269,8 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '${allDocs.fold<int>(0, (sum, doc) => sum + doc.pages)} pages × $_copies ${_copies == 1 ? 'copy' : 'copies'} • ${_colorMode == 'color' ? 'Color' : 'B&W'}',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
+                            '${allDocs.fold<int>(0, (sum, doc) => sum + doc.pages)} ${Strings.t('printing.pages')} × $_copies ${_copies == 1 ? Strings.t('printing.copy') : Strings.t('printing.copiesShort')} • ${_colorMode == 'color' ? Strings.t('printing.color') : 'B&W'}',
+                            style: TextStyle(fontSize: 12, color: colorScheme.onPrimaryContainer),
                           ),
                         ],
                       ),
@@ -290,14 +291,14 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Print Settings',
+                            Strings.t('printing.printSettings'),
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 16),
                           _buildDropdown(
-                            'Paper Size',
+                            Strings.t('printing.paperSize'),
                             _paperSize,
                             ['A4', 'Folio', 'Letter'],
                             (val) => setState(() => _paperSize = val),
@@ -305,15 +306,15 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           ),
                           const SizedBox(height: 16),
                           _buildDropdown(
-                            'Color Mode',
+                            Strings.t('printing.colorMode'),
                             _colorMode,
                             ['bw', 'color'],
                             (val) => setState(() => _colorMode = val),
-                            ['Black & White', 'Color'],
+                            [Strings.t('printing.bw'), Strings.t('printing.color')],
                           ),
                           const SizedBox(height: 16),
                           _buildDropdown(
-                            'Print Quality',
+                            Strings.t('printing.quality'),
                             _quality,
                             ['draft', 'standard'],
                             (val) => setState(() => _quality = val),
@@ -326,7 +327,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Number of Copies: $_copies',
+                            '${Strings.t('printing.copies')} $_copies',
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -397,9 +398,13 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                     child: OutlinedButton.icon(
                       onPressed: allDocs.isEmpty
                           ? null
-                          : () => PrintPreviewDialog.show(context, allDocs),
+                          : () => PrintPreviewDialog.show(
+                                context,
+                                allDocs,
+                                paperSize: _paperSize,
+                              ),
                       icon: const Icon(Icons.visibility_outlined),
-                      label: const Text('Preview Pages'),
+                      label: Text(Strings.t('printing.preview')),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF2563EB),
                         side: const BorderSide(color: Color(0xFF2563EB)),
@@ -413,7 +418,7 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                     child: ElevatedButton.icon(
                       onPressed: allDocs.isEmpty ? null : _handlePrint,
                       icon: const Icon(Icons.print),
-                      label: const Text('Start Printing'),
+                      label: Text(Strings.t('printing.start')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                       ),

@@ -153,7 +153,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                 child: Text(
                   'Before you pay',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: const Color(0xFF003D99),
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
                       ),
                 ),
@@ -162,11 +162,11 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                 ),
-                child: const Text(
+                child: Text(
                   'To do this job the kiosk briefly processes the file(s) you '
                   'provide or scan. Files are used only to complete your job and '
                   'are deleted afterwards (within 24 hours at the latest). We keep '
@@ -178,7 +178,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                   'You are responsible for having the right to copy the '
                   'document(s) you are submitting. Do not scan or copy private '
                   'images of another person without their consent.',
-                  style: TextStyle(fontSize: 14, height: 1.55, color: Color(0xFF1F2937)),
+                  style: TextStyle(fontSize: 14, height: 1.55, color: Theme.of(context).colorScheme.onSurface),
                 ),
               ),
               const SizedBox(height: 8),
@@ -196,11 +196,11 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                 onChanged: (v) => setState(() => _consentChecked = v ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: EdgeInsets.zero,
-                title: const Text(
+                title: Text(
                   'I have read and agree to the Terms & Conditions, Privacy '
                   'Policy, and Refund Policy, and I am allowed to copy the '
                   'document(s) I am submitting.',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF1F2937)),
+                  style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
                 ),
               ),
               const SizedBox(height: 16),
@@ -886,7 +886,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                 Text(
                   'PAYMONGO Payment',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: const Color(0xFF003D99),
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
                       ),
                 ),
@@ -1182,7 +1182,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -1323,7 +1323,7 @@ Date: ${DateTime.now().toString().split('.')[0]}
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
-                                  ?.copyWith(color: Colors.grey[600]),
+                                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                             const SizedBox(height: 8),
                             Row(

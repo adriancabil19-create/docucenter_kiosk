@@ -5,22 +5,47 @@ import 'package:pdfx/pdfx.dart';
 
 import '../storage_service.dart';
 
+/// Width/height ratio for each paper size offered in Print Settings —
+/// keep in sync with the dimensions listed there (in mm).
+const Map<String, double> _paperAspectRatios = {
+  'A4': 210 / 297,
+  'Folio': 216 / 330,
+  'Letter': 216 / 279,
+};
+
+double _aspectRatioFor(String paperSize) =>
+    _paperAspectRatios[paperSize] ?? _paperAspectRatios['A4']!;
+
 /// Full-screen-ish dialog letting the user flip through the pages of one or
-/// more selected documents before committing to a print job. PDFs are
-/// rendered page-by-page via `pdfx`; images are shown directly.
+/// more selected documents before committing to a print job.
+///
+/// The preview frame itself is shaped to the paper size chosen in Print
+/// Settings (A4/Folio/Letter each have a different aspect ratio), and each
+/// page is fitted inside that frame — mirroring how the physical printer
+/// will scale the content to the sheet, rather than just showing the PDF's
+/// own native page shape.
 class PrintPreviewDialog extends StatefulWidget {
-  const PrintPreviewDialog({super.key, required this.documents});
+  const PrintPreviewDialog({
+    super.key,
+    required this.documents,
+    this.paperSize = 'A4',
+  });
 
   final List<StorageDocument> documents;
+  final String paperSize;
 
   static Future<void> show(
     BuildContext context,
-    List<StorageDocument> documents,
-  ) {
+    List<StorageDocument> documents, {
+    String paperSize = 'A4',
+  }) {
     return showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) => PrintPreviewDialog(documents: documents),
+      builder: (context) => PrintPreviewDialog(
+        documents: documents,
+        paperSize: paperSize,
+      ),
     );
   }
 
@@ -30,10 +55,16 @@ class PrintPreviewDialog extends StatefulWidget {
 
 class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
   int _docIndex = 0;
-  PdfController? _pdfController;
-  int? _totalPages;
-  Uint8List? _imageBytes;
+
+  PdfDocument? _pdfDocument;
+  int _pageNumber = 1;
+  int _pageCount = 1;
+  Uint8List? _pageImageBytes;
+
+  Uint8List? _staticImageBytes;
+
   bool _loading = true;
+  bool _pageRendering = false;
   String? _error;
 
   StorageDocument get _currentDoc => widget.documents[_docIndex];
@@ -46,7 +77,7 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
 
   @override
   void dispose() {
-    _pdfController?.dispose();
+    _pdfDocument?.close();
     super.dispose();
   }
 
@@ -55,10 +86,11 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
     setState(() {
       _loading = true;
       _error = null;
-      _imageBytes = null;
+      _staticImageBytes = null;
+      _pageImageBytes = null;
     });
-    _pdfController?.dispose();
-    _pdfController = null;
+    _pdfDocument?.close();
+    _pdfDocument = null;
 
     final bytes = await StorageService.downloadFile(_currentDoc.name);
     // The user may have tapped another document tab while this was in flight.
@@ -74,7 +106,7 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
 
     if (_currentDoc.isImage) {
       setState(() {
-        _imageBytes = Uint8List.fromList(bytes);
+        _staticImageBytes = Uint8List.fromList(bytes);
         _loading = false;
       });
       return;
@@ -82,12 +114,16 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
 
     try {
       final doc = await PdfDocument.openData(Uint8List.fromList(bytes));
-      if (!mounted || requestedIndex != _docIndex) return;
+      if (!mounted || requestedIndex != _docIndex) {
+        doc.close();
+        return;
+      }
+      _pdfDocument = doc;
       setState(() {
-        _pdfController = PdfController(document: Future.value(doc));
-        _totalPages = doc.pagesCount;
+        _pageCount = doc.pagesCount;
         _loading = false;
       });
+      await _renderPage(1);
     } catch (_) {
       if (!mounted || requestedIndex != _docIndex) return;
       setState(() {
@@ -95,6 +131,31 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
         _error = "This file can't be previewed (unsupported format).";
       });
     }
+  }
+
+  /// Renders one PDF page at 2x its native size for a crisp on-screen
+  /// preview — the page keeps its own aspect ratio here; fitting it to the
+  /// selected paper shape happens in [_buildBody] via `BoxFit.contain`.
+  Future<void> _renderPage(int pageNumber) async {
+    final doc = _pdfDocument;
+    if (doc == null) return;
+    final requestedIndex = _docIndex;
+    setState(() => _pageRendering = true);
+
+    final page = await doc.getPage(pageNumber);
+    final rendered = await page.render(
+      width: page.width * 2,
+      height: page.height * 2,
+      format: PdfPageImageFormat.png,
+    );
+    await page.close();
+
+    if (!mounted || requestedIndex != _docIndex || _pdfDocument != doc) return;
+    setState(() {
+      _pageNumber = pageNumber;
+      _pageImageBytes = rendered?.bytes;
+      _pageRendering = false;
+    });
   }
 
   void _switchDoc(int index) {
@@ -117,7 +178,7 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
             if (widget.documents.length > 1) _buildDocTabs(context),
             const Divider(height: 1),
             Expanded(child: _buildBody(context)),
-            if (_pdfController != null) _buildPageControls(context),
+            if (_pdfDocument != null) _buildPageControls(context),
           ],
         ),
       ),
@@ -138,6 +199,12 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                   .textTheme
                   .titleMedium
                   ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Text(
+            'Fit to ${widget.paperSize}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           IconButton(
@@ -193,22 +260,48 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
         ),
       );
     }
-    final backdrop = Theme.of(context).colorScheme.surfaceContainerHighest;
-    if (_imageBytes != null) {
-      return Container(
-        color: backdrop,
-        child: InteractiveViewer(
-          child: Center(child: Image.memory(_imageBytes!)),
+
+    final imageBytes = _staticImageBytes ?? _pageImageBytes;
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        // The paper-shaped frame: its aspect ratio is the selected paper
+        // size, not the source file's — content is fitted (letterboxed if
+        // needed) inside it, the way the printer will scale it to the sheet.
+        child: AspectRatio(
+          aspectRatio: _aspectRatioFor(widget.paperSize),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageBytes != null)
+                  Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Image.memory(
+                      imageBytes,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                if (_pageRendering)
+                  const Center(child: CircularProgressIndicator()),
+              ],
+            ),
+          ),
         ),
-      );
-    }
-    if (_pdfController != null) {
-      return Container(
-        color: backdrop,
-        child: PdfView(controller: _pdfController!),
-      );
-    }
-    return const SizedBox.shrink();
+      ),
+    );
   }
 
   Widget _buildPageControls(BuildContext context) {
@@ -218,25 +311,20 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            onPressed: () => _pdfController!.previousPage(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.ease,
-            ),
+            onPressed: _pageNumber > 1 && !_pageRendering
+                ? () => _renderPage(_pageNumber - 1)
+                : null,
             icon: const Icon(Icons.chevron_left),
             tooltip: 'Previous page',
           ),
-          ValueListenableBuilder<int?>(
-            valueListenable: _pdfController!.pageListenable,
-            builder: (context, page, _) => Text(
-              'Page ${page ?? 1} of ${_totalPages ?? _currentDoc.pages}',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+          Text(
+            'Page $_pageNumber of $_pageCount',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           IconButton(
-            onPressed: () => _pdfController!.nextPage(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.ease,
-            ),
+            onPressed: _pageNumber < _pageCount && !_pageRendering
+                ? () => _renderPage(_pageNumber + 1)
+                : null,
             icon: const Icon(Icons.chevron_right),
             tooltip: 'Next page',
           ),

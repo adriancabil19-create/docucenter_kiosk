@@ -144,7 +144,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                               Text(
                                 'Document Scanning',
                                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: const Color(0xFF003D99),
+                                  color: Theme.of(context).colorScheme.primary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -248,10 +248,10 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Paper size will be detected automatically from your scanned document. ' 
+                  Text(
+                    'Paper size will be detected automatically from your scanned document. '
                     'The saved PDF will use the correct detected page size.',
-                    style: TextStyle(fontSize: 12, color: Colors.black87),
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -795,7 +795,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
           // Scan settings summary
           Card(
-            color: Colors.grey[50],
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             elevation: 0,
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -964,14 +964,13 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   }
 
   Widget _summaryChip(IconData icon, String label) {
+    final onSurfaceVariant = Theme.of(context).colorScheme.onSurfaceVariant;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: const Color(0xFF4B5563)),
+        Icon(icon, size: 14, color: onSurfaceVariant),
         const SizedBox(width: 4),
-        Text(label,
-            style:
-                const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
+        Text(label, style: TextStyle(fontSize: 12, color: onSurfaceVariant)),
       ],
     );
   }

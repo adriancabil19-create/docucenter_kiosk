@@ -120,10 +120,8 @@ class _ServicesPageState extends State<ServicesPage> {
     'storage': 'services.storage.title',
   };
 
-  /// 'imagePrint' has no localized title yet — it's a sub-flow of Printing
-  /// reached only from Storage, not from the service picker.
   String _serviceTitleFor(String? serviceId) {
-    if (serviceId == 'imagePrint') return 'Print Photos';
+    if (serviceId == 'imagePrint') return Strings.t('services.imagePrint.title');
     final key = _serviceTitleKeys[serviceId];
     return key == null ? '' : Strings.t(key);
   }
@@ -156,7 +154,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 Text(
                   Strings.t('services.heading'),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: const Color(0xFF003D99),
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -165,7 +163,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 Text(
                   Strings.t('services.subheading'),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: const Color(0xFF4B5563),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -226,7 +224,9 @@ class _ServicesPageState extends State<ServicesPage> {
                   }),
                   icon: const Icon(Icons.arrow_back, size: 20),
                   label: Text(backToPrinting
-                      ? (_printingSource == 'imagePrint' ? 'Back to Image Print' : 'Back to Printing')
+                      ? (_printingSource == 'imagePrint'
+                          ? Strings.t('services.backToImagePrint')
+                          : Strings.t('services.backToPrinting'))
                       : Strings.t('services.backToServices')),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF2563EB),
@@ -238,7 +238,7 @@ class _ServicesPageState extends State<ServicesPage> {
                   child: Text(
                     _serviceTitleFor(_activeService),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: const Color(0xFF003D99),
+                      color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -309,7 +309,7 @@ class _ServicesPageState extends State<ServicesPage> {
                   subtitle,
                   style: TextStyle(
                     fontSize: 15,
-                    color: isActive ? Colors.white : const Color(0xFF4B5563),
+                    color: isActive ? Colors.white : colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),

@@ -138,9 +138,9 @@ class _PaperTrackerPageState extends State<PaperTrackerPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Monitor paper levels in each tray. Set capacity when you add papers.',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       const SizedBox(height: 24),
                       Expanded(

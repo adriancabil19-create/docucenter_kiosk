@@ -324,7 +324,7 @@ Thank you for using our service!
                       Text(
                         'Photocopying Service',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: const Color(0xFF003D99),
+                              color: Theme.of(context).colorScheme.primary,
                               fontWeight: FontWeight.bold,
                             ),
                       ),
@@ -510,10 +510,10 @@ Thank you for using our service!
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Please wait — all pages are being scanned from the ADF.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -605,7 +605,7 @@ Thank you for using our service!
 
           // Options summary
           Card(
-            color: Colors.grey[50],
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             elevation: 0,
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -662,7 +662,7 @@ Thank you for using our service!
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.black54)),
+          Text(label, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
       ),
@@ -670,13 +670,13 @@ Thank you for using our service!
   }
 
   Widget _summaryChip(IconData icon, String label) {
+    final onSurfaceVariant = Theme.of(context).colorScheme.onSurfaceVariant;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: const Color(0xFF4B5563)),
+        Icon(icon, size: 14, color: onSurfaceVariant),
         const SizedBox(width: 4),
-        Text(label,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
+        Text(label, style: TextStyle(fontSize: 12, color: onSurfaceVariant)),
       ],
     );
   }
