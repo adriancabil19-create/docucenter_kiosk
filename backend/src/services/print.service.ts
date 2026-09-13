@@ -6,6 +6,7 @@ import * as os from 'os';
 import { config } from '../utils/config';
 import PDFDocument from 'pdfkit';
 import { PDFDocument as PDFLibDocument } from 'pdf-lib';
+import sharp from 'sharp';
 
 interface PrintOptions {
   type?: string;
@@ -137,6 +138,214 @@ const convertImageToPdf = async (
     stream.on('finish', () => resolve());
     stream.on('error', reject);
   });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-image layout printing (N-up photo sheets)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ImageLayoutOptions {
+  imagesPerPage: number; // 1 | 2 | 4 | 6 | 9
+  imageSize?: string; // 'auto' | '1R' | '2R' | '3R' | '4R' | '5R' | 'custom'
+  customWidthIn?: number;
+  customHeightIn?: number;
+  orientation?: string; // 'auto' | 'portrait' | 'landscape'
+}
+
+/** Standard photo print sizes, in inches. */
+const PHOTO_SIZES_IN: Record<string, { w: number; h: number }> = {
+  '1R': { w: 1.25, h: 1.75 },
+  '2R': { w: 2.5, h: 3.5 },
+  '3R': { w: 3.5, h: 5 },
+  '4R': { w: 4, h: 6 },
+  '5R': { w: 5, h: 7 },
+};
+
+/** Grid shape (columns x rows) for each supported images-per-page preset. */
+const LAYOUT_GRID: Record<number, { cols: number; rows: number }> = {
+  1: { cols: 1, rows: 1 },
+  2: { cols: 1, rows: 2 },
+  4: { cols: 2, rows: 2 },
+  6: { cols: 2, rows: 3 },
+  9: { cols: 3, rows: 3 },
+};
+
+const IMAGE_PAGE_MARGIN_PT = 18; // ~0.25in
+const IMAGE_PAGE_GUTTER_PT = 10;
+
+/**
+ * Compose a set of images into a single multi-page PDF laid out N-per-page.
+ * Each source image is normalised through sharp first: EXIF auto-rotation
+ * (phone photos are frequently stored sideways with a rotation flag),
+ * transparent PNGs flattened onto white, and re-encoded as JPEG so pdf-lib
+ * only ever has to embed one image type. Images that fail to load/decode are
+ * skipped (not fatal) so one corrupt file doesn't sink the whole job.
+ */
+const convertImagesToLayoutPdf = async (
+  imagePaths: string[],
+  outputPdfPath: string,
+  paperSize: string,
+  layout: ImageLayoutOptions,
+): Promise<{ pagesGenerated: number; skipped: string[] }> => {
+  const imagesPerPage = LAYOUT_GRID[layout.imagesPerPage] ? layout.imagesPerPage : 1;
+  const grid = LAYOUT_GRID[imagesPerPage];
+
+  const pdfDoc = await PDFLibDocument.create();
+  const embedded: { img: Awaited<ReturnType<typeof pdfDoc.embedJpg>>; widthPx: number; heightPx: number }[] = [];
+  const skipped: string[] = [];
+
+  for (const imagePath of imagePaths) {
+    try {
+      const raw = fs.readFileSync(imagePath);
+      const pipeline = sharp(raw).rotate().flatten({ background: '#ffffff' });
+      const normalized = await pipeline.jpeg({ quality: 92 }).toBuffer();
+      const meta = await sharp(normalized).metadata();
+      if (!meta.width || !meta.height) throw new Error('Image dimensions unavailable');
+      const img = await pdfDoc.embedJpg(normalized);
+      embedded.push({ img, widthPx: meta.width, heightPx: meta.height });
+    } catch (err) {
+      logger.warn('Skipping image that could not be processed for layout print', {
+        imagePath,
+        error: String(err),
+      });
+      skipped.push(imagePath);
+    }
+  }
+
+  if (embedded.length === 0) {
+    throw new Error('No valid images could be processed for printing');
+  }
+
+  // Orientation: explicit choice wins. "Auto" only prefers landscape for the
+  // single-image-per-page case when that image is wider than tall — N-up
+  // sheets (2/4/6/9) stay portrait regardless, matching the standard layout.
+  let orientation = layout.orientation ?? 'auto';
+  if (orientation === 'auto') {
+    const first = embedded[0];
+    orientation = imagesPerPage === 1 && first.widthPx > first.heightPx ? 'landscape' : 'portrait';
+  }
+
+  const sizeMm = paperSizesMm[paperSize.toUpperCase()] ?? paperSizesMm.A4;
+  let pageWidthPt = (sizeMm.width * 72) / 25.4;
+  let pageHeightPt = (sizeMm.height * 72) / 25.4;
+  if (orientation === 'landscape') {
+    [pageWidthPt, pageHeightPt] = [pageHeightPt, pageWidthPt];
+  }
+
+  const usableWidthPt = pageWidthPt - IMAGE_PAGE_MARGIN_PT * 2 - IMAGE_PAGE_GUTTER_PT * (grid.cols - 1);
+  const usableHeightPt = pageHeightPt - IMAGE_PAGE_MARGIN_PT * 2 - IMAGE_PAGE_GUTTER_PT * (grid.rows - 1);
+  const cellWidthPt = usableWidthPt / grid.cols;
+  const cellHeightPt = usableHeightPt / grid.rows;
+
+  const fixedBoxPt = (() => {
+    if (!layout.imageSize || layout.imageSize === 'auto') return null;
+    if (layout.imageSize === 'custom') {
+      if (!layout.customWidthIn || !layout.customHeightIn) return null;
+      return { w: layout.customWidthIn * 72, h: layout.customHeightIn * 72 };
+    }
+    const preset = PHOTO_SIZES_IN[layout.imageSize];
+    return preset ? { w: preset.w * 72, h: preset.h * 72 } : null;
+  })();
+
+  for (let i = 0; i < embedded.length; i += imagesPerPage) {
+    const pageImages = embedded.slice(i, i + imagesPerPage);
+    const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
+
+    pageImages.forEach((entry, idx) => {
+      const col = idx % grid.cols;
+      const row = Math.floor(idx / grid.cols);
+      const cellX = IMAGE_PAGE_MARGIN_PT + col * (cellWidthPt + IMAGE_PAGE_GUTTER_PT);
+      const cellTopY = IMAGE_PAGE_MARGIN_PT + row * (cellHeightPt + IMAGE_PAGE_GUTTER_PT);
+      const cellY = pageHeightPt - cellTopY - cellHeightPt; // pdf-lib origin is bottom-left
+
+      // Box the image is fit into: a fixed preset size (clamped to the cell)
+      // or the full cell for "Automatic". Aspect ratio is always preserved —
+      // the image is scaled to fit inside the box, never cropped.
+      const boxW = Math.min(fixedBoxPt?.w ?? cellWidthPt, cellWidthPt);
+      const boxH = Math.min(fixedBoxPt?.h ?? cellHeightPt, cellHeightPt);
+      const aspect = entry.widthPx / entry.heightPx;
+      let drawW = boxW;
+      let drawH = drawW / aspect;
+      if (drawH > boxH) {
+        drawH = boxH;
+        drawW = drawH * aspect;
+      }
+
+      const x = cellX + (cellWidthPt - drawW) / 2;
+      const y = cellY + (cellHeightPt - drawH) / 2;
+      page.drawImage(entry.img, { x, y, width: drawW, height: drawH });
+    });
+  }
+
+  const bytes = await pdfDoc.save();
+  fs.writeFileSync(outputPdfPath, bytes);
+  return { pagesGenerated: Math.ceil(embedded.length / imagesPerPage), skipped };
+};
+
+/**
+ * Print a batch of images as a single N-up layout job (one multi-page PDF,
+ * printed once so native printer "copies" produce correctly collated sets).
+ */
+export const printImageLayoutJob = async (
+  filenames: string[],
+  opts: {
+    paperSize?: string;
+    colorMode?: string;
+    quality?: string;
+    copies?: number;
+  } & ImageLayoutOptions,
+): Promise<PrintResult> => {
+  if (!fs.existsSync(uploadsDir)) {
+    logger.warn('Uploads directory does not exist', { uploadsDir });
+    return { success: false, error: 'Uploads directory not found' };
+  }
+
+  const jobID = `JOB-${Date.now()}`;
+  const validPaths: string[] = [];
+  for (const filename of filenames) {
+    const filePath = path.join(uploadsDir, filename);
+    if (!isSafePath(filePath, uploadsDir) || !fs.existsSync(filePath)) continue;
+    if (!['.jpg', '.jpeg', '.png'].includes(path.extname(filename).toLowerCase())) continue;
+    validPaths.push(filePath);
+  }
+
+  if (validPaths.length === 0) {
+    return { success: false, error: 'No valid images found to print', jobID };
+  }
+
+  const tempPdf = path.join(os.tmpdir(), `image_layout_${jobID}.pdf`);
+  try {
+    const { skipped } = await convertImagesToLayoutPdf(validPaths, tempPdf, opts.paperSize || 'A4', opts);
+    const printRes = await printPdfFile(tempPdf, jobID, opts.paperSize, opts.colorMode, opts.quality, opts.copies);
+
+    const simulatedPaths: string[] = [];
+    if (config.print.simulationEnabled) {
+      const simPath = copyToSimulation(tempPdf, `image_layout_${jobID}.pdf`);
+      if (simPath) simulatedPaths.push(simPath);
+    }
+
+    if (!printRes.success) {
+      logger.error('Image layout print failed', { jobID, error: printRes.error });
+      return { success: false, error: 'Unable to print the selected images. Please try again.', jobID };
+    }
+
+    return {
+      success: true,
+      jobID,
+      method: printRes.method,
+      simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
+      error: skipped.length > 0 ? `${skipped.length} image(s) could not be processed and were skipped` : undefined,
+    };
+  } catch (err) {
+    logger.error('Image layout job failed', { jobID, error: String(err) });
+    return { success: false, error: 'Unable to process the selected images for printing', jobID };
+  } finally {
+    try {
+      fs.unlinkSync(tempPdf);
+    } catch (_e) {
+      /* temp file may already be gone */
+    }
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

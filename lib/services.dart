@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'storage_service.dart';
 import 'transfer_service.dart';
 import 'pages/printing_page.dart';
+import 'pages/image_print_settings_page.dart';
 import 'pages/scanning_page.dart';
 import 'pages/photocopying_page.dart';
 import 'pages/storage_page.dart';
@@ -22,6 +23,9 @@ class _ServicesPageState extends State<ServicesPage> {
   List<StorageDocument> _savedDocuments = [];
   List<StorageDocument> _selectedDocsForPrint = [];
   bool _printingFromStorage = false;
+  /// Which print flow "Back to Printing" should return to — 'printing' or
+  /// 'imagePrint' — set alongside _printingFromStorage.
+  String _printingSource = 'printing';
   final TransferManager _transferManager = TransferManager();
 
   @override
@@ -79,9 +83,24 @@ class _ServicesPageState extends State<ServicesPage> {
   }
 
   void _handleSelectDocForPrint(List<StorageDocument> docs) {
+    if (docs.isEmpty) return;
+
+    final imageCount = docs.where((d) => d.isImage).length;
+    if (imageCount > 0 && imageCount < docs.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select only images or only documents for one print job.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final isImageJob = imageCount == docs.length;
     setState(() {
       _selectedDocsForPrint = docs;
-      _activeService = 'printing';
+      _activeService = isImageJob ? 'imagePrint' : 'printing';
+      _printingSource = _activeService!;
       _printingFromStorage = true;
     });
   }
@@ -95,6 +114,7 @@ class _ServicesPageState extends State<ServicesPage> {
 
   static const Map<String, String> _serviceTitles = {
     'printing': 'Printing',
+    'imagePrint': 'Print Photos',
     'scanning': 'Scanning',
     'photocopying': 'Photocopying',
     'storage': 'Storage',
@@ -107,9 +127,20 @@ class _ServicesPageState extends State<ServicesPage> {
 
   /// Step 1 — pick a service. Nothing else is shown.
   Widget _buildServicePicker(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: _buildServicePickerContent(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServicePickerContent(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
             child: Column(
@@ -134,14 +165,14 @@ class _ServicesPageState extends State<ServicesPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1100),
+              constraints: const BoxConstraints(maxWidth: 1500),
               child: GridView.count(
                 crossAxisCount: MediaQuery.of(context).size.width < 768 ? 1 : 4,
-                childAspectRatio: 1.2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
+                childAspectRatio: 0.95,
+                crossAxisSpacing: 28,
+                mainAxisSpacing: 28,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
@@ -154,7 +185,6 @@ class _ServicesPageState extends State<ServicesPage> {
             ),
           ),
         ],
-      ),
     );
   }
 
@@ -175,7 +205,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 TextButton.icon(
                   onPressed: () => setState(() {
                     if (backToPrinting) {
-                      _activeService = 'printing';
+                      _activeService = _printingSource;
                       _printingFromStorage = false;
                     } else {
                       _activeService = null;
@@ -183,7 +213,9 @@ class _ServicesPageState extends State<ServicesPage> {
                     }
                   }),
                   icon: const Icon(Icons.arrow_back, size: 20),
-                  label: Text(backToPrinting ? 'Back to Printing' : 'Back to Services'),
+                  label: Text(backToPrinting
+                      ? (_printingSource == 'imagePrint' ? 'Back to Image Print' : 'Back to Printing')
+                      : 'Back to Services'),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF2563EB),
                     minimumSize: const Size(0, 44),
@@ -221,41 +253,49 @@ class _ServicesPageState extends State<ServicesPage> {
       label: '$title. $subtitle',
       child: InkWell(
         onTap: () => _handleServiceChange(serviceId),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFF2563EB) : Colors.white,
             border: Border.all(
               color: isActive ? const Color(0xFF2563EB) : const Color(0xFF9CA3AF),
+              width: isActive ? 2 : 1,
             ),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ExcludeSemantics(
                   child: Icon(
                     icon,
-                    size: 40,
+                    size: 76,
                     color: isActive ? Colors.white : const Color(0xFF2563EB),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 24),
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 26,
                     fontWeight: FontWeight.bold,
                     color: isActive ? Colors.white : Colors.black,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 10),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 15,
                     color: isActive ? Colors.white : const Color(0xFF4B5563),
                   ),
                   textAlign: TextAlign.center,
@@ -272,6 +312,23 @@ class _ServicesPageState extends State<ServicesPage> {
     switch (_activeService) {
       case 'printing':
         return PrintingInterface(
+          onBrowseStorage: _handleBrowseStorage,
+          selectedDocs: _selectedDocsForPrint,
+          onClearSelectedDocs: () {
+            setState(() {
+              _selectedDocsForPrint = [];
+              _printingFromStorage = false;
+            });
+          },
+          onRemoveSelectedDoc: (docId) {
+            setState(() {
+              _selectedDocsForPrint.removeWhere((doc) => doc.id == docId);
+            });
+          },
+          onNavigate: widget.onNavigate,
+        );
+      case 'imagePrint':
+        return ImagePrintSettingsInterface(
           onBrowseStorage: _handleBrowseStorage,
           selectedDocs: _selectedDocsForPrint,
           onClearSelectedDocs: () {
@@ -305,7 +362,8 @@ class _ServicesPageState extends State<ServicesPage> {
           onPrint: (doc) {
             setState(() {
               _selectedDocsForPrint = [doc];
-              _activeService = 'printing';
+              _activeService = doc.isImage ? 'imagePrint' : 'printing';
+              _printingSource = _activeService!;
               _printingFromStorage = false;
             });
           },

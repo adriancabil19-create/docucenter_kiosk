@@ -35,9 +35,17 @@ class StorageInterface extends StatefulWidget {
   State<StorageInterface> createState() => _StorageInterfaceState();
 }
 
+enum _StorageTab { documents, pictures }
+
 class _StorageInterfaceState extends State<StorageInterface> {
   final Set<String> _selectedDocs = {};
   bool _isLoading = false;
+  _StorageTab _activeTab = _StorageTab.documents;
+
+  List<StorageDocument> get _fileDocs => widget.documents.where((d) => !d.isImage).toList();
+  List<StorageDocument> get _imageDocs => widget.documents.where((d) => d.isImage).toList();
+  List<StorageDocument> get _visibleDocs =>
+      _activeTab == _StorageTab.documents ? _fileDocs : _imageDocs;
 
   String _wifiStatusMessage = '';
   Timer? _receivePollingTimer;
@@ -395,7 +403,47 @@ class _StorageInterfaceState extends State<StorageInterface> {
     );
   }
 
+  /// Documents / Pictures separator — keeps the two file kinds easy to find
+  /// instead of one long mixed list.
+  Widget _buildTabSwitcher() {
+    return Row(
+      children: [
+        Expanded(child: _tabButton('Documents', Icons.description, _StorageTab.documents, _fileDocs.length)),
+        const SizedBox(width: 8),
+        Expanded(child: _tabButton('Pictures', Icons.image, _StorageTab.pictures, _imageDocs.length)),
+      ],
+    );
+  }
 
+  Widget _tabButton(String label, IconData icon, _StorageTab tab, int count) {
+    final isActive = _activeTab == tab;
+    return InkWell(
+      onTap: () => setState(() => _activeTab = tab),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF2563EB) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? const Color(0xFF2563EB) : const Color(0xFFD1D5DB)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: isActive ? Colors.white : const Color(0xFF4B5563)),
+            const SizedBox(width: 8),
+            Text(
+              '$label ($count)',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isActive ? Colors.white : const Color(0xFF4B5563),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -547,7 +595,11 @@ class _StorageInterfaceState extends State<StorageInterface> {
               ),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        if (widget.documents.isNotEmpty) ...[
+          _buildTabSwitcher(),
+          const SizedBox(height: 16),
+        ],
         if (_isLoading)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -575,26 +627,25 @@ class _StorageInterfaceState extends State<StorageInterface> {
             ),
           ),
 
-        // ── Select-all bar (when docs exist) ────────────────────────────
-        if (widget.documents.isNotEmpty)
+        // ── Select-all bar (scoped to the active tab) ───────────────────
+        if (_visibleDocs.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
                 Checkbox(
                   tristate: true,
-                  value: _selectedDocs.length == widget.documents.length
+                  value: _visibleDocs.every((d) => _selectedDocs.contains(d.id))
                       ? true
-                      : _selectedDocs.isEmpty
+                      : _visibleDocs.every((d) => !_selectedDocs.contains(d.id))
                           ? false
                           : null,
                   onChanged: (val) {
                     setState(() {
                       if (val == true) {
-                        _selectedDocs
-                            .addAll(widget.documents.map((d) => d.id));
+                        _selectedDocs.addAll(_visibleDocs.map((d) => d.id));
                       } else {
-                        _selectedDocs.clear();
+                        _selectedDocs.removeAll(_visibleDocs.map((d) => d.id));
                       }
                     });
                   },
@@ -663,10 +714,32 @@ class _StorageInterfaceState extends State<StorageInterface> {
               ),
             ),
           )
+        else if (_visibleDocs.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  Icon(
+                    _activeTab == _StorageTab.documents ? Icons.description : Icons.image,
+                    size: 40,
+                    color: const Color(0xFF9CA3AF),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _activeTab == _StorageTab.documents
+                        ? 'No documents here yet'
+                        : 'No pictures here yet',
+                    style: const TextStyle(color: Color(0xFF6B7280)),
+                  ),
+                ],
+              ),
+            ),
+          )
         else
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: widget.documents.map((doc) {
+            children: _visibleDocs.map((doc) {
               final isSelected = _selectedDocs.contains(doc.id);
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -686,7 +759,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
                         value: _selectedDocs.contains(doc.id),
                         onChanged: (val) => _toggleDocumentSelection(doc.id, val == true),
                       ),
-                      const Icon(Icons.description, color: Color(0xFF2563EB)),
+                      Icon(doc.isImage ? Icons.image : Icons.description, color: const Color(0xFF2563EB)),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(

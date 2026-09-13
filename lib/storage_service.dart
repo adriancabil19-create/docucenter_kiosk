@@ -25,6 +25,10 @@ class StorageDocument {
     required this.mimeType,
   });
 
+  /// True for JPG/JPEG/PNG — the formats routed to the Image Print Settings
+  /// workflow and grouped under the "Pictures" tab in Storage.
+  bool get isImage => const {'JPG', 'JPEG', 'PNG'}.contains(format.toUpperCase());
+
   factory StorageDocument.fromJson(Map<String, dynamic> json) {
     return StorageDocument(
       id: json['id'] as String? ?? '',

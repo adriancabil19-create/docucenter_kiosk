@@ -8,7 +8,9 @@ import {
   printDocument,
   getAvailablePrinters,
   printFilesFromStorage,
+  printImageLayoutJob,
   printTestPage,
+  ImageLayoutOptions,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
 import { insertPrintJob, getKioskById, getStorageSettings, insertLog } from '../database';
@@ -34,6 +36,12 @@ async function countPages(filename: string): Promise<number> {
 }
 
 const router = Router();
+
+/** Hard cap on images in a single N-up print job — keeps job size sane on kiosk hardware. */
+const MAX_IMAGES = 30;
+
+/** Valid images-per-page presets — mirrors LAYOUT_GRID in print.service.ts. */
+const LAYOUT_GRID_SIZES = new Set([1, 2, 4, 6, 9]);
 
 /**
  * POST /api/upload-scanned
@@ -185,12 +193,21 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { filenames, paperSize, colorMode, quality, copies, duplex, serviceType, unitPrice } =
+    const { filenames, paperSize, colorMode, quality, copies, duplex, serviceType, unitPrice, imageLayout } =
       req.body;
+    const layout: ImageLayoutOptions | undefined = imageLayout ?? undefined;
     const numCopies: number = Math.max(1, parseInt(String(copies ?? '1'), 10) || 1);
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
+      return;
+    }
+
+    if (layout && filenames.length > MAX_IMAGES) {
+      res.status(400).json({
+        success: false,
+        error: `Too many images selected. Please select ${MAX_IMAGES} or fewer.`,
+      });
       return;
     }
 
@@ -219,10 +236,26 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
     });
 
     // Page count is needed both for the job record and paper tracking — compute once.
-    const pageCounts = await Promise.all(filenames.map(countPages));
-    const totalPages = pageCounts.reduce((s: number, p: number) => s + p, 0);
+    // Image-layout jobs pack N images per sheet, so the page count is derived
+    // from the layout rather than per-file (each image is not its own page).
+    let totalPages: number;
+    if (layout) {
+      const perPage = LAYOUT_GRID_SIZES.has(layout.imagesPerPage) ? layout.imagesPerPage : 1;
+      totalPages = Math.ceil(filenames.length / perPage);
+    } else {
+      const pageCounts = await Promise.all(filenames.map(countPages));
+      totalPages = pageCounts.reduce((s: number, p: number) => s + p, 0);
+    }
 
-    const result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
+    const result = layout
+      ? await printImageLayoutJob(filenames, {
+          paperSize,
+          colorMode,
+          quality,
+          copies: numCopies,
+          ...layout,
+        })
+      : await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
 
     // Log to SQLite regardless of outcome
     await insertPrintJob({
@@ -237,7 +270,8 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       color_mode: colorMode === 'color' ? 'color' : 'bw',
       duplex: duplex === true || duplex === 'true',
       unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
-      service_type: typeof serviceType === 'string' ? serviceType : 'printing',
+      service_type:
+        typeof serviceType === 'string' ? serviceType : layout ? 'image-print' : 'printing',
     });
 
     if (result.success) {
@@ -248,6 +282,8 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         message: 'Print job submitted (from storage)',
       };
       if (result.simulatedPaths) resp.simulatedPaths = result.simulatedPaths;
+      // Non-fatal note (e.g. some images were skipped) surfaced alongside success.
+      if (result.error) resp.warning = result.error;
 
       // Delete-after-print, if the retention policy asks for it.
       try {

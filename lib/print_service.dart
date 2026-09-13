@@ -97,6 +97,77 @@ class PrintingService {
     }
   }
 
+  /// Print a batch of images as a single N-up layout job (one multi-page
+  /// print job, backend composes the grid and prints it as one unit so
+  /// copies come out correctly collated).
+  static Future<bool> printImageLayoutJob(
+    List<String> filenames, {
+    required int imagesPerPage,
+    required String imageSize,
+    double? customWidthIn,
+    double? customHeightIn,
+    required String orientation,
+    String paperSize = 'A4',
+    String colorMode = 'color',
+    String quality = 'standard',
+    int copies = 1,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/api/print/from-storage'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'filenames': filenames,
+          'paperSize': paperSize,
+          'colorMode': colorMode,
+          'quality': quality,
+          'copies': copies,
+          'imageLayout': {
+            'imagesPerPage': imagesPerPage,
+            'imageSize': imageSize,
+            if (customWidthIn != null) 'customWidthIn': customWidthIn,
+            if (customHeightIn != null) 'customHeightIn': customHeightIn,
+            'orientation': orientation,
+          },
+        }),
+      );
+
+      final data = response.statusCode == 200 ? json.decode(response.body) : null;
+      if (response.statusCode == 200 && data is Map && data['success'] == true) {
+        return true;
+      }
+
+      print('Failed to print image layout job: ${response.statusCode}');
+      String msg = 'Unable to print the selected images. Please try again.';
+      try {
+        final body = data ?? json.decode(response.body);
+        if (body is Map && body['error'] is String) msg = body['error'] as String;
+      } catch (_) {}
+      // 423 = admin locked printing / maintenance — not a device fault.
+      if (response.statusCode != 423) {
+        KioskRuntime.reportIncident(
+          device: 'printer',
+          errorCode: 'PRINT_FAILED',
+          severity: 'critical',
+          message: 'Image print job failed (HTTP ${response.statusCode})',
+          metadata: {'paperSize': paperSize, 'files': filenames.length},
+        );
+      }
+      throw Exception(msg);
+    } on Exception {
+      rethrow;
+    } catch (e) {
+      KioskRuntime.reportIncident(
+        device: 'printer',
+        errorCode: 'PRINT_ERROR',
+        severity: 'critical',
+        message: 'Image print job threw: $e',
+        metadata: {'paperSize': paperSize, 'files': filenames.length},
+      );
+      throw Exception('Unable to print the selected images. Please try again.');
+    }
+  }
+
   /// Print text content
   static Future<bool> printText(
     String content, {
