@@ -50,6 +50,20 @@ class KioskShell extends StatelessWidget {
                         icon: Icons.print_disabled,
                         text: 'Printing is temporarily disabled by the operator.',
                       ),
+                    if (rt.outOfPaper && !rt.maintenance)
+                      const _Banner(
+                        color: Color(0xFFB91C1C),
+                        icon: Icons.inventory_2_outlined,
+                        text: 'Out of paper — Printing and Photocopying are unavailable '
+                            'until a staff member refills the trays.',
+                      )
+                    else if (rt.paperRunningLow && !rt.maintenance)
+                      const _Banner(
+                        color: Color(0xFFB45309),
+                        icon: Icons.inventory_2_outlined,
+                        text: 'Paper is running low — Printing and Photocopying may be '
+                            'interrupted soon.',
+                      ),
                   ],
                 ),
               ),

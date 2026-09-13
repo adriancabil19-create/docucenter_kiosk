@@ -478,12 +478,31 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
                       ),
                     ),
                   ),
+                  if (KioskRuntime.instance.outOfPaper) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.inventory_2_outlined,
+                            size: 16, color: Theme.of(context).colorScheme.error),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Out of paper — printing is unavailable right now.',
+                            style: TextStyle(
+                                fontSize: 12, color: Theme.of(context).colorScheme.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
-                      onPressed: images.isEmpty ? null : _handleContinue,
+                      onPressed: images.isEmpty || KioskRuntime.instance.outOfPaper
+                          ? null
+                          : _handleContinue,
                       icon: const Icon(Icons.arrow_forward),
                       label: const Text('Continue'),
                       style: ElevatedButton.styleFrom(

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
+import 'paper_tracker_service.dart';
 
 /// Live runtime state for this kiosk, polled from the local backend.
 ///
@@ -27,6 +28,11 @@ class KioskRuntime extends ChangeNotifier {
   int _openIncidents = 0;
   int _consecutiveFailures = 0;
 
+  /// Paper tray levels, polled independently of (and never affecting) the
+  /// connectivity state above — a stale/unreachable paper-tracker endpoint
+  /// should never be mistaken for the kiosk itself going offline.
+  List<PaperTray> _trays = [];
+
   /// Per-page prices set by the admin. Defaults match the historical hard-coded
   /// rates so the app is usable before the first poll completes.
   KioskPricing _pricing = KioskPricing.defaults;
@@ -41,6 +47,17 @@ class KioskRuntime extends ChangeNotifier {
   bool get printingDisabled => _printingDisabled;
   String get printerState => _printerState;
   int get openIncidents => _openIncidents;
+
+  List<PaperTray> get paperTrays => _trays;
+
+  /// True once every tray has reported in and every one of them is at zero —
+  /// the point at which a print/copy job can no longer physically go through.
+  bool get outOfPaper =>
+      _trays.isNotEmpty && _trays.every((t) => t.currentCount <= 0);
+
+  /// True when any tray (but not all) has dropped to/below its low-paper
+  /// threshold — a heads-up, not yet a hard block.
+  bool get paperRunningLow => !outOfPaper && _trays.any((t) => t.isLow);
 
   /// Current admin-configured per-page prices. Always non-null (defaults until
   /// the first poll lands).
@@ -72,6 +89,10 @@ class KioskRuntime extends ChangeNotifier {
   Future<void> refresh() => _poll();
 
   Future<void> _poll() async {
+    // Fire-and-forget: this has its own try/catch and must never affect the
+    // connectivity bookkeeping below.
+    _pollPaperTrays();
+
     try {
       final res = await http
           .get(Uri.parse(BackendConfig.kioskSelfUrl))
@@ -128,6 +149,33 @@ class KioskRuntime extends ChangeNotifier {
       debugPrint('KioskRuntime poll failed: $e');
       _registerFailure();
     }
+  }
+
+  Future<void> _pollPaperTrays() async {
+    // PaperTrackerService already catches its own errors and returns []
+    // on failure, so a down paper-tracker endpoint just leaves the last
+    // known levels in place rather than flapping outOfPaper on/off.
+    final trays = await PaperTrackerService.getTrays();
+    if (trays.isEmpty) return;
+    if (_traysChanged(trays)) {
+      _trays = trays;
+      notifyListeners();
+    }
+  }
+
+  bool _traysChanged(List<PaperTray> next) {
+    if (next.length != _trays.length) return true;
+    for (var i = 0; i < next.length; i++) {
+      final a = next[i];
+      final b = _trays[i];
+      if (a.trayName != b.trayName ||
+          a.currentCount != b.currentCount ||
+          a.maxCapacity != b.maxCapacity ||
+          a.threshold != b.threshold) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _registerFailure() {

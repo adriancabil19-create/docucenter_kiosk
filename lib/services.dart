@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'kiosk_runtime_service.dart';
 import 'storage_service.dart';
 import 'strings.dart';
 import 'transfer_service.dart';
@@ -34,12 +35,20 @@ class _ServicesPageState extends State<ServicesPage> {
     super.initState();
     _loadDocuments();
     _transferManager.initializeAll();
+    // Re-render the service picker (and its "out of paper" lock) whenever
+    // paper levels or other runtime flags change.
+    KioskRuntime.instance.addListener(_onRuntimeChanged);
   }
 
   @override
   void dispose() {
+    KioskRuntime.instance.removeListener(_onRuntimeChanged);
     _transferManager.dispose();
     super.dispose();
+  }
+
+  void _onRuntimeChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadDocuments() async {
@@ -51,7 +60,20 @@ class _ServicesPageState extends State<ServicesPage> {
 
   bool get _backendAvailable => StorageService.backendAvailable;
 
+  static const _paperServices = {'printing', 'photocopying'};
+
   void _handleServiceChange(String service) {
+    if (_paperServices.contains(service) && KioskRuntime.instance.outOfPaper) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Out of paper — this service is unavailable until a staff member refills the trays.',
+          ),
+          backgroundColor: Color(0xFFB91C1C),
+        ),
+      );
+      return;
+    }
     setState(() {
       _activeService = service;
     });
@@ -258,64 +280,110 @@ class _ServicesPageState extends State<ServicesPage> {
   }
 
   Widget _buildServiceButton(String serviceId, String title, String subtitle, IconData icon) {
-    final isActive = _activeService == serviceId;
+    final isOutOfPaper =
+        _paperServices.contains(serviceId) && KioskRuntime.instance.outOfPaper;
+    final isActive = !isOutOfPaper && _activeService == serviceId;
     final colorScheme = Theme.of(context).colorScheme;
+    final dimmed = colorScheme.onSurfaceVariant;
+
     return Semantics(
       button: true,
       selected: isActive,
-      label: '$title. $subtitle',
+      enabled: !isOutOfPaper,
+      label: isOutOfPaper ? '$title. Out of paper — unavailable' : '$title. $subtitle',
       child: InkWell(
         onTap: () => _handleServiceChange(serviceId),
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF2563EB) : colorScheme.surface,
-            border: Border.all(
-              color: isActive ? const Color(0xFF2563EB) : colorScheme.outlineVariant,
-              width: isActive ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: isOutOfPaper
+                    ? colorScheme.surfaceContainerHighest
+                    : isActive
+                        ? const Color(0xFF2563EB)
+                        : colorScheme.surface,
+                border: Border.all(
+                  color: isActive ? const Color(0xFF2563EB) : colorScheme.outlineVariant,
+                  width: isActive ? 2 : 1,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ExcludeSemantics(
-                  child: Icon(
-                    icon,
-                    size: 76,
-                    color: isActive ? Colors.white : const Color(0xFF2563EB),
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ExcludeSemantics(
+                      child: Icon(
+                        icon,
+                        size: 76,
+                        color: isOutOfPaper
+                            ? dimmed
+                            : isActive
+                                ? Colors.white
+                                : const Color(0xFF2563EB),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: isOutOfPaper
+                            ? dimmed
+                            : isActive
+                                ? Colors.white
+                                : colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      isOutOfPaper ? 'Unavailable — out of paper' : subtitle,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isOutOfPaper
+                            ? dimmed
+                            : isActive
+                                ? Colors.white
+                                : colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: isActive ? Colors.white : colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: isActive ? Colors.white : colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+              ),
             ),
-          ),
+            if (isOutOfPaper)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB91C1C),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'NO PAPER',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

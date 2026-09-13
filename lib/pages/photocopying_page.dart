@@ -625,10 +625,29 @@ Thank you for using our service!
           ),
           const SizedBox(height: 24),
 
+          if (KioskRuntime.instance.outOfPaper)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Icon(Icons.inventory_2_outlined,
+                      size: 16, color: Theme.of(context).colorScheme.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Out of paper — photocopying is unavailable right now.',
+                      style: TextStyle(
+                          fontSize: 12, color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _proceedToPayment,
+              onPressed:
+                  KioskRuntime.instance.outOfPaper ? null : _proceedToPayment,
               icon: const Icon(Icons.payment),
               label: const Text('Proceed to Payment'),
               style: ElevatedButton.styleFrom(
