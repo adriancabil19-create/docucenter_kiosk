@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_twain_scanner
+  pdfx
   screen_retriever
   window_manager
 )

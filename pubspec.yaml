@@ -26,6 +26,8 @@ dependencies:
   flutter_dotenv: ^5.1.0
   cached_network_image: ^3.3.0
   window_manager: ^0.3.8
+  shared_preferences: ^2.2.2
+  pdfx: ^2.11.0
 
 dev_dependencies:
   flutter_test:

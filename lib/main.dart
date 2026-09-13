@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'services.dart';
@@ -5,11 +7,16 @@ import 'about.dart';
 import 'legal_page.dart';
 import 'pages/payment_page.dart';
 import 'kiosk_runtime_service.dart';
+import 'settings_service.dart';
+import 'strings.dart';
 import 'widgets/kiosk_status_overlays.dart';
+import 'widgets/idle_screen.dart';
+import 'widgets/settings_panel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
+  await AppSettings.instance.load();
 
   const windowOptions = WindowOptions(
     size: Size(1280, 800),
@@ -53,6 +60,11 @@ class _MainAppState extends State<MainApp> {
   // service.
   int _servicesEntries = 0;
 
+  // Standby animation: shown after 30s with no touch anywhere in the app,
+  // to draw in passersby and invite them to start a job.
+  Timer? _idleTimer;
+  bool _showIdleScreen = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,12 +73,39 @@ class _MainAppState extends State<MainApp> {
     KioskRuntime.instance.start();
     // "Restart app" command → soft reload rather than a process kill.
     KioskRuntime.instance.onReloadRequested = _softReload;
+    _resetIdleTimer();
   }
 
   @override
   void dispose() {
     KioskRuntime.instance.onReloadRequested = null;
+    _idleTimer?.cancel();
     super.dispose();
+  }
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(IdleScreen.idleTimeout, () {
+      if (!mounted) return;
+      setState(() => _showIdleScreen = true);
+    });
+  }
+
+  /// Raw pointer-down handler covering the whole app — while the idle screen
+  /// is up, dismissal is handled by [_dismissIdleScreen] instead so the two
+  /// don't race on the same tap.
+  void _handleUserActivity() {
+    if (_showIdleScreen) return;
+    _resetIdleTimer();
+  }
+
+  void _dismissIdleScreen() {
+    setState(() {
+      _showIdleScreen = false;
+      _currentPage = 'home';
+      _previousPage = 'home';
+    });
+    _resetIdleTimer();
   }
 
   /// Reset the kiosk to a pristine home screen and rebuild the UI subtree.
@@ -87,39 +126,90 @@ class _MainAppState extends State<MainApp> {
     });
   }
 
+  /// Light/dark theme sharing one seed color; button/touch-target sizes
+  /// scale with the accessibility text-size setting so "Large"/"Extra Large"
+  /// enlarges tappable controls app-wide, not just text.
+  ThemeData _buildTheme(Brightness brightness, double textScale) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF2563EB),
+      brightness: brightness,
+    );
+    final minTapHeight = 44.0 * textScale;
+    return ThemeData(
+      colorScheme: colorScheme,
+      useMaterial3: true,
+      scaffoldBackgroundColor: colorScheme.surface,
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(minimumSize: Size(0, minTapHeight)),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(minimumSize: Size(0, minTapHeight)),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(minimumSize: Size(0, minTapHeight)),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(minimumSize: Size(minTapHeight, minTapHeight)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DOCUCENTER Kiosk',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
-        ),
-        useMaterial3: true,
-      ),
-      home: Scaffold(
-        body: KioskShell(
-          child: Column(
-            key: _shellKey,
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              Header(
-                currentPage: _currentPage,
-                onNavigate: _navigate,
-              ),
-              Expanded(
-                child: HomePage(
-                  currentPage: _currentPage,
-                  previousPage: _previousPage,
-                  onNavigate: _navigate,
-                  servicesEntries: _servicesEntries,
-                ),
-              ),
-            ],
+    return AnimatedBuilder(
+      animation: AppSettings.instance,
+      builder: (context, _) {
+        final settings = AppSettings.instance;
+        return MaterialApp(
+          title: 'DOCUCENTER Kiosk',
+          debugShowCheckedModeBanner: false,
+          theme: _buildTheme(Brightness.light, settings.textScale),
+          darkTheme: _buildTheme(Brightness.dark, settings.textScale),
+          themeMode: settings.themeMode,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(settings.textScale),
+            ),
+            child: child!,
           ),
-        ),
-      ),
+          home: Scaffold(
+            body: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) => _handleUserActivity(),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: KioskShell(
+                      child: Column(
+                        key: _shellKey,
+                        mainAxisSize: MainAxisSize.max,
+                        children: [
+                          Header(
+                            currentPage: _currentPage,
+                            onNavigate: _navigate,
+                          ),
+                          Expanded(
+                            child: HomePage(
+                              currentPage: _currentPage,
+                              previousPage: _previousPage,
+                              onNavigate: _navigate,
+                              servicesEntries: _servicesEntries,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_showIdleScreen)
+                    Positioned.fill(
+                      child: IdleScreen(onDismiss: _dismissIdleScreen),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -141,12 +231,9 @@ class Header extends StatefulWidget {
 class _HeaderState extends State<Header> {
   bool _mobileMenuOpen = false;
 
-  final List<Map<String, String>> navItems = [
-    {'id': 'home', 'label': 'Home'},
-    {'id': 'services', 'label': 'Services'},
-    {'id': 'about', 'label': 'About'},
-    {'id': 'legal', 'label': 'Legal'},
-  ];
+  static const List<String> _navIds = ['home', 'services', 'about', 'legal'];
+
+  static String _navLabel(String id) => Strings.t('nav.$id');
 
   void _handleNavigate(String page) {
     widget.onNavigate(page);
@@ -158,11 +245,12 @@ class _HeaderState extends State<Header> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 1024;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Material(
       elevation: 4,
       child: Container(
-        color: Colors.white,
+        color: colorScheme.surface,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: Column(
@@ -200,12 +288,12 @@ class _HeaderState extends State<Header> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'DOCUCENTER Kiosk',
+                                Strings.t('home.title'),
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleMedium
                                     ?.copyWith(
-                                  color: const Color(0xFF003D99),
+                                  color: colorScheme.primary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -213,7 +301,7 @@ class _HeaderState extends State<Header> {
                                 'University of Cebu',
                                 style:
                                     Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: const Color(0xFF4B5563),
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -225,60 +313,73 @@ class _HeaderState extends State<Header> {
                   // Desktop Navigation
                   if (!isMobile)
                     Row(
-                      children: navItems.map((item) {
-                        final isActive = widget.currentPage == item['id'];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: TextButton(
-                            onPressed: () => _handleNavigate(item['id']!),
-                            style: TextButton.styleFrom(
-                              backgroundColor: isActive
-                                  ? const Color(0xFF2563EB)
-                                  : Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
+                      children: [
+                        ..._navIds.map((id) {
+                          final isActive = widget.currentPage == id;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: TextButton(
+                              onPressed: () => _handleNavigate(id),
+                              style: TextButton.styleFrom(
+                                backgroundColor: isActive
+                                    ? const Color(0xFF2563EB)
+                                    : Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
+                              child: Text(
+                                _navLabel(id),
+                                style: TextStyle(
+                                  color: isActive
+                                      ? Colors.white
+                                      : colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                            child: Text(
-                              item['label']!,
-                              style: TextStyle(
-                                color: isActive
-                                    ? Colors.white
-                                    : const Color(0xFF374151),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                          );
+                        }),
+                        IconButton(
+                          icon: Icon(Icons.settings_outlined, color: colorScheme.onSurfaceVariant),
+                          tooltip: Strings.t('header.settings'),
+                          onPressed: () => showSettingsPanel(context),
+                        ),
+                      ],
                     ),
                   // Mobile Menu Button
-                  if (isMobile)
+                  if (isMobile) ...[
+                    IconButton(
+                      icon: Icon(Icons.settings_outlined, color: colorScheme.primary),
+                      tooltip: Strings.t('header.settings'),
+                      onPressed: () => showSettingsPanel(context),
+                    ),
                     IconButton(
                       icon: Icon(
                         _mobileMenuOpen ? Icons.close : Icons.menu,
-                        color: const Color(0xFF003D99),
+                        color: colorScheme.primary,
                       ),
                       tooltip: _mobileMenuOpen
-                          ? 'Close navigation menu'
-                          : 'Open navigation menu',
+                          ? Strings.t('header.closeMenu')
+                          : Strings.t('header.openMenu'),
                       onPressed: () {
                         setState(() {
                           _mobileMenuOpen = !_mobileMenuOpen;
                         });
                       },
                     ),
+                  ],
                 ],
               ),
               // Mobile Navigation Menu
               if (isMobile && _mobileMenuOpen) ...[
                 const SizedBox(height: 12),
                 Column(
-                  children: navItems.map((item) {
-                    final isActive = widget.currentPage == item['id'];
+                  children: _navIds.map((id) {
+                    final isActive = widget.currentPage == id;
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Container(
@@ -290,15 +391,15 @@ class _HeaderState extends State<Header> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: TextButton(
-                          onPressed: () => _handleNavigate(item['id']!),
+                          onPressed: () => _handleNavigate(id),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              item['label']!,
+                              _navLabel(id),
                               style: TextStyle(
                                 color: isActive
                                     ? Colors.white
-                                    : const Color(0xFF374151),
+                                    : colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -343,25 +444,25 @@ class Footer extends StatelessWidget {
                     children: [
                       _buildFooterColumn(
                         context,
-                        'DOCUCENTER Kiosk',
+                        Strings.t('footer.kiosk.title'),
                         'Self-Service Document Processing Station with Real-Time Monitoring and Automated Payment System',
                       ),
                       const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
-                        'University',
+                        Strings.t('footer.university.title'),
                         'University of Cebu\nLapu-Lapu and Mandaue Campus\nCollege of Computer Engineering',
                       ),
                       const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
-                        'Project Information',
+                        Strings.t('footer.project.title'),
                         'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
                       ),
                       const SizedBox(height: 16),
                       _buildFooterColumn(
                         context,
-                        'Operator',
+                        Strings.t('footer.operator.title'),
                         'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
                       ),
                     ],
@@ -372,7 +473,7 @@ class Footer extends StatelessWidget {
                       Expanded(
                         child: _buildFooterColumn(
                           context,
-                          'DOCUCENTER Kiosk',
+                          Strings.t('footer.kiosk.title'),
                           'Self-Service Document Processing Station with Real-Time Monitoring and Automated Payment System',
                         ),
                       ),
@@ -380,7 +481,7 @@ class Footer extends StatelessWidget {
                       Expanded(
                         child: _buildFooterColumn(
                           context,
-                          'University',
+                          Strings.t('footer.university.title'),
                           'University of Cebu\nLapu-Lapu and Mandaue Campus\nCollege of Computer Engineering',
                         ),
                       ),
@@ -388,7 +489,7 @@ class Footer extends StatelessWidget {
                       Expanded(
                         child: _buildFooterColumn(
                           context,
-                          'Project Information',
+                          Strings.t('footer.project.title'),
                           'Bachelor of Science in\nComputer Engineering\nAcademic Year 2025–2026',
                         ),
                       ),
@@ -396,7 +497,7 @@ class Footer extends StatelessWidget {
                       Expanded(
                         child: _buildFooterColumn(
                           context,
-                          'Operator',
+                          Strings.t('footer.operator.title'),
                           'DocuCenter\nDeveloper: Charles Adrian L. Cabil\nadriancabil12@gmail.com',
                         ),
                       ),
@@ -417,13 +518,13 @@ class Footer extends StatelessWidget {
               spacing: 8,
               runSpacing: 2,
               children: [
-                _buildFooterLink(context, 'Privacy Policy', 'legal'),
+                _buildFooterLink(context, Strings.t('footer.privacy'), 'legal'),
                 _buildFooterDot(),
-                _buildFooterLink(context, 'Terms & Conditions', 'legal'),
+                _buildFooterLink(context, Strings.t('footer.terms'), 'legal'),
                 _buildFooterDot(),
-                _buildFooterLink(context, 'Cookie Policy', 'legal'),
+                _buildFooterLink(context, Strings.t('footer.cookies'), 'legal'),
                 _buildFooterDot(),
-                _buildFooterLink(context, 'Refund Policy', 'legal'),
+                _buildFooterLink(context, Strings.t('footer.refund'), 'legal'),
               ],
             ),
           // Copyright
@@ -600,7 +701,7 @@ class _HomePageState extends State<HomePage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'DOCUCENTER Kiosk',
+                      Strings.t('home.title'),
                       style: Theme.of(context).textTheme.displayLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -609,7 +710,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'Self-Service Document Processing Station',
+                      Strings.t('home.subtitle'),
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: const Color(0xFFDBE9F8), // blue-100
                         fontWeight: FontWeight.w500,
@@ -618,7 +719,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 32),
                     Text(
-                      'Print, scan, and photocopy documents at the kiosk, with staff-side device monitoring and cashless payment',
+                      Strings.t('home.description'),
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: const Color(0xFFF0F9FF), // blue-50
                       ),
@@ -632,9 +733,9 @@ class _HomePageState extends State<HomePage> {
                         foregroundColor: const Color(0xFF003D99), // blue-900
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
                       ),
-                      child: const Text(
-                        'Try Our Services',
-                        style: TextStyle(fontSize: 18),
+                      child: Text(
+                        Strings.t('home.cta'),
+                        style: const TextStyle(fontSize: 18),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -644,9 +745,9 @@ class _HomePageState extends State<HomePage> {
                       runSpacing: 16,
                       alignment: WrapAlignment.center,
                       children: [
-                        _buildServiceBadge('Printing'),
-                        _buildServiceBadge('Scanning'),
-                        _buildServiceBadge('Photocopying'),
+                        _buildServiceBadge(Strings.t('home.badge.printing')),
+                        _buildServiceBadge(Strings.t('home.badge.scanning')),
+                        _buildServiceBadge(Strings.t('home.badge.photocopying')),
                       ],
                     ),
                   ],

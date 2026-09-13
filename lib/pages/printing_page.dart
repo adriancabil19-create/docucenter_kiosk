@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../storage_service.dart';
 import '../kiosk_runtime_service.dart';
+import '../widgets/print_preview_dialog.dart';
 import 'payment_page.dart';
 
 class PrintingInterface extends StatefulWidget {
@@ -390,6 +391,22 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                     ),
                   ),
                   const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: allDocs.isEmpty
+                          ? null
+                          : () => PrintPreviewDialog.show(context, allDocs),
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text('Preview Pages'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2563EB),
+                        side: const BorderSide(color: Color(0xFF2563EB)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     height: 48,

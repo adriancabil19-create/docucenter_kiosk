@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'storage_service.dart';
+import 'strings.dart';
 import 'transfer_service.dart';
 import 'pages/printing_page.dart';
 import 'pages/image_print_settings_page.dart';
@@ -112,13 +113,20 @@ class _ServicesPageState extends State<ServicesPage> {
     });
   }
 
-  static const Map<String, String> _serviceTitles = {
-    'printing': 'Printing',
-    'imagePrint': 'Print Photos',
-    'scanning': 'Scanning',
-    'photocopying': 'Photocopying',
-    'storage': 'Storage',
+  static const Map<String, String> _serviceTitleKeys = {
+    'printing': 'services.printing.title',
+    'scanning': 'services.scanning.title',
+    'photocopying': 'services.photocopying.title',
+    'storage': 'services.storage.title',
   };
+
+  /// 'imagePrint' has no localized title yet — it's a sub-flow of Printing
+  /// reached only from Storage, not from the service picker.
+  String _serviceTitleFor(String? serviceId) {
+    if (serviceId == 'imagePrint') return 'Print Photos';
+    final key = _serviceTitleKeys[serviceId];
+    return key == null ? '' : Strings.t(key);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +154,7 @@ class _ServicesPageState extends State<ServicesPage> {
             child: Column(
               children: [
                 Text(
-                  'Document Processing Services',
+                  Strings.t('services.heading'),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: const Color(0xFF003D99),
                     fontWeight: FontWeight.bold,
@@ -155,7 +163,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Choose a service to get started',
+                  Strings.t('services.subheading'),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: const Color(0xFF4B5563),
                   ),
@@ -176,10 +184,14 @@ class _ServicesPageState extends State<ServicesPage> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  _buildServiceButton('printing', 'Printing', 'Print documents & images', Icons.print),
-                  _buildServiceButton('scanning', 'Scanning', 'Digitize physical documents', Icons.document_scanner),
-                  _buildServiceButton('photocopying', 'Photocopying', 'Make copies of documents', Icons.copy),
-                  _buildServiceButton('storage', 'Storage', 'View saved documents', Icons.folder_open),
+                  _buildServiceButton('printing', Strings.t('services.printing.title'),
+                      Strings.t('services.printing.subtitle'), Icons.print),
+                  _buildServiceButton('scanning', Strings.t('services.scanning.title'),
+                      Strings.t('services.scanning.subtitle'), Icons.document_scanner),
+                  _buildServiceButton('photocopying', Strings.t('services.photocopying.title'),
+                      Strings.t('services.photocopying.subtitle'), Icons.copy),
+                  _buildServiceButton('storage', Strings.t('services.storage.title'),
+                      Strings.t('services.storage.subtitle'), Icons.folder_open),
                 ],
               ),
             ),
@@ -215,7 +227,7 @@ class _ServicesPageState extends State<ServicesPage> {
                   icon: const Icon(Icons.arrow_back, size: 20),
                   label: Text(backToPrinting
                       ? (_printingSource == 'imagePrint' ? 'Back to Image Print' : 'Back to Printing')
-                      : 'Back to Services'),
+                      : Strings.t('services.backToServices')),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF2563EB),
                     minimumSize: const Size(0, 44),
@@ -224,7 +236,7 @@ class _ServicesPageState extends State<ServicesPage> {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    _serviceTitles[_activeService] ?? '',
+                    _serviceTitleFor(_activeService),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: const Color(0xFF003D99),
                       fontWeight: FontWeight.bold,
@@ -235,7 +247,7 @@ class _ServicesPageState extends State<ServicesPage> {
             ),
           ),
           Container(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             padding: const EdgeInsets.all(32),
             child: _buildActiveServiceWidget(),
@@ -247,6 +259,7 @@ class _ServicesPageState extends State<ServicesPage> {
 
   Widget _buildServiceButton(String serviceId, String title, String subtitle, IconData icon) {
     final isActive = _activeService == serviceId;
+    final colorScheme = Theme.of(context).colorScheme;
     return Semantics(
       button: true,
       selected: isActive,
@@ -256,9 +269,9 @@ class _ServicesPageState extends State<ServicesPage> {
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF2563EB) : Colors.white,
+            color: isActive ? const Color(0xFF2563EB) : colorScheme.surface,
             border: Border.all(
-              color: isActive ? const Color(0xFF2563EB) : const Color(0xFF9CA3AF),
+              color: isActive ? const Color(0xFF2563EB) : colorScheme.outlineVariant,
               width: isActive ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(16),
@@ -288,7 +301,7 @@ class _ServicesPageState extends State<ServicesPage> {
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: isActive ? Colors.white : Colors.black,
+                    color: isActive ? Colors.white : colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 10),
