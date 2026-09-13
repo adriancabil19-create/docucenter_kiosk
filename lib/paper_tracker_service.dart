@@ -62,13 +62,22 @@ class PaperTrackerService {
     }
   }
 
-  /// Set tray capacity (user inputs how many papers they put in)
+  /// Refill a tray: the operator enters how many sheets they just loaded,
+  /// which becomes both the tray's current count and its capacity for this
+  /// fill — that's the only thing that can clear an "out of paper" state.
+  ///
+  /// Field names are snake_case to match what [getTrays] parses back
+  /// (`current_count` / `max_capacity`); a prior camelCase mismatch here
+  /// meant this update was likely silently ignored by the backend.
   static Future<bool> setTrayCapacity(String trayName, int maxCapacity) async {
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/$trayName'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'maxCapacity': maxCapacity}),
+        body: json.encode({
+          'max_capacity': maxCapacity,
+          'current_count': maxCapacity,
+        }),
       );
 
       if (response.statusCode == 200) {
