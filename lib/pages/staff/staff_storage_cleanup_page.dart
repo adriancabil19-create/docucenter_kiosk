@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../storage_service.dart';
+import '../../staff_session.dart';
 import '_staff_scaffold.dart';
 
 /// Storage browsing + bulk cleanup (rule 21). Reuses [StorageService] rather
@@ -57,7 +58,9 @@ class _StaffStorageCleanupPageState extends State<StaffStorageCleanupPage> {
     if (confirmed != true) return;
 
     setState(() => _cleaning = true);
-    final deleted = await StorageService.cleanupAll();
+    final deleted = await StorageService.cleanupAll(
+      actor: StaffSession.instance.currentStaff?.name,
+    );
     if (!mounted) return;
     setState(() {
       _cleaning = false;

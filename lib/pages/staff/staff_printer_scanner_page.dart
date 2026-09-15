@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../print_service.dart';
 import '../../scanner_status.dart';
+import '../../staff_session.dart';
 import '_staff_scaffold.dart';
 
 /// Printer, scanner, and receipt-printer diagnostics (rules 15-17), grouped
@@ -40,7 +41,9 @@ class _StaffPrinterScannerPageState extends State<StaffPrinterScannerPage> {
       _printing = true;
       _printResult = null;
     });
-    final ok = await PrintingService.printTestPage();
+    final ok = await PrintingService.printTestPage(
+      actor: StaffSession.instance.currentStaff?.name,
+    );
     if (!mounted) return;
     setState(() {
       _printing = false;
@@ -55,6 +58,7 @@ class _StaffPrinterScannerPageState extends State<StaffPrinterScannerPage> {
     });
     final ok = await PrintingService.printReceipt(
       'DOCUCENTER KIOSK\n--- STAFF DIAGNOSTIC RECEIPT ---\nThis is a test receipt.\nNo transaction was recorded.',
+      actor: StaffSession.instance.currentStaff?.name,
     );
     if (!mounted) return;
     setState(() {

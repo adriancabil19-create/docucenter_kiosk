@@ -124,7 +124,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/receipt', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { content, paperSize } = req.body;
+    const { content, paperSize, actor } = req.body;
 
     if (!content) {
       res.status(400).json({ success: false, error: 'Missing required field: content' });
@@ -133,6 +133,12 @@ router.post('/receipt', async (req: Request, res: Response): Promise<void> => {
 
     logger.info('Receipt print request received', { contentLength: content.length, paperSize });
     const result = await printReceipt(content, paperSize);
+
+    // `actor` is only ever sent by Staff Mode's printer test screen — customer
+    // receipt prints never include it, so this never fires for them.
+    if (actor) {
+      await insertLog('info', 'staff', `${actor} printed a test receipt`, { actor, paperSize });
+    }
 
     if (result.success) {
       res.json({
@@ -356,9 +362,15 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
  */
 router.post('/test', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { paperSize } = req.body;
+    const { paperSize, actor } = req.body;
     logger.info('Test print request received', { paperSize });
     const result = await printTestPage(paperSize);
+
+    // Only Staff Mode's printer test screen sends `actor` — this route has no
+    // other caller, but keep the same opt-in shape as /receipt for consistency.
+    if (actor) {
+      await insertLog('info', 'staff', `${actor} printed a test page`, { actor, paperSize });
+    }
 
     if (result.success) {
       res.json({

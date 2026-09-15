@@ -215,10 +215,14 @@ class StorageService {
   /// Delete every temporary document (files + metadata). Used by Staff Mode's
   /// "Clear Temporary Files" action. Returns the number of files removed, or
   /// null on failure.
-  static Future<int?> cleanupAll() async {
+  static Future<int?> cleanupAll({String? actor}) async {
     try {
       final response = await http
-          .post(Uri.parse('$_baseUrl/cleanup'))
+          .post(
+            Uri.parse('$_baseUrl/cleanup'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({if (actor != null) 'actor': actor}),
+          )
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {

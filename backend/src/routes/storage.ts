@@ -9,6 +9,7 @@ import {
   getStorageStats,
   deleteAllDocuments,
 } from '../services/storage.service';
+import { insertLog } from '../database';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -241,11 +242,18 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
  * Staff "Clear Temporary Files" action — removes every temporary customer
  * file and its metadata. Confirmation is enforced client-side (rule 21).
  */
-router.post('/cleanup', async (_req: Request, res: Response): Promise<void> => {
+router.post('/cleanup', async (req: Request, res: Response): Promise<void> => {
   try {
+    const { actor } = req.body as { actor?: string };
     const result = await deleteAllDocuments();
     if (result.success) {
-      logger.info('Staff storage cleanup performed', { deleted: result.deleted });
+      logger.info('Staff storage cleanup performed', { deleted: result.deleted, actor });
+      await insertLog(
+        'warn',
+        'staff',
+        `${actor ?? 'Staff'} cleared all temporary storage (${result.deleted} file(s))`,
+        { actor: actor ?? 'staff', deleted: result.deleted },
+      );
       res.json({ success: true, deleted: result.deleted });
     } else {
       res.status(500).json({ success: false, error: result.error });

@@ -29,7 +29,7 @@ const LEVEL_COLORS: Record<LogLevel, 'success' | 'warning' | 'danger'> = {
   error: 'danger',
 };
 
-const CATEGORIES = ['all', 'payment', 'paper', 'print', 'storage', 'system'];
+const CATEGORIES = ['all', 'payment', 'paper', 'print', 'storage', 'staff', 'system'];
 
 const LEVEL_OPTIONS = [
   { key: 'info', label: 'Info' },

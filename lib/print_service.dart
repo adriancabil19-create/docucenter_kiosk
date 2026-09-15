@@ -204,6 +204,7 @@ class PrintingService {
   static Future<bool> printReceipt(
     String content, {
     String paperSize = 'A4',
+    String? actor,
   }) async {
     try {
       final response = await http.post(
@@ -212,6 +213,7 @@ class PrintingService {
         body: json.encode({
           'content': content,
           'paperSize': paperSize,
+          if (actor != null) 'actor': actor,
         }),
       );
 
@@ -231,6 +233,7 @@ class PrintingService {
   /// Print test page
   static Future<bool> printTestPage({
     String paperSize = 'A4',
+    String? actor,
   }) async {
     try {
       final response = await http.post(
@@ -238,6 +241,7 @@ class PrintingService {
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'paperSize': paperSize,
+          if (actor != null) 'actor': actor,
         }),
       );
 

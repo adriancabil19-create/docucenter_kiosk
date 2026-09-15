@@ -20,7 +20,7 @@ import {
   SelectItem,
   addToast,
 } from '@heroui/react';
-import type { StaffMember, StaffRole, PinResetRequest } from '@/lib/types';
+import type { StaffMember, StaffRole, PinResetRequest, ActivityLog, LogLevel } from '@/lib/types';
 import {
   getStaff,
   createStaff,
@@ -31,6 +31,7 @@ import {
   getPendingPinResetRequests,
   approvePinResetRequest,
   denyPinResetRequest,
+  getStaffActivity,
 } from '@/lib/api';
 import { usePoll } from '@/lib/use-poll';
 import { glassTableClassNames } from '@/components/table-styles';
@@ -41,6 +42,12 @@ const inputClass =
 
 const fmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+const LEVEL_COLORS: Record<LogLevel, 'success' | 'warning' | 'danger'> = {
+  info: 'success',
+  warn: 'warning',
+  error: 'danger',
+};
 
 /** Two-step inline confirm, same idiom as the fleet panel's CmdButton — avoids window.confirm(). */
 function ConfirmButton({
@@ -111,6 +118,19 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
     [],
   );
   const requests = requestsData ?? [];
+
+  // What staff have actually done on the kiosk — PIN resets, login attempts,
+  // and anything destructive like clearing storage or test-printing, each
+  // tagged with who did it. Backend already writes these as category='staff'
+  // activity_logs rows; this just surfaces them here instead of only in the
+  // general Logs page.
+  const activityFetcher = useMemo(() => () => getStaffActivity(100).then((r) => r.logs), []);
+  const { data: activityData, loading: activityLoading, refresh: refreshActivity } = usePoll<ActivityLog[]>(
+    activityFetcher,
+    15000,
+    [],
+  );
+  const activity = activityData ?? [];
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -340,6 +360,43 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
                     />
                   </div>
                 </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">Staff Activity</h2>
+          <Button size="sm" variant="flat" isLoading={activityLoading} onPress={() => refreshActivity()}>
+            Refresh
+          </Button>
+        </div>
+
+        <Table aria-label="Staff activity" isStriped classNames={glassTableClassNames}>
+          <TableHeader>
+            <TableColumn className="w-16">Level</TableColumn>
+            <TableColumn>What happened</TableColumn>
+            <TableColumn className="w-44">Time</TableColumn>
+          </TableHeader>
+          <TableBody emptyContent="No staff activity recorded yet.">
+            {activity.map((log) => (
+              <TableRow key={log.id}>
+                <TableCell>
+                  <Chip size="sm" color={LEVEL_COLORS[log.level] ?? 'default'} variant="flat">
+                    {log.level}
+                  </Chip>
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm text-slate-800">{log.message}</span>
+                  {log.count > 1 && (
+                    <Chip size="sm" variant="flat" color="default" className="ml-2 align-middle">
+                      ×{log.count}
+                    </Chip>
+                  )}
+                </TableCell>
+                <TableCell className="text-xs text-slate-400">{fmt(log.created_at)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
