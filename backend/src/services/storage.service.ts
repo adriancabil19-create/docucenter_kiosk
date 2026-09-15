@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { PDFDocument as PDFLib } from 'pdf-lib';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { upsertStorageDocMeta, softDeleteStorageDocMeta } from '../database';
@@ -66,30 +67,23 @@ const getFileFormat = (filename: string): string => {
 };
 
 /**
- * Estimate number of pages from file.
- * For PDFs, attempts to read page count from structure; defaults to 1 for other formats.
+ * Count pages in a file. For PDFs, parses the real page tree via pdf-lib —
+ * a byte-pattern regex for "/Count N" is not reliable here, since large PDFs
+ * are usually built as a balanced page tree, where intermediate nodes each
+ * carry their own /Count for just their subtree; a naive scan can latch onto
+ * one of those instead of the root total. Defaults to 1 for other formats.
  */
-const estimatePages = (filename: string, filePath: string): number => {
+const estimatePages = async (filename: string, filePath: string): Promise<number> => {
   const ext = path.extname(filename).toLowerCase();
+  if (ext !== '.pdf') return 1;
 
-  if (ext === '.pdf') {
-    try {
-      const buffer = fs.readFileSync(filePath);
-      const content = buffer.toString('latin1');
-
-      const match = content.match(/Type\s*\/Catalog[\s\S]*?\/Count\s+(\d+)/);
-      if (match?.[1]) return Math.max(1, parseInt(match[1], 10));
-
-      const pagesMatch = content.match(/\/Pages[\s\S]*?\/Count\s+(\d+)/);
-      if (pagesMatch?.[1]) return Math.max(1, parseInt(pagesMatch[1], 10));
-
-      return 1;
-    } catch {
-      return 1;
-    }
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const doc = await PDFLib.load(buffer, { ignoreEncryption: true });
+    return Math.max(1, doc.getPageCount());
+  } catch {
+    return 1;
   }
-
-  return 1;
 };
 
 /**
@@ -124,12 +118,12 @@ const writeMeta = (uploadsDir: string, fileUuid: string, meta: FileMeta): void =
  * Create document metadata from file.
  * The stable ID is derived from the filename UUID (strip extension).
  */
-const createDocumentMetadata = (
+const createDocumentMetadata = async (
   filename: string,
   filePath: string,
   mimeType: string,
   originalName?: string,
-): StorageDocument => {
+): Promise<StorageDocument> => {
   const stats = fs.statSync(filePath);
   const fileUuid = path.basename(filename, path.extname(filename));
 
@@ -138,7 +132,7 @@ const createDocumentMetadata = (
     name: filename,
     originalName: originalName || filename,
     format: getFileFormat(filename),
-    pages: estimatePages(filename, filePath),
+    pages: await estimatePages(filename, filePath),
     size: getFileSize(stats.size),
     date: new Date(stats.mtime).toISOString().split('T')[0],
     filePath: filePath,
@@ -149,151 +143,143 @@ const createDocumentMetadata = (
 /**
  * Save uploaded file to storage
  */
-export const saveFile = (
+export const saveFile = async (
   fileBuffer: Buffer,
   originalFileName: string,
   mimeType: string,
 ): Promise<StorageResult> => {
-  return new Promise((resolve) => {
-    try {
-      const uploadsDir = getUploadsDir();
-      const fileUuid = randomUUID();
-      const ext = path.extname(originalFileName);
-      const filename = `${fileUuid}${ext}`;
-      const filePath = path.join(uploadsDir, filename);
+  try {
+    const uploadsDir = getUploadsDir();
+    const fileUuid = randomUUID();
+    const ext = path.extname(originalFileName);
+    const filename = `${fileUuid}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
 
-      logger.info('Saving file to storage', {
-        fileUuid,
-        originalFileName,
-        size: fileBuffer.length,
-        mimeType,
-        filename,
-      });
+    logger.info('Saving file to storage', {
+      fileUuid,
+      originalFileName,
+      size: fileBuffer.length,
+      mimeType,
+      filename,
+    });
 
-      fs.writeFileSync(filePath, fileBuffer);
+    fs.writeFileSync(filePath, fileBuffer);
 
-      // Persist sidecar so originalName and mimeType survive relisting
-      writeMeta(uploadsDir, fileUuid, { originalName: originalFileName, mimeType });
+    // Persist sidecar so originalName and mimeType survive relisting
+    writeMeta(uploadsDir, fileUuid, { originalName: originalFileName, mimeType });
 
-      const document = createDocumentMetadata(filename, filePath, mimeType, originalFileName);
+    const document = await createDocumentMetadata(filename, filePath, mimeType, originalFileName);
 
-      logger.info('File saved successfully', {
-        fileUuid,
-        path: filePath,
-        filename,
-        pages: document.pages,
-      });
+    logger.info('File saved successfully', {
+      fileUuid,
+      path: filePath,
+      filename,
+      pages: document.pages,
+    });
 
-      // Sync metadata only — bytes stay on this machine.
-      void upsertStorageDocMeta({
-        id: fileUuid,
-        kiosk_id: config.kioskId,
-        name: filename,
-        original_name: originalFileName,
-        format: document.format,
-        pages: document.pages,
-        size_bytes: fileBuffer.length,
-        size_label: document.size,
-        mime_type: mimeType,
-      });
+    // Sync metadata only — bytes stay on this machine.
+    void upsertStorageDocMeta({
+      id: fileUuid,
+      kiosk_id: config.kioskId,
+      name: filename,
+      original_name: originalFileName,
+      format: document.format,
+      pages: document.pages,
+      size_bytes: fileBuffer.length,
+      size_label: document.size,
+      mime_type: mimeType,
+    });
 
-      resolve({ success: true, data: document });
-    } catch (error) {
-      const err = error as Error;
-      logger.error('Error saving file', { error: err.message });
-      resolve({ success: false, error: err.message });
-    }
-  });
+    return { success: true, data: document };
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error saving file', { error: err.message });
+    return { success: false, error: err.message };
+  }
 };
 
 /**
  * Get all stored documents (skips .meta.json sidecars)
  */
-export const getAllDocuments = (): Promise<StorageResult> => {
-  return new Promise((resolve) => {
-    try {
-      const uploadsDir = getUploadsDir();
-      const files = fs.readdirSync(uploadsDir);
+export const getAllDocuments = async (): Promise<StorageResult> => {
+  try {
+    const uploadsDir = getUploadsDir();
+    const files = fs.readdirSync(uploadsDir);
 
-      const documents: StorageDocument[] = [];
+    const documents: StorageDocument[] = [];
 
-      for (const filename of files) {
-        // Skip sidecar metadata files
-        if (filename.endsWith('.meta.json')) continue;
+    for (const filename of files) {
+      // Skip sidecar metadata files
+      if (filename.endsWith('.meta.json')) continue;
 
-        try {
-          const filePath = path.join(uploadsDir, filename);
-          const stats = fs.statSync(filePath);
+      try {
+        const filePath = path.join(uploadsDir, filename);
+        const stats = fs.statSync(filePath);
 
-          if (!stats.isFile()) continue;
+        if (!stats.isFile()) continue;
 
-          const fileUuid = path.basename(filename, path.extname(filename));
-          const meta = readMeta(uploadsDir, fileUuid, filename);
+        const fileUuid = path.basename(filename, path.extname(filename));
+        const meta = readMeta(uploadsDir, fileUuid, filename);
 
-          documents.push({
-            id: fileUuid,
-            name: filename,
-            originalName: meta.originalName,
-            format: getFileFormat(filename),
-            pages: estimatePages(filename, filePath),
-            size: getFileSize(stats.size),
-            date: new Date(stats.mtime).toISOString().split('T')[0],
-            filePath: filePath,
-            mimeType: meta.mimeType,
-          });
-        } catch (error) {
-          logger.warn('Error reading file', { filename, error: String(error) });
-        }
+        documents.push({
+          id: fileUuid,
+          name: filename,
+          originalName: meta.originalName,
+          format: getFileFormat(filename),
+          pages: await estimatePages(filename, filePath),
+          size: getFileSize(stats.size),
+          date: new Date(stats.mtime).toISOString().split('T')[0],
+          filePath: filePath,
+          mimeType: meta.mimeType,
+        });
+      } catch (error) {
+        logger.warn('Error reading file', { filename, error: String(error) });
       }
-
-      // Sort by date descending
-      documents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      logger.info('Retrieved all documents', { count: documents.length });
-
-      resolve({ success: true, data: documents });
-    } catch (error) {
-      const err = error as Error;
-      logger.error('Error retrieving documents', { error: err.message });
-      resolve({ success: false, error: err.message });
     }
-  });
+
+    // Sort by date descending
+    documents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    logger.info('Retrieved all documents', { count: documents.length });
+
+    return { success: true, data: documents };
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error retrieving documents', { error: err.message });
+    return { success: false, error: err.message };
+  }
 };
 
 /**
  * Get document by filename
  */
-export const getDocument = (filename: string): Promise<StorageResult> => {
-  return new Promise((resolve) => {
-    try {
-      const uploadsDir = getUploadsDir();
-      const filePath = path.join(uploadsDir, filename);
+export const getDocument = async (filename: string): Promise<StorageResult> => {
+  try {
+    const uploadsDir = getUploadsDir();
+    const filePath = path.join(uploadsDir, filename);
 
-      if (!isSafePath(filePath, uploadsDir)) {
-        logger.warn('Attempted directory traversal', { filename });
-        resolve({ success: false, error: 'Invalid file path' });
-        return;
-      }
-
-      if (!fs.existsSync(filePath)) {
-        logger.warn('File not found', { filename });
-        resolve({ success: false, error: 'File not found' });
-        return;
-      }
-
-      const fileUuid = path.basename(filename, path.extname(filename));
-      const meta = readMeta(uploadsDir, fileUuid, filename);
-      const document = createDocumentMetadata(filename, filePath, meta.mimeType, meta.originalName);
-
-      logger.info('Retrieved document', { filename });
-
-      resolve({ success: true, data: document });
-    } catch (error) {
-      const err = error as Error;
-      logger.error('Error retrieving document', { error: err.message });
-      resolve({ success: false, error: err.message });
+    if (!isSafePath(filePath, uploadsDir)) {
+      logger.warn('Attempted directory traversal', { filename });
+      return { success: false, error: 'Invalid file path' };
     }
-  });
+
+    if (!fs.existsSync(filePath)) {
+      logger.warn('File not found', { filename });
+      return { success: false, error: 'File not found' };
+    }
+
+    const fileUuid = path.basename(filename, path.extname(filename));
+    const meta = readMeta(uploadsDir, fileUuid, filename);
+    const document = await createDocumentMetadata(filename, filePath, meta.mimeType, meta.originalName);
+
+    logger.info('Retrieved document', { filename });
+
+    return { success: true, data: document };
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Error retrieving document', { error: err.message });
+    return { success: false, error: err.message };
+  }
 };
 
 /**
@@ -487,7 +473,7 @@ export const backfillStorageDocMetas = async (): Promise<number> => {
           name: filename,
           original_name: meta.originalName,
           format: getFileFormat(filename),
-          pages: estimatePages(filename, filePath),
+          pages: await estimatePages(filename, filePath),
           size_bytes: stats.size,
           size_label: getFileSize(stats.size),
           mime_type: meta.mimeType,

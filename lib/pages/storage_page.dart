@@ -49,6 +49,7 @@ class _StorageInterfaceState extends State<StorageInterface> {
 
   String _wifiStatusMessage = '';
   Timer? _receivePollingTimer;
+  bool _receiveSessionActive = false;
 
   Future<void> _refreshDocuments() async {
     setState(() => _isLoading = true);
@@ -211,6 +212,19 @@ class _StorageInterfaceState extends State<StorageInterface> {
   }
 
   Future<void> _receiveFromPhone() async {
+    // Guard against a double-tap opening a second session/dialog: the polling
+    // timer below is a single shared field, so a second concurrent session
+    // would show a QR code that nothing ever polls for.
+    if (_receiveSessionActive) return;
+    _receiveSessionActive = true;
+    try {
+      await _runReceiveFromPhoneSession();
+    } finally {
+      _receiveSessionActive = false;
+    }
+  }
+
+  Future<void> _runReceiveFromPhoneSession() async {
     final messenger = ScaffoldMessenger.of(context);
 
     // Create a receive session on the Railway transfer relay.
