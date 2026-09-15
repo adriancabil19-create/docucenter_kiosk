@@ -31,11 +31,14 @@ import {
   listStaffRoster,
   upsertStaffFromRoster,
   applyPinResetDecision,
+  getPaperTrays,
+  applyPaperTrayFromCloud,
   type DeviceState,
   type KioskCommandRow,
   type KioskCommandName,
   type PricingSettings,
   type StaffRow,
+  type PaperTrayRow,
 } from '../database';
 import { purgeExpiredDocuments, deleteAllDocuments } from './storage.service';
 
@@ -117,6 +120,7 @@ interface DownlinkReply {
     storage?: { delete_after_print: boolean; retention_hours: number };
     pricing?: PricingSettings;
     staff?: StaffRow[];
+    paperTrays?: PaperTrayRow[];
   };
 }
 
@@ -149,12 +153,13 @@ const sendHeartbeat = async (): Promise<DownlinkReply> => {
 
   // Single-process: write straight to the shared local DB.
   await recordHeartbeat(payload);
-  const [commands, storage, staff] = await Promise.all([
+  const [commands, storage, staff, paperTrays] = await Promise.all([
     claimPendingCommands(KIOSK_ID),
     getStorageSettings(),
     listStaffRoster(),
+    getPaperTrays(),
   ]);
-  return { commands, settings: { storage, staff } };
+  return { commands, settings: { storage, staff, paperTrays } };
 };
 
 const ackRemote = async (id: string, ok: boolean, result: string): Promise<void> => {
@@ -311,6 +316,11 @@ const applyReply = async (reply: DownlinkReply): Promise<void> => {
     for (const row of staff) await upsertStaffFromRoster(row);
   }
 
+  const paperTrays = reply.settings?.paperTrays;
+  if (paperTrays) {
+    for (const tray of paperTrays) await applyPaperTrayFromCloud(tray);
+  }
+
   for (const cmd of reply.commands ?? []) {
     await executeCommand(cmd);
   }
@@ -339,12 +349,13 @@ const commandTick = async (): Promise<void> => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await applyReply((await res.json()) as DownlinkReply);
     } else {
-      const [commands, storage, staff] = await Promise.all([
+      const [commands, storage, staff, paperTrays] = await Promise.all([
         claimPendingCommands(KIOSK_ID),
         getStorageSettings(),
         listStaffRoster(),
+        getPaperTrays(),
       ]);
-      await applyReply({ commands, settings: { storage, staff } });
+      await applyReply({ commands, settings: { storage, staff, paperTrays } });
     }
   } catch (err) {
     logger.warn('Fleet agent: command tick failed', { error: String(err) });

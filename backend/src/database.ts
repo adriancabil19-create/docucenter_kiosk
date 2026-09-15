@@ -565,15 +565,52 @@ export const updatePaperTray = async (
 
 export const decrementPaperTray = async (trayName: string, amount: number): Promise<void> => {
   try {
-    await getDb().execute({
+    // RETURNING the post-update count so the kiosk can push its own real-world
+    // consumption up to the cloud immediately — without this, the admin
+    // console's paper levels (and the next cloud→kiosk downlink) go stale.
+    const result = await getDb().execute({
       sql: `UPDATE paper_trays
             SET current_count = MAX(0, current_count - @amount),
                 updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE tray_name = @trayName`,
+            WHERE tray_name = @trayName
+            RETURNING current_count`,
       args: { trayName, amount },
     });
+    const newCount = firstRow<{ current_count: number }>(result)?.current_count;
+    if (newCount !== undefined) {
+      syncEvent('paper-tray', { tray_name: trayName, current_count: Number(newCount) });
+    }
   } catch (err) {
     logger.warn('Failed to decrement paper tray', { trayName, amount, error: String(err) });
+  }
+};
+
+/**
+ * Apply one tray's admin-controlled fields (capacity/threshold/paper size and
+ * the current count) as pushed down from the cloud via the heartbeat/command
+ * downlink — the same channel pricing and storage settings already use.
+ * Kiosk side only; never re-echoes back up (this IS the receiving end).
+ */
+export const applyPaperTrayFromCloud = async (tray: PaperTrayRow): Promise<void> => {
+  try {
+    await getDb().execute({
+      sql: `UPDATE paper_trays
+            SET current_count = @currentCount,
+                max_capacity  = @maxCapacity,
+                threshold     = @threshold,
+                paper_size    = @paperSize,
+                updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE tray_name = @trayName`,
+      args: {
+        trayName: tray.tray_name,
+        currentCount: tray.current_count,
+        maxCapacity: tray.max_capacity,
+        threshold: tray.threshold,
+        paperSize: tray.paper_size,
+      },
+    });
+  } catch (err) {
+    logger.warn('Failed to apply paper tray from cloud', { tray: tray.tray_name, error: String(err) });
   }
 };
 
