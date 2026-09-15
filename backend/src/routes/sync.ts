@@ -271,12 +271,13 @@ router.post('/staff-pin-reset-request', async (req: Request, res: Response): Pro
 router.post('/staff-pin-set', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!(await acceptEventOnce(req, res))) return;
-    const { id, pin_hash } = req.body as { id?: string; pin_hash?: string };
+    const { id, pin_hash, pin_updated_at } = req.body as { id?: string; pin_hash?: string; pin_updated_at?: string };
     if (!id || !pin_hash) {
       res.status(400).json({ success: false, error: 'id and pin_hash required' });
       return;
     }
-    await applyStaffPinHash(id, pin_hash);
+    // Fallback for outbox rows queued before pin_updated_at existed.
+    await applyStaffPinHash(id, pin_hash, pin_updated_at ?? new Date().toISOString());
     logger.info('Sync: staff PIN updated', { id });
     res.json({ success: true });
   } catch (err) {

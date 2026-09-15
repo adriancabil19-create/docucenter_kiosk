@@ -241,6 +241,10 @@ export const initSchema = async (): Promise<void> => {
   await addColumn(`ALTER TABLE kiosks ADD COLUMN reload_at TEXT`);
   // activity_logs: how many identical lines this row represents (see insertLog).
   await addColumn(`ALTER TABLE activity_logs ADD COLUMN count INTEGER NOT NULL DEFAULT 1`);
+  // staff: when pin_hash last changed, so cloud<->kiosk sync can tell which
+  // side's PIN write is newer instead of letting a stale roster pull clobber
+  // a PIN just set on the other side.
+  await addColumn(`ALTER TABLE staff ADD COLUMN pin_updated_at TEXT`);
   // Device state is now strictly ONLINE / OFFLINE — normalise any legacy values.
   try {
     await db.execute(
@@ -1709,6 +1713,7 @@ export interface StaffPublic {
 /** Full row, including the PIN hash — only used internally (login check, roster sync). */
 export interface StaffRow extends StaffPublic {
   pin_hash: string;
+  pin_updated_at: string | null;
   failed_attempts: number;
   locked_until: string | null;
 }
@@ -1741,6 +1746,7 @@ const mapStaff = (r: Record<string, unknown>): StaffRow => ({
   name: String(r.name),
   username: String(r.username),
   pin_hash: String(r.pin_hash),
+  pin_updated_at: (r.pin_updated_at as string) ?? null,
   role: (String(r.role) as StaffRole) === 'admin' ? 'admin' : 'staff',
   status: (String(r.status) as StaffStatus) === 'disabled' ? 'disabled' : 'active',
   failed_attempts: Number(r.failed_attempts ?? 0),
@@ -1828,20 +1834,34 @@ export const listStaffRoster = async (): Promise<StaffRow[]> => {
   return toRows<Record<string, unknown>>(result).map(mapStaff);
 };
 
-/** Apply one roster row pushed down from the cloud. Kiosk side only. */
+/**
+ * Apply one roster row pushed down from the cloud. Kiosk side only.
+ *
+ * pin_hash/pin_updated_at are applied only if the incoming write is newer
+ * than the kiosk's own — otherwise a heartbeat that lands while a
+ * just-completed local PIN reset is still in the outbox would overwrite the
+ * new PIN with the stale one the cloud hasn't caught up to yet.
+ */
 export const upsertStaffFromRoster = async (row: StaffRow): Promise<void> => {
   await getDb().execute({
-    sql: `INSERT INTO staff (id, name, username, pin_hash, role, status, failed_attempts, locked_until, created_at, last_login_at)
-          VALUES (@id, @name, @username, @pin_hash, @role, @status, @failed_attempts, @locked_until, @created_at, @last_login_at)
+    sql: `INSERT INTO staff (id, name, username, pin_hash, pin_updated_at, role, status, failed_attempts, locked_until, created_at, last_login_at)
+          VALUES (@id, @name, @username, @pin_hash, @pin_updated_at, @role, @status, @failed_attempts, @locked_until, @created_at, @last_login_at)
           ON CONFLICT(id) DO UPDATE SET
-            name = @name, username = @username, pin_hash = @pin_hash, role = @role,
+            name = @name, username = @username, role = @role,
             status = @status, failed_attempts = @failed_attempts, locked_until = @locked_until,
-            last_login_at = @last_login_at`,
+            last_login_at = @last_login_at,
+            pin_hash = CASE
+              WHEN @pin_updated_at IS NOT NULL AND (pin_updated_at IS NULL OR pin_updated_at < @pin_updated_at)
+              THEN @pin_hash ELSE pin_hash END,
+            pin_updated_at = CASE
+              WHEN @pin_updated_at IS NOT NULL AND (pin_updated_at IS NULL OR pin_updated_at < @pin_updated_at)
+              THEN @pin_updated_at ELSE pin_updated_at END`,
     args: {
       id: row.id,
       name: row.name,
       username: row.username,
       pin_hash: row.pin_hash,
+      pin_updated_at: row.pin_updated_at,
       role: row.role,
       status: row.status,
       failed_attempts: row.failed_attempts,
@@ -1885,7 +1905,10 @@ export const setStaffStatus = async (id: string, status: StaffStatus): Promise<v
 /** Admin-initiated direct reset (rule 10) — distinct from the request/approval flow. */
 export const setStaffPin = async (id: string, pin: string): Promise<void> => {
   await getDb().execute({
-    sql: `UPDATE staff SET pin_hash = @pin_hash, failed_attempts = 0, locked_until = NULL WHERE id = @id`,
+    sql: `UPDATE staff SET pin_hash = @pin_hash,
+            pin_updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+            failed_attempts = 0, locked_until = NULL
+          WHERE id = @id`,
     args: { id, pin_hash: hashPin(pin) },
   });
 };
@@ -2023,11 +2046,17 @@ export const insertPinResetRequestFromSync = async (row: PinResetRequestRow): Pr
   });
 };
 
-/** Cloud side: ingest an already-hashed PIN pushed up from a kiosk via sync. */
-export const applyStaffPinHash = async (staffId: string, pinHash: string): Promise<void> => {
+/**
+ * Cloud side: ingest an already-hashed PIN pushed up from a kiosk via sync.
+ * Guarded by pin_updated_at so a delayed/retried outbox event can't clobber a
+ * PIN the cloud already has a newer write for (e.g. a subsequent admin reset).
+ */
+export const applyStaffPinHash = async (staffId: string, pinHash: string, pinUpdatedAt: string): Promise<void> => {
   await getDb().execute({
-    sql: `UPDATE staff SET pin_hash = @pin_hash, failed_attempts = 0, locked_until = NULL WHERE id = @id`,
-    args: { id: staffId, pin_hash: pinHash },
+    sql: `UPDATE staff SET pin_hash = @pin_hash, pin_updated_at = @pin_updated_at,
+            failed_attempts = 0, locked_until = NULL
+          WHERE id = @id AND (pin_updated_at IS NULL OR pin_updated_at < @pin_updated_at)`,
+    args: { id: staffId, pin_hash: pinHash, pin_updated_at: pinUpdatedAt },
   });
 };
 
@@ -2091,6 +2120,6 @@ export const completePinResetRequest = async (
     args: { id },
   });
   const row = await getStaffRowById(staffId);
-  if (row) syncEvent('staff-pin-set', { id: staffId, pin_hash: row.pin_hash });
+  if (row) syncEvent('staff-pin-set', { id: staffId, pin_hash: row.pin_hash, pin_updated_at: row.pin_updated_at });
   return true;
 };
