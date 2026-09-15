@@ -110,12 +110,14 @@ export const setTrayCount = (
   trayName: string,
   currentCount: number,
   threshold?: number,
+  maxCapacity?: number,
 ): Promise<{ success: boolean; message: string }> =>
   apiFetch(`/api/paper-tracker/paper-trays/${encodeURIComponent(trayName)}`, {
     method: 'PUT',
     body: JSON.stringify({
       currentCount,
       ...(threshold !== undefined ? { threshold } : {}),
+      ...(maxCapacity !== undefined ? { maxCapacity } : {}),
     }),
   });
 

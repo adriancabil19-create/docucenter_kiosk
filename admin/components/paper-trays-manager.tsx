@@ -26,6 +26,7 @@ export function PaperTraysManager({ initialData }: Props) {
   const [editingTray, setEditingTray] = useState<string | null>(null);
   const [formCount, setFormCount] = useState('');
   const [formThreshold, setFormThreshold] = useState('');
+  const [formCapacity, setFormCapacity] = useState('');
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -49,17 +50,23 @@ export function PaperTraysManager({ initialData }: Props) {
     setEditingTray(tray.tray_name);
     setFormCount(String(tray.current_count));
     setFormThreshold(String(tray.threshold));
+    // A tray whose capacity was never set (0) is the source of the "X / 0
+    // sheets, 0%" display — default the field to the current count so simply
+    // saving fixes it, rather than leaving 0 in the box.
+    setFormCapacity(String(tray.max_capacity > 0 ? tray.max_capacity : tray.current_count || 500));
   }, []);
 
   const cancelEdit = useCallback(() => {
     setEditingTray(null);
     setFormCount('');
     setFormThreshold('');
+    setFormCapacity('');
   }, []);
 
   const save = useCallback(async (trayName: string) => {
     const count = parseInt(formCount, 10);
     const thr = parseInt(formThreshold, 10);
+    const cap = parseInt(formCapacity, 10);
 
     if (isNaN(count) || count < 0) {
       addToast({ title: 'Invalid input', description: 'Sheet count must be 0 or more.', color: 'warning' });
@@ -69,25 +76,37 @@ export function PaperTraysManager({ initialData }: Props) {
       addToast({ title: 'Invalid input', description: 'Threshold must be 0 or more.', color: 'warning' });
       return;
     }
+    if (isNaN(cap) || cap <= 0) {
+      addToast({ title: 'Invalid input', description: 'Tray capacity must be greater than 0.', color: 'warning' });
+      return;
+    }
+    if (count > cap) {
+      addToast({
+        title: 'Invalid input',
+        description: 'Sheet count cannot exceed the tray capacity.',
+        color: 'warning',
+      });
+      return;
+    }
 
     setSaving(true);
     try {
-      await setTrayCount(trayName, count, thr);
+      await setTrayCount(trayName, count, thr, cap);
       setTrays((prev) =>
         prev.map((t) =>
           t.tray_name !== trayName
             ? t
-            : { ...t, current_count: count, threshold: thr, updated_at: new Date().toISOString() },
+            : { ...t, current_count: count, threshold: thr, max_capacity: cap, updated_at: new Date().toISOString() },
         ),
       );
-      addToast({ title: 'Saved', description: `${trayName} updated to ${count} sheets.`, color: 'success' });
+      addToast({ title: 'Saved', description: `${trayName} updated to ${count} / ${cap} sheets.`, color: 'success' });
       setEditingTray(null);
     } catch (err) {
       addToast({ title: 'Save failed', description: (err as Error).message, color: 'danger' });
     } finally {
       setSaving(false);
     }
-  }, [formCount, formThreshold]);
+  }, [formCount, formThreshold, formCapacity]);
 
   return (
     <div>
@@ -143,6 +162,22 @@ export function PaperTraysManager({ initialData }: Props) {
                       autoFocus
                     />
                     <p className="mt-1 text-xs text-slate-400">Set the exact number of sheets in this tray.</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Tray capacity
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={formCapacity}
+                      onChange={(e) => setFormCapacity(e.target.value)}
+                      className="glass-inset w-full px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                      placeholder="e.g. 500"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      How many sheets this tray holds when full — drives the percentage bar below.
+                    </p>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">
