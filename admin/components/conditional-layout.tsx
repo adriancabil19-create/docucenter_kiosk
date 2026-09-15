@@ -19,8 +19,10 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <NavSidebar />
-      {/* Extra top padding on mobile clears the fixed hamburger toggle. */}
-      <main className="flex-1 overflow-y-auto p-4 pt-16 sm:p-6 lg:pt-6">{children}</main>
+      {/* Extra top padding clears the fixed hamburger toggle everywhere it's
+          visible (below `lg`) — kept separate from the sm: padding shorthand
+          so it isn't overridden between the sm and lg breakpoints. */}
+      <main className="flex-1 overflow-y-auto px-4 pb-4 pt-16 sm:px-6 sm:pb-6 lg:pt-6">{children}</main>
     </div>
   );
 }

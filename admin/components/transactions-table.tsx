@@ -111,34 +111,36 @@ export function TransactionsTable({ initialData }: Props) {
         onRefresh={() => refresh()}
       />
 
-      <Table aria-label="Transactions table" removeWrapper classNames={glassTableClassNames}>
-        <TableHeader>
-          <TableColumn>ID</TableColumn>
-          <TableColumn>Reference</TableColumn>
-          <TableColumn>Amount</TableColumn>
-          <TableColumn>Status</TableColumn>
-          <TableColumn>Service</TableColumn>
-          <TableColumn>Created</TableColumn>
-          <TableColumn>Completed</TableColumn>
-        </TableHeader>
-        <TableBody emptyContent="No transactions match these filters.">
-          {filtered.map((tx) => (
-            <TableRow key={tx.id}>
-              <TableCell className="max-w-[120px] truncate font-mono text-xs">{tx.id}</TableCell>
-              <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
-              <TableCell className="font-semibold">{formatAmount(tx.amount)}</TableCell>
-              <TableCell>
-                <StatusChip status={tx.status} />
-              </TableCell>
-              <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
-              <TableCell className="text-xs">{formatDate(tx.created_at)}</TableCell>
-              <TableCell className="text-xs text-slate-500">
-                {tx.completed_at ? formatDate(tx.completed_at) : '—'}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="overflow-x-auto">
+        <Table aria-label="Transactions table" removeWrapper classNames={glassTableClassNames}>
+          <TableHeader>
+            <TableColumn>ID</TableColumn>
+            <TableColumn>Reference</TableColumn>
+            <TableColumn>Amount</TableColumn>
+            <TableColumn>Status</TableColumn>
+            <TableColumn>Service</TableColumn>
+            <TableColumn>Created</TableColumn>
+            <TableColumn>Completed</TableColumn>
+          </TableHeader>
+          <TableBody emptyContent="No transactions match these filters.">
+            {filtered.map((tx) => (
+              <TableRow key={tx.id}>
+                <TableCell className="max-w-[120px] truncate font-mono text-xs">{tx.id}</TableCell>
+                <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
+                <TableCell className="font-semibold">{formatAmount(tx.amount)}</TableCell>
+                <TableCell>
+                  <StatusChip status={tx.status} />
+                </TableCell>
+                <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
+                <TableCell className="text-xs">{formatDate(tx.created_at)}</TableCell>
+                <TableCell className="text-xs text-slate-500">
+                  {tx.completed_at ? formatDate(tx.completed_at) : '—'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

@@ -54,30 +54,32 @@ export function StorageMetaTable({ initial }: { initial: StorageDocMeta[] | null
         <div className="glass border-red-300/40 bg-red-500/10 p-3 text-xs text-red-700">{error}</div>
       )}
 
-      <Table aria-label="Kiosk documents (metadata)" removeWrapper classNames={glassTableClassNames}>
-        <TableHeader>
-          <TableColumn>NAME</TableColumn>
-          <TableColumn>FORMAT</TableColumn>
-          <TableColumn>PAGES</TableColumn>
-          <TableColumn>SIZE</TableColumn>
-          <TableColumn>KIOSK</TableColumn>
-          <TableColumn>UPLOADED</TableColumn>
-        </TableHeader>
-        <TableBody emptyContent="No documents. Files uploaded on a kiosk appear here (metadata only).">
-          {rows.map((d) => (
-            <TableRow key={d.id}>
-              <TableCell className="max-w-[22rem] truncate" title={d.original_name ?? d.name}>
-                {d.original_name ?? d.name}
-              </TableCell>
-              <TableCell>{d.format ?? '—'}</TableCell>
-              <TableCell>{d.pages}</TableCell>
-              <TableCell>{d.size_label ?? fmtBytes(d.size_bytes)}</TableCell>
-              <TableCell className="text-xs text-slate-500">{d.kiosk_id}</TableCell>
-              <TableCell className="text-xs text-slate-500">{fmtDate(d.created_at)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="overflow-x-auto">
+        <Table aria-label="Kiosk documents (metadata)" removeWrapper classNames={glassTableClassNames}>
+          <TableHeader>
+            <TableColumn>NAME</TableColumn>
+            <TableColumn>FORMAT</TableColumn>
+            <TableColumn>PAGES</TableColumn>
+            <TableColumn>SIZE</TableColumn>
+            <TableColumn>KIOSK</TableColumn>
+            <TableColumn>UPLOADED</TableColumn>
+          </TableHeader>
+          <TableBody emptyContent="No documents. Files uploaded on a kiosk appear here (metadata only).">
+            {rows.map((d) => (
+              <TableRow key={d.id}>
+                <TableCell className="max-w-[22rem] truncate" title={d.original_name ?? d.name}>
+                  {d.original_name ?? d.name}
+                </TableCell>
+                <TableCell>{d.format ?? '—'}</TableCell>
+                <TableCell>{d.pages}</TableCell>
+                <TableCell>{d.size_label ?? fmtBytes(d.size_bytes)}</TableCell>
+                <TableCell className="text-xs text-slate-500">{d.kiosk_id}</TableCell>
+                <TableCell className="text-xs text-slate-500">{fmtDate(d.created_at)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
       <p className="text-xs text-slate-400">
         Metadata only — document contents stay on the kiosk and are never uploaded to the cloud.

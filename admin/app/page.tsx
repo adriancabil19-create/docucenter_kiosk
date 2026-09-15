@@ -24,7 +24,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">DocuCenter Kiosk — live monitoring overview</p>
@@ -120,13 +120,13 @@ export default async function DashboardPage() {
             View all transactions<span aria-hidden="true"> →</span>
           </a>
         </div>
-        <div className="glass overflow-hidden">
+        <div className="glass overflow-x-auto">
           {transactions.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-slate-500">
               {serverOnline ? 'No transactions yet.' : 'Transactions unavailable while backend is offline.'}
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <caption className="sr-only">Five most recent payment transactions</caption>
               <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>
@@ -179,13 +179,13 @@ export default async function DashboardPage() {
             View all print jobs<span aria-hidden="true"> →</span>
           </a>
         </div>
-        <div className="glass overflow-hidden">
+        <div className="glass overflow-x-auto">
           {jobs.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-slate-500">
               {serverOnline ? 'No print jobs yet.' : 'Print jobs unavailable while backend is offline.'}
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[520px] text-sm">
               <caption className="sr-only">Five most recent print jobs</caption>
               <thead className="border-b border-white/40 bg-white/40 backdrop-blur-md">
                 <tr>

@@ -107,46 +107,48 @@ export function PrintJobsTable({ initialData }: Props) {
         onRefresh={() => refresh()}
       />
 
-      <Table aria-label="Print jobs table" removeWrapper classNames={glassTableClassNames}>
-        <TableHeader>
-          <TableColumn>Job ID</TableColumn>
-          <TableColumn>Files</TableColumn>
-          <TableColumn>Paper</TableColumn>
-          <TableColumn>Copies</TableColumn>
-          <TableColumn>Status</TableColumn>
-          <TableColumn>Method</TableColumn>
-          <TableColumn>Mode</TableColumn>
-          <TableColumn>Created</TableColumn>
-        </TableHeader>
-        <TableBody emptyContent="No print jobs match these filters.">
-          {filtered.map((job) => (
-            <TableRow key={job.id}>
-              <TableCell className="max-w-[120px] truncate font-mono text-xs">{job.id}</TableCell>
-              <TableCell className="max-w-[160px]">
-                <div className="space-y-0.5">
-                  {job.filenames.map((f) => (
-                    <p key={f} className="truncate text-xs text-slate-600">
-                      {f}
-                    </p>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell className="text-xs">{job.paper_size}</TableCell>
-              <TableCell className="text-center text-xs">{job.copies}</TableCell>
-              <TableCell>
-                <StatusChip status={job.status} />
-              </TableCell>
-              <TableCell className="text-xs text-slate-500">{job.method ?? '—'}</TableCell>
-              <TableCell>
-                <Chip size="sm" variant="flat" color={job.simulated ? 'warning' : 'success'}>
-                  {job.simulated ? 'Simulated' : 'Real'}
-                </Chip>
-              </TableCell>
-              <TableCell className="text-xs">{formatDate(job.created_at)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="overflow-x-auto">
+        <Table aria-label="Print jobs table" removeWrapper classNames={glassTableClassNames}>
+          <TableHeader>
+            <TableColumn>Job ID</TableColumn>
+            <TableColumn>Files</TableColumn>
+            <TableColumn>Paper</TableColumn>
+            <TableColumn>Copies</TableColumn>
+            <TableColumn>Status</TableColumn>
+            <TableColumn>Method</TableColumn>
+            <TableColumn>Mode</TableColumn>
+            <TableColumn>Created</TableColumn>
+          </TableHeader>
+          <TableBody emptyContent="No print jobs match these filters.">
+            {filtered.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell className="max-w-[120px] truncate font-mono text-xs">{job.id}</TableCell>
+                <TableCell className="max-w-[160px]">
+                  <div className="space-y-0.5">
+                    {job.filenames.map((f) => (
+                      <p key={f} className="truncate text-xs text-slate-600">
+                        {f}
+                      </p>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs">{job.paper_size}</TableCell>
+                <TableCell className="text-center text-xs">{job.copies}</TableCell>
+                <TableCell>
+                  <StatusChip status={job.status} />
+                </TableCell>
+                <TableCell className="text-xs text-slate-500">{job.method ?? '—'}</TableCell>
+                <TableCell>
+                  <Chip size="sm" variant="flat" color={job.simulated ? 'warning' : 'success'}>
+                    {job.simulated ? 'Simulated' : 'Real'}
+                  </Chip>
+                </TableCell>
+                <TableCell className="text-xs">{formatDate(job.created_at)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
