@@ -15,11 +15,17 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
 
+# Strip devDependencies in place (no re-download, no re-compiling the native
+# canvas/sharp bindings we just built) — the runner stage below copies this
+# already-pruned tree instead of running `npm ci` a second time from scratch.
+RUN npm prune --omit=dev
+
 # ── Stage 2: Production ────────────────────────────────────────────────────────
 FROM node:20-slim AS runner
 
+# No python3/make/g++ here — nothing in the runner compiles native modules
+# anymore (that already happened in the builder stage above).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
     libreoffice-writer libreoffice-calc libreoffice-impress \
     fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
@@ -27,8 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 5000
