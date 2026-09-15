@@ -8,6 +8,7 @@ import 'pages/image_print_settings_page.dart';
 import 'pages/scanning_page.dart';
 import 'pages/photocopying_page.dart';
 import 'pages/storage_page.dart';
+import 'pages/payment_page.dart';
 
 class ServicesPage extends StatefulWidget {
   final Function(String) onNavigate;
@@ -33,6 +34,14 @@ class _ServicesPageState extends State<ServicesPage> {
   @override
   void initState() {
     super.initState();
+    // Resuming a job the customer backed out of from the payment/consent
+    // screen (e.g. to fix the paper size) — jump straight back into the
+    // printing screen instead of the picker; _loadDocuments below fills in
+    // the actual selected documents once they've loaded.
+    if (PAYMONGOPaymentPageState.selectedDocIds.isNotEmpty) {
+      _activeService = 'printing';
+      _printingSource = 'printing';
+    }
     _loadDocuments();
     _transferManager.initializeAll();
     // Re-render the service picker (and its "out of paper" lock) whenever
@@ -53,8 +62,17 @@ class _ServicesPageState extends State<ServicesPage> {
 
   Future<void> _loadDocuments() async {
     final docs = await StorageService.getDocuments();
+    if (!mounted) return;
     setState(() {
       _savedDocuments = docs;
+      final resumeIds = PAYMONGOPaymentPageState.selectedDocIds;
+      if (resumeIds.isNotEmpty) {
+        final idSet = resumeIds.toSet();
+        _selectedDocsForPrint = docs.where((d) => idSet.contains(d.id)).toList();
+        // One-shot: consumed now so a later, unrelated entry to Services
+        // doesn't accidentally resume a stale job.
+        PAYMONGOPaymentPageState.selectedDocIds = [];
+      }
     });
   }
 
@@ -400,6 +418,12 @@ class _ServicesPageState extends State<ServicesPage> {
             });
           },
           onNavigate: widget.onNavigate,
+          // Only meaningful right after resuming from the payment screen —
+          // otherwise these already hold their post-completion defaults.
+          initialPaperSize: PAYMONGOPaymentPageState.paperSize,
+          initialColorMode: PAYMONGOPaymentPageState.colorMode,
+          initialQuality: PAYMONGOPaymentPageState.quality,
+          initialCopies: PAYMONGOPaymentPageState.copies,
         );
       case 'imagePrint':
         return ImagePrintSettingsInterface(

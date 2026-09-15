@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../storage_service.dart';
 import '../kiosk_runtime_service.dart';
+import '../paper_tracker_service.dart';
 import '../strings.dart';
 import '../widgets/print_preview_dialog.dart';
 import 'payment_page.dart';
@@ -12,6 +13,13 @@ class PrintingInterface extends StatefulWidget {
   final Function(String) onRemoveSelectedDoc;
   final Function(String) onNavigate;
 
+  /// Restores a job the customer previously backed out of from the payment
+  /// screen (e.g. to fix the paper size) instead of starting over.
+  final String? initialPaperSize;
+  final String? initialColorMode;
+  final String? initialQuality;
+  final int? initialCopies;
+
   const PrintingInterface({
     super.key,
     required this.onBrowseStorage,
@@ -19,6 +27,10 @@ class PrintingInterface extends StatefulWidget {
     required this.onClearSelectedDocs,
     required this.onRemoveSelectedDoc,
     required this.onNavigate,
+    this.initialPaperSize,
+    this.initialColorMode,
+    this.initialQuality,
+    this.initialCopies,
   });
 
   @override
@@ -26,10 +38,10 @@ class PrintingInterface extends StatefulWidget {
 }
 
 class _PrintingInterfaceState extends State<PrintingInterface> {
-  String _colorMode = 'bw';
-  String _quality = 'standard';
-  String _paperSize = 'A4';
-  int _copies = 1;
+  late String _colorMode = widget.initialColorMode ?? 'bw';
+  late String _quality = widget.initialQuality ?? 'standard';
+  late String _paperSize = widget.initialPaperSize ?? 'A4';
+  late int _copies = widget.initialCopies ?? 1;
   late final TextEditingController _copiesController;
 
   /// Per-page price for the current quality + colour, from the admin-configured
@@ -71,11 +83,52 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     super.dispose();
   }
 
-  void _handlePrint() {
+  /// The tray currently loaded with the selected paper size, if any.
+  PaperTray? get _matchingTray {
+    for (final t in KioskRuntime.instance.paperTrays) {
+      if (t.paperSize.toUpperCase() == _paperSize.toUpperCase()) return t;
+    }
+    return null;
+  }
+
+  Future<bool> _confirmEnoughPaper(int sheetsNeeded) async {
+    final tray = _matchingTray;
+    // Unknown tray mapping — don't block on a check we can't actually make.
+    if (tray == null || tray.currentCount >= sheetsNeeded) return true;
+
+    if (!mounted) return false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+        title: const Text('Not enough paper loaded'),
+        content: Text(
+          'This job needs $sheetsNeeded sheet${sheetsNeeded == 1 ? '' : 's'} of '
+          '$_paperSize, but the ${tray.trayName} tray only has '
+          '${tray.currentCount} left.\n\n'
+          'Pick a different paper size, reduce the number of copies, or ask '
+          'staff to refill the tray before paying.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    return false;
+  }
+
+  Future<void> _handlePrint() async {
     final allDocs = widget.selectedDocs;
     if (allDocs.isEmpty) return;
 
     final totalPages = allDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
+    final sheetsNeeded = totalPages * _copies;
+    if (!await _confirmEnoughPaper(sheetsNeeded)) return;
+    if (!mounted) return;
+
     final costPerPage = totalPages > 0 && _copies > 0
         ? (_calculateCost() / (totalPages * _copies))
         : 0.0;
@@ -107,6 +160,8 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
     PAYMONGOPaymentPageState.paperSize = _paperSize;
     PAYMONGOPaymentPageState.colorMode = _colorMode;
     PAYMONGOPaymentPageState.quality = _quality;
+    PAYMONGOPaymentPageState.copies = _copies;
+    PAYMONGOPaymentPageState.selectedDocIds = allDocs.map((d) => d.id).toList();
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
   }

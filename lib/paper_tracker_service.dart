@@ -9,6 +9,7 @@ class PaperTray {
   final int maxCapacity;
   final int threshold;
   final String updatedAt;
+  final String paperSize;
 
   PaperTray({
     required this.trayName,
@@ -16,6 +17,7 @@ class PaperTray {
     required this.maxCapacity,
     required this.threshold,
     required this.updatedAt,
+    this.paperSize = 'A4',
   });
 
   factory PaperTray.fromJson(Map<String, dynamic> json) {
@@ -25,6 +27,7 @@ class PaperTray {
       maxCapacity: json['max_capacity'] as int? ?? 0,
       threshold: json['threshold'] as int? ?? 20,
       updatedAt: json['updated_at'] as String? ?? '',
+      paperSize: json['paper_size'] as String? ?? 'A4',
     );
   }
 
@@ -34,6 +37,7 @@ class PaperTray {
     'max_capacity': maxCapacity,
     'threshold': threshold,
     'updated_at': updatedAt,
+    'paper_size': paperSize,
   };
 
   bool get isLow => currentCount <= threshold;

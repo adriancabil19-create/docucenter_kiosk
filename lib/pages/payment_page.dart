@@ -34,6 +34,13 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   static String paperSize = 'A4';
   static String colorMode = 'bw';
   static String quality = 'standard';
+  static int copies = 1;
+
+  /// IDs of the documents selected for this job — kept alongside the settings
+  /// above so the printing page can restore the exact same job (files +
+  /// settings) if the customer backs out of the payment/consent screen to
+  /// fix a mistake (e.g. wrong paper size) instead of starting over.
+  static List<String> selectedDocIds = [];
 
   /// Receipt content from the requested service that should be displayed
   /// after payment succeeds (e.g., photocopying receipt). Cleared on return.
@@ -61,9 +68,18 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
     PAYMONGOPaymentPageState.paperSize = 'A4';
     PAYMONGOPaymentPageState.colorMode = 'bw';
     PAYMONGOPaymentPageState.quality = 'standard';
+    PAYMONGOPaymentPageState.copies = 1;
+    PAYMONGOPaymentPageState.selectedDocIds = [];
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
     PAYMONGOPaymentPageState.printContent = '';
     PAYMONGOPaymentPageState.pendingJob = null;
+  }
+
+  /// Back to the print settings screen to fix a mistake (e.g. wrong paper
+  /// size) — unlike [_returnToHome]/Cancel, this deliberately does NOT clear
+  /// the static job state above, so Services can restore the same job.
+  void _handleBackToSettings() {
+    widget.onNavigate('services');
   }
 
   void _cancelReceiptTimer() {
@@ -148,6 +164,20 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  message: 'Back to settings — fix paper size, copies, etc.',
+                  child: IconButton(
+                    onPressed: _handleBackToSettings,
+                    icon: const Icon(Icons.arrow_back),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               Semantics(
                 header: true,
                 child: Text(
