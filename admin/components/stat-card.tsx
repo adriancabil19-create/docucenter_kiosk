@@ -27,7 +27,9 @@ export function StatCard({ label, value, icon, sub, color = 'default' }: StatCar
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-600">
+          {/* Wrap rather than truncate — an ellipsis silently hides which
+              stat this card is, which is worse than taking two lines. */}
+          <p className="text-xs font-medium uppercase leading-tight tracking-wide text-slate-600">
             {label}
           </p>
           <p className="mt-0.5 text-2xl font-bold text-slate-800">{value}</p>

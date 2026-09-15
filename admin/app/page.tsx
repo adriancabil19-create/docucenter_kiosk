@@ -48,8 +48,10 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Stat Cards — one per row on phones (there isn't room for two without
+          truncating/wrapping labels like "TOTAL TRANSACTIONS"), 2 from `sm`,
+          4 from `lg`. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Transactions"
           value={stats?.totalTransactions ?? '—'}
