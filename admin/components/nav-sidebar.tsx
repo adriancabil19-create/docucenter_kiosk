@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: '/paper', label: 'Paper Trays', icon: '📄' },
   { href: '/pricing', label: 'Pricing', icon: '🏷️' },
   { href: '/storage', label: 'Storage', icon: '🗄️' },
+  { href: '/staff', label: 'Staff Management', icon: '🧑‍💼' },
   { href: '/logs', label: 'Activity Logs', icon: '📋' },
   { href: '/kiosk', label: 'Kiosk Status', icon: '🩺' },
   { href: '/legal', label: 'Legal & Privacy', icon: '📜' },
@@ -53,6 +54,7 @@ export function NavSidebar() {
   const badgeFor = (href: string): number | null => {
     if (href === '/alerts' && summary && summary.openIncidents > 0) return summary.openIncidents;
     if (href === '/kiosks' && summary && summary.kiosks.offline > 0) return summary.kiosks.offline;
+    if (href === '/staff' && summary && summary.pendingStaffPinRequests > 0) return summary.pendingStaffPinRequests;
     return null;
   };
 

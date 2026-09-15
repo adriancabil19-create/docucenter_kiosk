@@ -23,9 +23,14 @@ import {
   getPricingSettings,
   upsertStorageDocMeta,
   softDeleteStorageDocMeta,
+  listStaffRoster,
+  insertPinResetRequestFromSync,
+  applyStaffPinHash,
+  bumpStaffLogin,
   TransactionRow,
   PrintJobRow,
   StorageDocMetaInput,
+  PinResetRequestRow,
 } from '../database';
 import { getDb } from '../database';
 
@@ -158,13 +163,14 @@ router.post('/heartbeat', async (req: Request, res: Response): Promise<void> => 
       meta: body.meta,
     });
     // Reply with anything the kiosk needs to apply locally: pending commands,
-    // the retention policy, and the price list. One round-trip.
-    const [commands, storage, pricing] = await Promise.all([
+    // the retention policy, the price list, and the staff roster. One round-trip.
+    const [commands, storage, pricing, staff] = await Promise.all([
       claimPendingCommands(body.kiosk_id),
       getStorageSettings(),
       getPricingSettings(),
+      listStaffRoster(),
     ]);
-    res.json({ success: true, commands, settings: { storage, pricing } });
+    res.json({ success: true, commands, settings: { storage, pricing, staff } });
   } catch (err) {
     logger.warn('Sync: heartbeat failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
@@ -241,6 +247,56 @@ router.post('/storage-doc-delete', async (req: Request, res: Response): Promise<
   }
 });
 
+router.post('/staff-pin-reset-request', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const row = req.body as PinResetRequestRow;
+    if (!row?.id || !row?.staff_id || !row?.username || !row?.kiosk_id) {
+      res.status(400).json({ success: false, error: 'id, staff_id, username, kiosk_id required' });
+      return;
+    }
+    await insertPinResetRequestFromSync(row);
+    logger.info('Sync: staff PIN reset request received', { id: row.id, username: row.username });
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to insert staff PIN reset request', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/staff-pin-set', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id, pin_hash } = req.body as { id?: string; pin_hash?: string };
+    if (!id || !pin_hash) {
+      res.status(400).json({ success: false, error: 'id and pin_hash required' });
+      return;
+    }
+    await applyStaffPinHash(id, pin_hash);
+    logger.info('Sync: staff PIN updated', { id });
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to apply staff PIN', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/staff-login', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id } = req.body as { id?: string };
+    if (!id) {
+      res.status(400).json({ success: false, error: 'id required' });
+      return;
+    }
+    await bumpStaffLogin(id);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to record staff login', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 router.post('/incident-resolve', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!(await acceptEventOnce(req, res))) return;
@@ -265,12 +321,13 @@ router.get('/commands', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ success: false, error: 'kiosk_id required' });
       return;
     }
-    const [commands, storage, pricing] = await Promise.all([
+    const [commands, storage, pricing, staff] = await Promise.all([
       claimPendingCommands(kioskId),
       getStorageSettings(),
       getPricingSettings(),
+      listStaffRoster(),
     ]);
-    res.json({ success: true, commands, settings: { storage, pricing } });
+    res.json({ success: true, commands, settings: { storage, pricing, staff } });
   } catch (err) {
     logger.warn('Sync: command poll failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });

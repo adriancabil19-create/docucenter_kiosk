@@ -7,6 +7,7 @@ import {
   getFileBuffer,
   deleteDocument,
   getStorageStats,
+  deleteAllDocuments,
 } from '../services/storage.service';
 import { logger } from '../utils/logger';
 
@@ -232,6 +233,27 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
       success: false,
       error: err.message,
     });
+  }
+});
+
+/**
+ * POST /api/storage/cleanup
+ * Staff "Clear Temporary Files" action — removes every temporary customer
+ * file and its metadata. Confirmation is enforced client-side (rule 21).
+ */
+router.post('/cleanup', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await deleteAllDocuments();
+    if (result.success) {
+      logger.info('Staff storage cleanup performed', { deleted: result.deleted });
+      res.json({ success: true, deleted: result.deleted });
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Storage cleanup endpoint error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

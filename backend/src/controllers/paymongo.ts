@@ -260,10 +260,10 @@ export class PayMongoController {
     const uptime = process.uptime();
 
     try {
-      // In production, you would check PayMongo API connectivity here
-      // const paymongoConnected = await this.checkPayMongoApiHealth();
+      // Real connectivity check — no payment/charge is ever created (rule 18).
+      const gateway = await paymongoService.checkConnectivity();
 
-      logger.debug('Health check performed');
+      logger.debug('Health check performed', { gatewayConnected: gateway.connected });
 
       res.status(200).json({
         success: true,
@@ -271,7 +271,8 @@ export class PayMongoController {
           status: 'healthy',
           timestamp: new Date().toISOString(),
           uptime: Math.floor(uptime),
-          paymongoApi: 'connected', // Simulated in demo mode
+          paymongoApi: gateway.connected ? 'connected' : 'unreachable',
+          paymongoDetail: gateway.detail,
           responseTime: `${Date.now() - startTime}ms`,
         },
         message: 'Server is healthy',

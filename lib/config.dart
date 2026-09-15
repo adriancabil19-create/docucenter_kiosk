@@ -27,6 +27,7 @@ class BackendConfig {
   static const String baseUrl = '$railwayUrl/api/paymongo';
   static const String printApiUrl = '$serverUrl/api/print';
   static const String storageApiUrl = '$serverUrl/api/storage';
+  static const String staffApiUrl = '$serverUrl/api/staff';
 
   /// Stable identifier for this physical kiosk. Must match KIOSK_ID on the
   /// local backend so heartbeats and admin commands line up.

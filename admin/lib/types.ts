@@ -257,6 +257,35 @@ export interface Analytics {
 export interface FleetSummary {
   openIncidents: number;
   kiosks: { total: number; online: number; offline: number };
+  pendingStaffPinRequests: number;
+}
+
+// ─── Staff ────────────────────────────────────────────────────────────────────
+
+export type StaffRole = 'admin' | 'staff';
+export type StaffStatus = 'active' | 'disabled';
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  username: string;
+  role: StaffRole;
+  status: StaffStatus;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export type PinResetStatus = 'pending' | 'approved' | 'denied' | 'completed';
+
+export interface PinResetRequest {
+  id: string;
+  staff_id: string;
+  username: string;
+  kiosk_id: string;
+  status: PinResetStatus;
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
 }
 
 // ─── API Wrappers ─────────────────────────────────────────────────────────────
@@ -356,5 +385,35 @@ export interface MutationResponse {
   deleted?: number;
   tombstoned?: number;
   queued?: number;
+  error?: string;
+}
+
+export interface StaffResponse {
+  success: boolean;
+  staff: StaffMember[];
+  count: number;
+}
+
+export interface StaffMutationResponse {
+  success: boolean;
+  staff?: StaffMember;
+  error?: string;
+}
+
+export interface StaffActivityResponse {
+  success: boolean;
+  logs: ActivityLog[];
+  count: number;
+}
+
+export interface PinResetRequestsResponse {
+  success: boolean;
+  requests: PinResetRequest[];
+  count: number;
+}
+
+export interface PinResetDecisionResponse {
+  success: boolean;
+  request?: PinResetRequest;
   error?: string;
 }

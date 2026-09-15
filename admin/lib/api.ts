@@ -25,6 +25,12 @@ import type {
   CommandQueuedResponse,
   MutationResponse,
   KioskCommandName,
+  StaffRole,
+  StaffResponse,
+  StaffMutationResponse,
+  StaffActivityResponse,
+  PinResetRequestsResponse,
+  PinResetDecisionResponse,
 } from './types';
 
 export type { DateRange };
@@ -213,3 +219,67 @@ export const getAnalytics = (range?: DateRange): Promise<AnalyticsResponse> => {
 
 export const getFleetSummary = (): Promise<FleetSummaryResponse> =>
   apiFetch<FleetSummaryResponse>('/api/fleet/summary');
+
+// ─── Staff ────────────────────────────────────────────────────────────────────
+
+export const getStaff = (): Promise<StaffResponse> => apiFetch<StaffResponse>('/api/staff');
+
+export const createStaff = (payload: {
+  name: string;
+  username: string;
+  pin: string;
+  confirmPin: string;
+  role: StaffRole;
+  actor?: string;
+}): Promise<StaffMutationResponse> =>
+  apiFetch<StaffMutationResponse>('/api/staff', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateStaff = (
+  id: string,
+  patch: { name?: string; username?: string; role?: StaffRole; actor?: string },
+): Promise<StaffMutationResponse> =>
+  apiFetch<StaffMutationResponse>(`/api/staff/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+
+export const disableStaff = (id: string, actor?: string): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/staff/${encodeURIComponent(id)}/disable`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const reactivateStaff = (id: string, actor?: string): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/staff/${encodeURIComponent(id)}/reactivate`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const resetStaffPin = (
+  id: string,
+  newPin: string,
+  confirmPin: string,
+  actor?: string,
+): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/staff/${encodeURIComponent(id)}/reset-pin`, {
+    method: 'POST',
+    body: JSON.stringify({ newPin, confirmPin, actor }),
+  });
+
+export const getStaffActivity = (limit = 100): Promise<StaffActivityResponse> =>
+  apiFetch<StaffActivityResponse>(`/api/staff/activity?limit=${limit}`);
+
+export const getPendingPinResetRequests = (): Promise<PinResetRequestsResponse> =>
+  apiFetch<PinResetRequestsResponse>('/api/staff/pin-reset-requests');
+
+export const approvePinResetRequest = (id: string, actor?: string): Promise<PinResetDecisionResponse> =>
+  apiFetch<PinResetDecisionResponse>(`/api/staff/pin-reset-requests/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const denyPinResetRequest = (id: string, actor?: string): Promise<PinResetDecisionResponse> =>
+  apiFetch<PinResetDecisionResponse>(`/api/staff/pin-reset-requests/${encodeURIComponent(id)}/deny`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });

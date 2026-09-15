@@ -27,6 +27,7 @@ import {
   tombstoneAllStorageDocMetas,
   getAnalytics,
   insertLog,
+  listPendingPinResetRequests,
   type KioskCommandName,
 } from '../database';
 import { deleteAllDocuments, purgeExpiredDocuments } from '../services/storage.service';
@@ -313,13 +314,18 @@ router.get('/analytics', async (req: Request, res: Response): Promise<void> => {
 
 router.get('/summary', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [kiosks, openIncidents] = await Promise.all([getKiosks(), getOpenIncidentCount()]);
+    const [kiosks, openIncidents, pendingPinRequests] = await Promise.all([
+      getKiosks(),
+      getOpenIncidentCount(),
+      listPendingPinResetRequests(),
+    ]);
     const online = kiosks.filter((k) => isOnline(k.last_seen)).length;
     res.json({
       success: true,
       summary: {
         openIncidents,
         kiosks: { total: kiosks.length, online, offline: kiosks.length - online },
+        pendingStaffPinRequests: pendingPinRequests.length,
       },
     });
   } catch (err) {

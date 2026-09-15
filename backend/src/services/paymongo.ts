@@ -313,6 +313,28 @@ export class PayMongoService {
       logger.info('Simulated payment failure', { transactionId, reason });
     }
   }
+
+  /**
+   * Real, side-effect-free gateway connectivity check for Staff Mode's
+   * "Payment Test" — never creates a payment intent/charge. Requests a
+   * deliberately non-existent payment intent: PayMongo responds 404 (auth +
+   * connectivity both fine), 401 (bad secret key), or the request throws
+   * (network/DNS/timeout — gateway unreachable).
+   */
+  async checkConnectivity(): Promise<{ connected: boolean; detail: string }> {
+    if (!config.PAYMONGO.secretKey) {
+      return { connected: false, detail: 'PAYMONGO_SECRET_KEY is not configured' };
+    }
+    try {
+      await this.axiosInstance.get('/payment_intents/staff_diagnostic_ping');
+      return { connected: true, detail: 'Reachable' };
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 404) return { connected: true, detail: 'Reachable' };
+      if (status === 401) return { connected: false, detail: 'Secret key rejected by PayMongo' };
+      return { connected: false, detail: err?.message ?? 'Unreachable' };
+    }
+  }
 }
 
 export const paymongoService = new PayMongoService();

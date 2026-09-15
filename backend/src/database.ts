@@ -2,10 +2,11 @@
  * Local SQLite persistence layer for the kiosk and cloud metadata receiver.
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { createClient, type Client, type ResultSet } from '@libsql/client';
 import { logger } from './utils/logger';
 import { syncEvent } from './services/sync.service';
+import { config } from './utils/config';
 
 // ─── Client singleton ─────────────────────────────────────────────────────────
 
@@ -176,6 +177,34 @@ export const initSchema = async (): Promise<void> => {
       deleted_at    TEXT
     );
 
+    -- Staff accounts. PIN is never stored/logged in plaintext (see setStaffPin).
+    CREATE TABLE IF NOT EXISTS staff (
+      id              TEXT    PRIMARY KEY,
+      name            TEXT    NOT NULL,
+      username        TEXT    NOT NULL UNIQUE,
+      pin_hash        TEXT    NOT NULL,
+      role            TEXT    NOT NULL DEFAULT 'staff',
+      status          TEXT    NOT NULL DEFAULT 'active',
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until    TEXT,
+      created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      last_login_at   TEXT
+    );
+
+    -- Staff PIN-recovery requests: staff asks on the kiosk, an Admin (already
+    -- authenticated in the admin console) approves/denies, staff then sets
+    -- their own new PIN. No admin password ever touches the kiosk.
+    CREATE TABLE IF NOT EXISTS staff_pin_reset_requests (
+      id           TEXT PRIMARY KEY,
+      staff_id     TEXT NOT NULL,
+      username     TEXT NOT NULL,
+      kiosk_id     TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      requested_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      decided_at   TEXT,
+      decided_by   TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
@@ -185,6 +214,8 @@ export const initSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_incidents_status     ON incidents(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_commands_pending     ON kiosk_commands(kiosk_id, status, created_at);
     CREATE INDEX IF NOT EXISTS idx_storage_docs_live    ON storage_documents(deleted_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_staff_username        ON staff(username);
+    CREATE INDEX IF NOT EXISTS idx_pin_requests_status    ON staff_pin_reset_requests(status, requested_at);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -975,7 +1006,8 @@ export type KioskCommandName =
   | 'RESTART_APP'
   | 'PURGE_STORAGE'
   | 'DELETE_ALL_FILES'
-  | 'DELETE_ALL_FILES_KEEP_META';
+  | 'DELETE_ALL_FILES_KEEP_META'
+  | 'STAFF_PIN_REQUEST_DECIDED';
 
 export interface KioskCommandRow {
   id: string;
@@ -1619,4 +1651,409 @@ export const getAnalytics = async (range?: DateRange): Promise<AnalyticsResult> 
       })),
     },
   };
+};
+
+// ─── Staff accounts ───────────────────────────────────────────────────────────
+
+export type StaffRole = 'admin' | 'staff';
+export type StaffStatus = 'active' | 'disabled';
+
+/** Everything except pin_hash — safe to return to any client. */
+export interface StaffPublic {
+  id: string;
+  name: string;
+  username: string;
+  role: StaffRole;
+  status: StaffStatus;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+/** Full row, including the PIN hash — only used internally (login check, roster sync). */
+export interface StaffRow extends StaffPublic {
+  pin_hash: string;
+  failed_attempts: number;
+  locked_until: string | null;
+}
+
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LOCKOUT_MINUTES = 2;
+
+/** scrypt hash as 'saltHex:hashHex'. No third-party crypto dependency needed. */
+export const hashPin = (pin: string): string => {
+  const salt = randomBytes(16);
+  const hash = scryptSync(pin, salt, 64);
+  return `${salt.toString('hex')}:${hash.toString('hex')}`;
+};
+
+export const verifyPin = (pin: string, stored: string): boolean => {
+  const [saltHex, hashHex] = stored.split(':');
+  if (!saltHex || !hashHex) return false;
+  try {
+    const salt = Buffer.from(saltHex, 'hex');
+    const expected = Buffer.from(hashHex, 'hex');
+    const actual = scryptSync(pin, salt, expected.length);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+};
+
+const mapStaff = (r: Record<string, unknown>): StaffRow => ({
+  id: String(r.id),
+  name: String(r.name),
+  username: String(r.username),
+  pin_hash: String(r.pin_hash),
+  role: (String(r.role) as StaffRole) === 'admin' ? 'admin' : 'staff',
+  status: (String(r.status) as StaffStatus) === 'disabled' ? 'disabled' : 'active',
+  failed_attempts: Number(r.failed_attempts ?? 0),
+  locked_until: (r.locked_until as string) ?? null,
+  created_at: String(r.created_at),
+  last_login_at: (r.last_login_at as string) ?? null,
+});
+
+const toPublicStaff = (r: StaffRow): StaffPublic => ({
+  id: r.id,
+  name: r.name,
+  username: r.username,
+  role: r.role,
+  status: r.status,
+  created_at: r.created_at,
+  last_login_at: r.last_login_at,
+});
+
+const nextStaffId = async (): Promise<string> => {
+  const result = await getDb().execute(
+    `SELECT id FROM staff WHERE id LIKE 'STF-%' ORDER BY id DESC LIMIT 1`,
+  );
+  const last = firstRow<{ id: string }>(result)?.id;
+  const lastNum = last ? parseInt(last.replace('STF-', ''), 10) : 0;
+  const next = (Number.isFinite(lastNum) ? lastNum : 0) + 1;
+  return `STF-${String(next).padStart(3, '0')}`;
+};
+
+export interface CreateStaffInput {
+  name: string;
+  username: string;
+  pin: string;
+  role?: StaffRole;
+}
+
+export const createStaff = async (input: CreateStaffInput): Promise<StaffPublic> => {
+  const id = await nextStaffId();
+  const pin_hash = hashPin(input.pin);
+  await getDb().execute({
+    sql: `INSERT INTO staff (id, name, username, pin_hash, role, status)
+          VALUES (@id, @name, @username, @pin_hash, @role, 'active')`,
+    args: {
+      id,
+      name: input.name.trim(),
+      username: input.username.trim().toLowerCase(),
+      pin_hash,
+      role: input.role === 'admin' ? 'admin' : 'staff',
+    },
+  });
+  const created = await getStaffById(id);
+  if (!created) throw new Error('Failed to read back created staff account');
+  return created;
+};
+
+export const getStaffById = async (id: string): Promise<StaffPublic | null> => {
+  const result = await getDb().execute({ sql: `SELECT * FROM staff WHERE id = @id`, args: { id } });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? toPublicStaff(mapStaff(row)) : null;
+};
+
+/** Internal use only (login checks, roster sync) — includes the PIN hash. */
+export const getStaffRowByUsername = async (username: string): Promise<StaffRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM staff WHERE username = @username`,
+    args: { username: username.trim().toLowerCase() },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapStaff(row) : null;
+};
+
+export const getStaffRowById = async (id: string): Promise<StaffRow | null> => {
+  const result = await getDb().execute({ sql: `SELECT * FROM staff WHERE id = @id`, args: { id } });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapStaff(row) : null;
+};
+
+export const listStaff = async (): Promise<StaffPublic[]> => {
+  const result = await getDb().execute(`SELECT * FROM staff ORDER BY created_at ASC`);
+  return toRows<Record<string, unknown>>(result).map((r) => toPublicStaff(mapStaff(r)));
+};
+
+/** Full rows (incl. pin_hash) — used only to build the cloud→kiosk roster downlink. */
+export const listStaffRoster = async (): Promise<StaffRow[]> => {
+  const result = await getDb().execute(`SELECT * FROM staff ORDER BY created_at ASC`);
+  return toRows<Record<string, unknown>>(result).map(mapStaff);
+};
+
+/** Apply one roster row pushed down from the cloud. Kiosk side only. */
+export const upsertStaffFromRoster = async (row: StaffRow): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT INTO staff (id, name, username, pin_hash, role, status, failed_attempts, locked_until, created_at, last_login_at)
+          VALUES (@id, @name, @username, @pin_hash, @role, @status, @failed_attempts, @locked_until, @created_at, @last_login_at)
+          ON CONFLICT(id) DO UPDATE SET
+            name = @name, username = @username, pin_hash = @pin_hash, role = @role,
+            status = @status, failed_attempts = @failed_attempts, locked_until = @locked_until,
+            last_login_at = @last_login_at`,
+    args: {
+      id: row.id,
+      name: row.name,
+      username: row.username,
+      pin_hash: row.pin_hash,
+      role: row.role,
+      status: row.status,
+      failed_attempts: row.failed_attempts,
+      locked_until: row.locked_until,
+      created_at: row.created_at,
+      last_login_at: row.last_login_at,
+    },
+  });
+};
+
+export interface UpdateStaffInput {
+  name?: string;
+  username?: string;
+  role?: StaffRole;
+}
+
+export const updateStaff = async (id: string, patch: UpdateStaffInput): Promise<StaffPublic | null> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET
+            name     = COALESCE(@name, name),
+            username = COALESCE(@username, username),
+            role     = COALESCE(@role, role)
+          WHERE id = @id`,
+    args: {
+      id,
+      name: patch.name?.trim() ?? null,
+      username: patch.username?.trim().toLowerCase() ?? null,
+      role: patch.role ?? null,
+    },
+  });
+  return getStaffById(id);
+};
+
+export const setStaffStatus = async (id: string, status: StaffStatus): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET status = @status WHERE id = @id`,
+    args: { id, status },
+  });
+};
+
+/** Admin-initiated direct reset (rule 10) — distinct from the request/approval flow. */
+export const setStaffPin = async (id: string, pin: string): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET pin_hash = @pin_hash, failed_attempts = 0, locked_until = NULL WHERE id = @id`,
+    args: { id, pin_hash: hashPin(pin) },
+  });
+};
+
+export const bumpStaffLogin = async (id: string): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET last_login_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), failed_attempts = 0, locked_until = NULL WHERE id = @id`,
+    args: { id },
+  });
+  syncEvent('staff-login', { id });
+};
+
+/** Staff activity feed for the admin console (category='staff' rows only). */
+export const getStaffActivityLogs = async (limit = 100): Promise<ActivityLogRow[]> => {
+  const result = await getDb().execute({
+    sql: `SELECT id, level, category, message, metadata, count, created_at FROM activity_logs
+          WHERE category = 'staff' ORDER BY created_at DESC LIMIT @limit`,
+    args: { limit },
+  });
+  return toRows<ActivityLogRow>(result);
+};
+
+export interface StaffTransactionView {
+  id: string;
+  created_at: string;
+  service_type: string;
+  page_count: number;
+  copies: number;
+  amount: number | null;
+  payment_status: string | null;
+  printing_status: string;
+}
+
+/** Trimmed transaction+job view for the Staff dashboard (no customer PII exists in this schema). */
+export const getStaffTransactionsView = async (limit = 50): Promise<StaffTransactionView[]> => {
+  const result = await getDb().execute({
+    sql: `SELECT j.id, j.created_at, j.service_type, j.page_count, j.copies, j.status AS printing_status,
+                 t.amount, t.status AS payment_status
+          FROM print_jobs j
+          LEFT JOIN transactions t ON t.id = j.transaction_id
+          ORDER BY j.created_at DESC LIMIT @limit`,
+    args: { limit },
+  });
+  return toRows<Record<string, unknown>>(result).map((r) => ({
+    id: String(r.id),
+    created_at: String(r.created_at),
+    service_type: String(r.service_type ?? 'printing'),
+    page_count: Number(r.page_count ?? 0),
+    copies: Number(r.copies ?? 1),
+    amount: r.amount == null ? null : Number(r.amount),
+    payment_status: (r.payment_status as string) ?? null,
+    printing_status: String(r.printing_status ?? 'submitted'),
+  }));
+};
+
+/** Returns true if the account is now locked as a result of this failure. */
+export const recordStaffPinFailure = async (id: string): Promise<boolean> => {
+  const row = await getStaffRowById(id);
+  const attempts = (row?.failed_attempts ?? 0) + 1;
+  const locked = attempts >= MAX_PIN_ATTEMPTS;
+  await getDb().execute({
+    sql: `UPDATE staff SET failed_attempts = @attempts,
+            locked_until = CASE WHEN @locked THEN strftime('%Y-%m-%dT%H:%M:%SZ', 'now', @lockWindow) ELSE locked_until END
+          WHERE id = @id`,
+    args: {
+      id,
+      attempts,
+      locked: locked ? 1 : 0,
+      lockWindow: `+${PIN_LOCKOUT_MINUTES} minutes`,
+    },
+  });
+  return locked;
+};
+
+export const isStaffLocked = (row: StaffRow): boolean =>
+  !!row.locked_until && row.locked_until > new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+
+// ─── Staff PIN-recovery requests ─────────────────────────────────────────────
+
+export type PinResetStatus = 'pending' | 'approved' | 'denied' | 'completed';
+
+export interface PinResetRequestRow {
+  id: string;
+  staff_id: string;
+  username: string;
+  kiosk_id: string;
+  status: PinResetStatus;
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+}
+
+const mapPinRequest = (r: Record<string, unknown>): PinResetRequestRow => ({
+  id: String(r.id),
+  staff_id: String(r.staff_id),
+  username: String(r.username),
+  kiosk_id: String(r.kiosk_id),
+  status: String(r.status) as PinResetStatus,
+  requested_at: String(r.requested_at),
+  decided_at: (r.decided_at as string) ?? null,
+  decided_by: (r.decided_by as string) ?? null,
+});
+
+export const createPinResetRequest = async (
+  staffId: string,
+  username: string,
+  kioskId: string,
+): Promise<PinResetRequestRow> => {
+  const id = randomUUID();
+  await getDb().execute({
+    sql: `INSERT INTO staff_pin_reset_requests (id, staff_id, username, kiosk_id)
+          VALUES (@id, @staff_id, @username, @kiosk_id)`,
+    args: { id, staff_id: staffId, username, kiosk_id: kioskId },
+  });
+  const row = await getPinResetRequest(id);
+  if (!row) throw new Error('Failed to read back PIN reset request');
+  syncEvent('staff-pin-reset-request', row);
+  return row;
+};
+
+/** Cloud side: idempotently ingest a request pushed up from a kiosk via sync. */
+export const insertPinResetRequestFromSync = async (row: PinResetRequestRow): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT OR IGNORE INTO staff_pin_reset_requests
+            (id, staff_id, username, kiosk_id, status, requested_at)
+          VALUES (@id, @staff_id, @username, @kiosk_id, @status, @requested_at)`,
+    args: {
+      id: row.id,
+      staff_id: row.staff_id,
+      username: row.username,
+      kiosk_id: row.kiosk_id,
+      status: row.status,
+      requested_at: row.requested_at,
+    },
+  });
+};
+
+/** Cloud side: ingest an already-hashed PIN pushed up from a kiosk via sync. */
+export const applyStaffPinHash = async (staffId: string, pinHash: string): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET pin_hash = @pin_hash, failed_attempts = 0, locked_until = NULL WHERE id = @id`,
+    args: { id: staffId, pin_hash: pinHash },
+  });
+};
+
+export const getPinResetRequest = async (id: string): Promise<PinResetRequestRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM staff_pin_reset_requests WHERE id = @id`,
+    args: { id },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapPinRequest(row) : null;
+};
+
+export const listPendingPinResetRequests = async (): Promise<PinResetRequestRow[]> => {
+  const result = await getDb().execute(
+    `SELECT * FROM staff_pin_reset_requests WHERE status = 'pending' ORDER BY requested_at ASC`,
+  );
+  return toRows<Record<string, unknown>>(result).map(mapPinRequest);
+};
+
+/** Cloud side: admin approves/denies. Caller is responsible for enqueuing the downlink command. */
+export const decidePinResetRequest = async (
+  id: string,
+  decision: 'approved' | 'denied',
+  decidedBy: string,
+): Promise<PinResetRequestRow | null> => {
+  await getDb().execute({
+    sql: `UPDATE staff_pin_reset_requests
+          SET status = @status, decided_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), decided_by = @decidedBy
+          WHERE id = @id AND status = 'pending'`,
+    args: { id, status: decision, decidedBy },
+  });
+  return getPinResetRequest(id);
+};
+
+/** Kiosk side: apply a decision received via the command downlink to the local copy. */
+export const applyPinResetDecision = async (
+  id: string,
+  decision: 'approved' | 'denied',
+  decidedBy: string,
+): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT INTO staff_pin_reset_requests (id, staff_id, username, kiosk_id, status, decided_at, decided_by)
+          VALUES (@id, '', '', @kioskId, @status, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), @decidedBy)
+          ON CONFLICT(id) DO UPDATE SET
+            status = @status, decided_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), decided_by = @decidedBy`,
+    args: { id, status: decision, decidedBy, kioskId: config.kioskId },
+  });
+};
+
+/** Kiosk side: staff sets their own new PIN after an approved request. One-time use. */
+export const completePinResetRequest = async (
+  id: string,
+  staffId: string,
+  newPin: string,
+): Promise<boolean> => {
+  const req = await getPinResetRequest(id);
+  if (!req || req.status !== 'approved' || req.staff_id !== staffId) return false;
+  await setStaffPin(staffId, newPin);
+  await getDb().execute({
+    sql: `UPDATE staff_pin_reset_requests SET status = 'completed' WHERE id = @id`,
+    args: { id },
+  });
+  const row = await getStaffRowById(staffId);
+  if (row) syncEvent('staff-pin-set', { id: staffId, pin_hash: row.pin_hash });
+  return true;
 };

@@ -28,10 +28,14 @@ import {
   setKioskReload,
   insertIncident,
   insertLog,
+  listStaffRoster,
+  upsertStaffFromRoster,
+  applyPinResetDecision,
   type DeviceState,
   type KioskCommandRow,
   type KioskCommandName,
   type PricingSettings,
+  type StaffRow,
 } from '../database';
 import { purgeExpiredDocuments, deleteAllDocuments } from './storage.service';
 
@@ -112,6 +116,7 @@ interface DownlinkReply {
   settings?: {
     storage?: { delete_after_print: boolean; retention_hours: number };
     pricing?: PricingSettings;
+    staff?: StaffRow[];
   };
 }
 
@@ -144,11 +149,12 @@ const sendHeartbeat = async (): Promise<DownlinkReply> => {
 
   // Single-process: write straight to the shared local DB.
   await recordHeartbeat(payload);
-  const [commands, storage] = await Promise.all([
+  const [commands, storage, staff] = await Promise.all([
     claimPendingCommands(KIOSK_ID),
     getStorageSettings(),
+    listStaffRoster(),
   ]);
-  return { commands, settings: { storage } };
+  return { commands, settings: { storage, staff } };
 };
 
 const ackRemote = async (id: string, ok: boolean, result: string): Promise<void> => {
@@ -253,6 +259,16 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         });
         break;
       }
+      case 'STAFF_PIN_REQUEST_DECIDED': {
+        const params = cmd.params as { requestId?: string; decision?: 'approved' | 'denied' } | null;
+        if (!params?.requestId || !params.decision) {
+          result = 'ignored (missing params)';
+          break;
+        }
+        await applyPinResetDecision(params.requestId, params.decision, cmd.created_by ?? 'admin');
+        result = `PIN recovery request ${params.decision}`;
+        break;
+      }
       default:
         await ackRemote(cmd.id, false, `unknown command: ${name}`);
         return;
@@ -290,6 +306,11 @@ const applyReply = async (reply: DownlinkReply): Promise<void> => {
     }
   }
 
+  const staff = reply.settings?.staff;
+  if (staff) {
+    for (const row of staff) await upsertStaffFromRoster(row);
+  }
+
   for (const cmd of reply.commands ?? []) {
     await executeCommand(cmd);
   }
@@ -318,11 +339,12 @@ const commandTick = async (): Promise<void> => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await applyReply((await res.json()) as DownlinkReply);
     } else {
-      const [commands, storage] = await Promise.all([
+      const [commands, storage, staff] = await Promise.all([
         claimPendingCommands(KIOSK_ID),
         getStorageSettings(),
+        listStaffRoster(),
       ]);
-      await applyReply({ commands, settings: { storage } });
+      await applyReply({ commands, settings: { storage, staff } });
     }
   } catch (err) {
     logger.warn('Fleet agent: command tick failed', { error: String(err) });

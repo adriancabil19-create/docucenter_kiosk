@@ -212,6 +212,28 @@ class StorageService {
     }
   }
 
+  /// Delete every temporary document (files + metadata). Used by Staff Mode's
+  /// "Clear Temporary Files" action. Returns the number of files removed, or
+  /// null on failure.
+  static Future<int?> cleanupAll() async {
+    try {
+      final response = await http
+          .post(Uri.parse('$_baseUrl/cleanup'))
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        if (json['success'] == true) return json['deleted'] as int? ?? 0;
+      }
+
+      debugPrint('Storage cleanup failed: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      debugPrint('Error running storage cleanup: $e');
+      return null;
+    }
+  }
+
   /// Get storage statistics
   static Future<Map<String, dynamic>?> getStorageStats() async {
     try {

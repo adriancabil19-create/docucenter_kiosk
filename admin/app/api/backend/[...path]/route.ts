@@ -11,8 +11,9 @@ const ALLOWED_PREFIXES = [
   'api/paper-tracker/',
   'api/storage/',
   'api/fleet/',
+  'api/staff/',
 ];
-const ALLOWED_EXACT = ['health'];
+const ALLOWED_EXACT = ['health', 'api/staff'];
 
 function isAllowed(path: string): boolean {
   return ALLOWED_EXACT.includes(path) || ALLOWED_PREFIXES.some((p) => path.startsWith(p));

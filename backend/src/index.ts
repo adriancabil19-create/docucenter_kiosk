@@ -17,6 +17,7 @@ import syncRoutes from './routes/sync';
 import transferRoutes from './routes/transfer';
 import fleetRoutes from './routes/fleet';
 import kioskRoutes from './routes/kiosk';
+import staffRoutes from './routes/staff';
 import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
 import { startMaintenanceJob } from './services/maintenance.service';
@@ -131,6 +132,8 @@ app.use('/api/scan', requireKioskApiToken, scanRoutes);
 app.use('/api/paper-tracker', requireAdminOrKioskApiToken, paperTrackerRoutes);
 app.use('/api/fleet', requireAdminApiToken, fleetRoutes);
 app.use('/api/kiosk', requireKioskApiToken, kioskRoutes);
+// Mixed audience (admin CRUD + kiosk login/diagnostics) — auth applied per-route inside staffRoutes.
+app.use('/api/staff', staffRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 

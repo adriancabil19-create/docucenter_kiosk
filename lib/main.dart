@@ -13,6 +13,7 @@ import 'widgets/kiosk_status_overlays.dart';
 import 'widgets/idle_screen.dart';
 import 'widgets/settings_panel.dart';
 import 'widgets/docucenter_logo.dart';
+import 'pages/staff/staff_mode_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,6 +67,10 @@ class _MainAppState extends State<MainApp> {
   Timer? _idleTimer;
   bool _showIdleScreen = false;
 
+  // Staff Mode: rendered as a full-screen overlay above everything else,
+  // reached via the header logo's hidden 5-tap gesture.
+  bool _showStaffMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -94,11 +99,23 @@ class _MainAppState extends State<MainApp> {
     // The payment screen runs its own multi-minute session (QR scan /
     // gateway wait) with no need for repeated touches — never interrupt it
     // with the standby screen. Just keep deferring until the user leaves it.
-    if (_currentPage == 'payment') {
+    if (_currentPage == 'payment' || _showStaffMode) {
       _resetIdleTimer();
       return;
     }
     setState(() => _showIdleScreen = true);
+  }
+
+  void _enterStaffMode() {
+    setState(() => _showStaffMode = true);
+  }
+
+  /// Return to a clean customer-facing state — same soft-reload path used for
+  /// the admin's "Restart app" command, so nothing from the Staff session
+  /// (or any in-progress customer job) lingers.
+  void _exitStaffMode() {
+    setState(() => _showStaffMode = false);
+    _softReload();
   }
 
   /// Raw pointer-down handler covering the whole app — while the idle screen
@@ -197,6 +214,7 @@ class _MainAppState extends State<MainApp> {
                           Header(
                             currentPage: _currentPage,
                             onNavigate: _navigate,
+                            onStaffModeRequested: _enterStaffMode,
                           ),
                           const KioskBanners(),
                           Expanded(
@@ -215,6 +233,10 @@ class _MainAppState extends State<MainApp> {
                     Positioned.fill(
                       child: IdleScreen(onDismiss: _dismissIdleScreen),
                     ),
+                  if (_showStaffMode)
+                    Positioned.fill(
+                      child: StaffModeShell(onExit: _exitStaffMode),
+                    ),
                 ],
               ),
             ),
@@ -228,11 +250,13 @@ class _MainAppState extends State<MainApp> {
 class Header extends StatefulWidget {
   final String currentPage;
   final ValueChanged<String> onNavigate;
+  final VoidCallback? onStaffModeRequested;
 
   const Header({
     super.key,
     required this.currentPage,
     required this.onNavigate,
+    this.onStaffModeRequested,
   });
 
   @override
@@ -241,6 +265,11 @@ class Header extends StatefulWidget {
 
 class _HeaderState extends State<Header> {
   bool _mobileMenuOpen = false;
+
+  // Staff Mode's hidden entry point: 5 taps on the logo within 3 seconds.
+  // Every tap still navigates home as before — this just counts alongside it.
+  int _logoTapCount = 0;
+  Timer? _logoTapTimer;
 
   static const List<String> _navIds = ['home', 'services', 'about', 'legal'];
 
@@ -251,6 +280,25 @@ class _HeaderState extends State<Header> {
     setState(() {
       _mobileMenuOpen = false;
     });
+  }
+
+  void _onLogoTap() {
+    _handleNavigate('home');
+    if (widget.onStaffModeRequested == null) return;
+    _logoTapCount++;
+    _logoTapTimer?.cancel();
+    _logoTapTimer = Timer(const Duration(seconds: 3), () => _logoTapCount = 0);
+    if (_logoTapCount >= 5) {
+      _logoTapCount = 0;
+      _logoTapTimer?.cancel();
+      widget.onStaffModeRequested!();
+    }
+  }
+
+  @override
+  void dispose() {
+    _logoTapTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -274,7 +322,7 @@ class _HeaderState extends State<Header> {
                   // Logo/Title
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => _handleNavigate('home'),
+                      onTap: _onLogoTap,
                       child: Row(
                         children: [
                           Container(
