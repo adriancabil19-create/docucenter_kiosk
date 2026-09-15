@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { LogoMark } from '@/components/logo';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -32,10 +33,8 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="glass-strong w-full max-w-sm p-8">
-        <div className="mb-6 text-center">
-          <span className="text-4xl" aria-hidden="true">
-            🖨️
-          </span>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <LogoMark size={56} />
           <h1 className="mt-2 text-xl font-bold text-slate-900">DocuCenter Admin</h1>
           <p className="text-sm text-slate-600">Sign in to continue</p>
         </div>

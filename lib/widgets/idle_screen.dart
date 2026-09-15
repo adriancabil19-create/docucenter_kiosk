@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../strings.dart';
+import 'docucenter_logo.dart';
 
 class _ServiceItem {
   const _ServiceItem(this.icon, this.labelKey);
@@ -233,14 +234,7 @@ class _IdleScreenState extends State<IdleScreen>
             );
           },
           child: const Center(
-            child: Text(
-              'DC',
-              style: TextStyle(
-                color: Color(0xFF003D99),
-                fontWeight: FontWeight.w800,
-                fontSize: 32,
-              ),
-            ),
+            child: DocucenterLogoMark(size: 60),
           ),
         ),
         const SizedBox(height: 20),

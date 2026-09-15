@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getFleetSummary } from '@/lib/api';
 import type { FleetSummary } from '@/lib/types';
+import { LogoMark } from '@/components/logo';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '📊' },
@@ -59,9 +60,7 @@ export function NavSidebar() {
     <aside className="glass-nav flex h-full w-56 flex-col">
       {/* Logo */}
       <div className="flex items-center gap-2 border-b border-white/40 px-4 py-5">
-        <span className="text-2xl" aria-hidden="true">
-          🖨️
-        </span>
+        <LogoMark size={28} />
         <div>
           <p className="text-sm font-bold leading-tight text-slate-900">DocuCenter</p>
           <p className="text-xs text-slate-600">Admin Console</p>

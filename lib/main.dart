@@ -12,6 +12,7 @@ import 'strings.dart';
 import 'widgets/kiosk_status_overlays.dart';
 import 'widgets/idle_screen.dart';
 import 'widgets/settings_panel.dart';
+import 'widgets/docucenter_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -280,17 +281,12 @@ class _HeaderState extends State<Header> {
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF2563EB),
+                              color: Colors.white,
                               borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
                             ),
                             child: const Center(
-                              child: Text(
-                                'DC',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                              child: DocucenterLogoMark(size: 30),
                             ),
                           ),
                           const SizedBox(width: 12),
