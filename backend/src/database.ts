@@ -205,6 +205,39 @@ export const initSchema = async (): Promise<void> => {
       decided_by   TEXT
     );
 
+    -- Customer "Ask for Assistance" requests. One active (PENDING/ACKNOWLEDGED)
+    -- row per kiosk is enforced in application code, not a constraint, because
+    -- SQLite can't partial-unique-index on a computed "is active" predicate
+    -- across a mutable status column cleanly with libSQL's ALTER support.
+    CREATE TABLE IF NOT EXISTS assistance_requests (
+      id                  TEXT PRIMARY KEY,
+      kiosk_id            TEXT NOT NULL,
+      status              TEXT NOT NULL DEFAULT 'PENDING',
+      message             TEXT,
+      customer_session_id TEXT,
+      requested_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      acknowledged_at     TEXT,
+      acknowledged_by     TEXT,
+      resolved_at         TEXT,
+      resolved_by         TEXT,
+      escalated_at        TEXT,
+      created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    -- One row per new PENDING assistance request. Broadcast model (no
+    -- recipient_staff_id): every eligible Staff sees the same request and only
+    -- one can acknowledge it, so a per-staff read table would just duplicate
+    -- state already carried by assistance_requests.status.
+    CREATE TABLE IF NOT EXISTS staff_notifications (
+      id                    TEXT PRIMARY KEY,
+      assistance_request_id TEXT NOT NULL,
+      type                  TEXT NOT NULL DEFAULT 'ASSISTANCE_REQUEST',
+      status                TEXT NOT NULL DEFAULT 'UNREAD',
+      created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      read_at               TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
@@ -216,6 +249,9 @@ export const initSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_storage_docs_live    ON storage_documents(deleted_at, created_at);
     CREATE INDEX IF NOT EXISTS idx_staff_username        ON staff(username);
     CREATE INDEX IF NOT EXISTS idx_pin_requests_status    ON staff_pin_reset_requests(status, requested_at);
+    CREATE INDEX IF NOT EXISTS idx_assistance_kiosk_status ON assistance_requests(kiosk_id, status);
+    CREATE INDEX IF NOT EXISTS idx_assistance_status       ON assistance_requests(status, requested_at);
+    CREATE INDEX IF NOT EXISTS idx_notifications_status    ON staff_notifications(status, created_at);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -245,6 +281,12 @@ export const initSchema = async (): Promise<void> => {
   // side's PIN write is newer instead of letting a stale roster pull clobber
   // a PIN just set on the other side.
   await addColumn(`ALTER TABLE staff ADD COLUMN pin_updated_at TEXT`);
+  // staff: password for web login to the admin console's Staff role. Separate
+  // credential from pin_hash (Staff Mode on the physical kiosk) — set required
+  // at creation, so existing rows created before this column existed have no
+  // password until an Admin resets one from Staff Management.
+  await addColumn(`ALTER TABLE staff ADD COLUMN password_hash TEXT`);
+  await addColumn(`ALTER TABLE staff ADD COLUMN password_updated_at TEXT`);
   // Device state is now strictly ONLINE / OFFLINE — normalise any legacy values.
   try {
     await db.execute(
@@ -1048,7 +1090,8 @@ export type KioskCommandName =
   | 'PURGE_STORAGE'
   | 'DELETE_ALL_FILES'
   | 'DELETE_ALL_FILES_KEEP_META'
-  | 'STAFF_PIN_REQUEST_DECIDED';
+  | 'STAFF_PIN_REQUEST_DECIDED'
+  | 'ASSISTANCE_STATUS_CHANGED';
 
 export interface KioskCommandRow {
   id: string;
@@ -1507,6 +1550,9 @@ export const pruneOldRows = async (): Promise<Record<string, number>> => {
     ['storage_documents', `DELETE FROM storage_documents WHERE deleted_at IS NOT NULL AND deleted_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`],
     // Resolved incidents: keep 60 days.
     ['incidents', `DELETE FROM incidents WHERE status = 'resolved' AND resolved_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-60 days')`],
+    // Read notifications: keep per NOTIFICATION_RETENTION_DAYS. The assistance
+    // request itself is never pruned here — history is kept (rule 33).
+    ['staff_notifications', `DELETE FROM staff_notifications WHERE status = 'READ' AND read_at < strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(1, config.assistance.notificationRetentionDays)} days')`],
   ];
   const counts: Record<string, number> = {};
   for (const [table, sql] of runs) {
@@ -1716,6 +1762,9 @@ export interface StaffRow extends StaffPublic {
   pin_updated_at: string | null;
   failed_attempts: number;
   locked_until: string | null;
+  /** Web-console login credential (role STAFF). Null for rows created before this existed. */
+  password_hash: string | null;
+  password_updated_at: string | null;
 }
 
 const MAX_PIN_ATTEMPTS = 5;
@@ -1747,6 +1796,8 @@ const mapStaff = (r: Record<string, unknown>): StaffRow => ({
   username: String(r.username),
   pin_hash: String(r.pin_hash),
   pin_updated_at: (r.pin_updated_at as string) ?? null,
+  password_hash: (r.password_hash as string) ?? null,
+  password_updated_at: (r.password_updated_at as string) ?? null,
   role: (String(r.role) as StaffRole) === 'admin' ? 'admin' : 'staff',
   status: (String(r.status) as StaffStatus) === 'disabled' ? 'disabled' : 'active',
   failed_attempts: Number(r.failed_attempts ?? 0),
@@ -1779,20 +1830,24 @@ export interface CreateStaffInput {
   name: string;
   username: string;
   pin: string;
+  /** Web-console login password (role STAFF, Next.js admin app). */
+  password: string;
   role?: StaffRole;
 }
 
 export const createStaff = async (input: CreateStaffInput): Promise<StaffPublic> => {
   const id = await nextStaffId();
   const pin_hash = hashPin(input.pin);
+  const password_hash = hashPassword(input.password);
   await getDb().execute({
-    sql: `INSERT INTO staff (id, name, username, pin_hash, role, status)
-          VALUES (@id, @name, @username, @pin_hash, @role, 'active')`,
+    sql: `INSERT INTO staff (id, name, username, pin_hash, password_hash, password_updated_at, role, status)
+          VALUES (@id, @name, @username, @pin_hash, @password_hash, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), @role, 'active')`,
     args: {
       id,
       name: input.name.trim(),
       username: input.username.trim().toLowerCase(),
       pin_hash,
+      password_hash,
       role: input.role === 'admin' ? 'admin' : 'staff',
     },
   });
@@ -2122,4 +2177,438 @@ export const completePinResetRequest = async (
   const row = await getStaffRowById(staffId);
   if (row) syncEvent('staff-pin-set', { id: staffId, pin_hash: row.pin_hash, pin_updated_at: row.pin_updated_at });
   return true;
+};
+
+// ─── Staff web-console password (admin console login, role STAFF) ───────────
+// Separate credential from pin_hash (Staff Mode on the physical kiosk, rule
+// 10) — reuses the same scrypt primitives, just a different column.
+
+/** scrypt hash, same format as hashPin: 'saltHex:hashHex'. */
+export const hashPassword = (password: string): string => hashPin(password);
+export const verifyPassword = (password: string, stored: string): boolean => verifyPin(password, stored);
+
+export const setStaffPassword = async (id: string, password: string): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff SET password_hash = @password_hash,
+            password_updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = @id`,
+    args: { id, password_hash: hashPassword(password) },
+  });
+};
+
+export type StaffPasswordCheckResult =
+  | { ok: true; staff: StaffPublic }
+  | { ok: false; reason: 'INVALID' | 'DISABLED' };
+
+/**
+ * Verify a Staff web-login attempt. Deliberately does not touch
+ * failed_attempts/locked_until — those guard the physical-kiosk PIN, and a
+ * web brute-force attempt must not be able to lock a staff member out of
+ * Staff Mode on the kiosk. Brute-force protection for this path is the
+ * existing per-IP rate limiter in the Next.js login route (it wraps this
+ * check the same way it wraps the Admin credential check).
+ */
+export const verifyStaffPassword = async (
+  username: string,
+  password: string,
+): Promise<StaffPasswordCheckResult> => {
+  const row = await getStaffRowByUsername(username);
+  if (!row || !row.password_hash || !verifyPassword(password, row.password_hash)) {
+    return { ok: false, reason: 'INVALID' };
+  }
+  if (row.status === 'disabled') return { ok: false, reason: 'DISABLED' };
+  return { ok: true, staff: toPublicStaff(row) };
+};
+
+// ─── Customer "Ask for Assistance" ───────────────────────────────────────────
+
+export type AssistanceStatus = 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED' | 'EXPIRED';
+const ACTIVE_ASSISTANCE_STATUSES: AssistanceStatus[] = ['PENDING', 'ACKNOWLEDGED'];
+
+export interface AssistanceRequestRow {
+  id: string;
+  kiosk_id: string;
+  status: AssistanceStatus;
+  message: string | null;
+  customer_session_id: string | null;
+  requested_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  escalated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapAssistance = (r: Record<string, unknown>): AssistanceRequestRow => ({
+  id: String(r.id),
+  kiosk_id: String(r.kiosk_id),
+  status: String(r.status) as AssistanceStatus,
+  message: (r.message as string) ?? null,
+  customer_session_id: (r.customer_session_id as string) ?? null,
+  requested_at: String(r.requested_at),
+  acknowledged_at: (r.acknowledged_at as string) ?? null,
+  acknowledged_by: (r.acknowledged_by as string) ?? null,
+  resolved_at: (r.resolved_at as string) ?? null,
+  resolved_by: (r.resolved_by as string) ?? null,
+  escalated_at: (r.escalated_at as string) ?? null,
+  created_at: String(r.created_at),
+  updated_at: String(r.updated_at),
+});
+
+export const getAssistanceRequestById = async (id: string): Promise<AssistanceRequestRow | null> => {
+  const result = await getDb().execute({ sql: `SELECT * FROM assistance_requests WHERE id = @id`, args: { id } });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapAssistance(row) : null;
+};
+
+export const getActiveAssistanceRequest = async (kioskId: string): Promise<AssistanceRequestRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM assistance_requests WHERE kiosk_id = @kioskId AND status IN ('PENDING','ACKNOWLEDGED')
+          ORDER BY requested_at DESC LIMIT 1`,
+    args: { kioskId },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapAssistance(row) : null;
+};
+
+/**
+ * What the customer-facing kiosk UI polls: the active request, or one that
+ * just concluded (grace window) so "Assistance completed." has a moment to
+ * show before the Ask-for-Assistance button reappears.
+ */
+const CONCLUDED_GRACE_SECONDS = 60;
+export const getKioskAssistanceStatus = async (kioskId: string): Promise<AssistanceRequestRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM assistance_requests
+          WHERE kiosk_id = @kioskId
+            AND (
+              status IN ('PENDING','ACKNOWLEDGED')
+              OR (status IN ('RESOLVED','CANCELLED','EXPIRED')
+                  AND updated_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${CONCLUDED_GRACE_SECONDS} seconds'))
+            )
+          ORDER BY requested_at DESC LIMIT 1`,
+    args: { kioskId },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapAssistance(row) : null;
+};
+
+export type CreateAssistanceResult =
+  | { ok: true; request: AssistanceRequestRow }
+  | { ok: false; reason: 'ACTIVE_EXISTS'; request: AssistanceRequestRow }
+  | { ok: false; reason: 'COOLDOWN'; retryAfterSeconds: number }
+  | { ok: false; reason: 'RATE_LIMITED' };
+
+/**
+ * Kiosk side: create a request after enforcing (rules 18/19) one-active-per-
+ * kiosk, a cooldown since the last request, and a rolling-window cap — all
+ * server-side, not just in the Flutter UI. On success, also raises the one
+ * (broadcast) staff_notifications row for it and pushes it to the cloud
+ * outbox so Staff sees it without the kiosk needing to know who's online.
+ */
+export const createAssistanceRequest = async (
+  kioskId: string,
+  message?: string,
+  customerSessionId?: string,
+): Promise<CreateAssistanceResult> => {
+  const db = getDb();
+
+  const active = await getActiveAssistanceRequest(kioskId);
+  if (active) return { ok: false, reason: 'ACTIVE_EXISTS', request: active };
+
+  const lastRes = await db.execute({
+    sql: `SELECT requested_at FROM assistance_requests WHERE kiosk_id = @kioskId ORDER BY requested_at DESC LIMIT 1`,
+    args: { kioskId },
+  });
+  const last = firstRow<{ requested_at: string }>(lastRes);
+  if (last) {
+    const elapsedSeconds = (Date.now() - Date.parse(last.requested_at)) / 1000;
+    if (elapsedSeconds < config.assistance.requestCooldownSeconds) {
+      return {
+        ok: false,
+        reason: 'COOLDOWN',
+        retryAfterSeconds: Math.max(1, Math.ceil(config.assistance.requestCooldownSeconds - elapsedSeconds)),
+      };
+    }
+  }
+
+  const windowRes = await db.execute({
+    sql: `SELECT COUNT(*) AS n FROM assistance_requests
+          WHERE kiosk_id = @kioskId
+            AND requested_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(1, config.assistance.rateLimitWindowSeconds)} seconds')`,
+    args: { kioskId },
+  });
+  const countInWindow = Number(firstRow<{ n: number }>(windowRes)?.n ?? 0);
+  if (countInWindow >= config.assistance.maxRequestsPerWindow) {
+    return { ok: false, reason: 'RATE_LIMITED' };
+  }
+
+  const id = randomUUID();
+  await db.execute({
+    sql: `INSERT INTO assistance_requests (id, kiosk_id, message, customer_session_id)
+          VALUES (@id, @kioskId, @message, @customerSessionId)`,
+    args: { id, kioskId, message: message ?? null, customerSessionId: customerSessionId ?? null },
+  });
+  await db.execute({
+    sql: `INSERT INTO staff_notifications (id, assistance_request_id) VALUES (@id, @requestId)`,
+    args: { id: randomUUID(), requestId: id },
+  });
+
+  const request = await getAssistanceRequestById(id);
+  if (!request) throw new Error('Failed to read back assistance request');
+  syncEvent('assistance-request', request);
+  return { ok: true, request };
+};
+
+/**
+ * Cloud side: idempotently ingest a request pushed up from a kiosk via sync.
+ * Transport-level idempotency (X-Sync-Event-Id / sync_received_events) already
+ * guarantees this runs once per event, so ON CONFLICT DO NOTHING here is
+ * defense in depth, matching insertIncident/insertPinResetRequestFromSync.
+ */
+export const insertAssistanceRequestFromSync = async (row: AssistanceRequestRow): Promise<void> => {
+  const db = getDb();
+  await db.execute({
+    sql: `INSERT INTO assistance_requests
+            (id, kiosk_id, status, message, customer_session_id, requested_at, created_at, updated_at)
+          VALUES (@id, @kiosk_id, @status, @message, @customer_session_id, @requested_at, @created_at, @updated_at)
+          ON CONFLICT(id) DO NOTHING`,
+    args: {
+      id: row.id,
+      kiosk_id: row.kiosk_id,
+      status: row.status,
+      message: row.message,
+      customer_session_id: row.customer_session_id,
+      requested_at: row.requested_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    },
+  });
+  await db.execute({
+    sql: `INSERT INTO staff_notifications (id, assistance_request_id)
+          SELECT @id, @requestId WHERE NOT EXISTS (
+            SELECT 1 FROM staff_notifications WHERE assistance_request_id = @requestId
+          )`,
+    args: { id: randomUUID(), requestId: row.id },
+  });
+};
+
+const markNotificationsReadForRequest = async (requestId: string): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE staff_notifications SET status = 'READ', read_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE assistance_request_id = @requestId AND status = 'UNREAD'`,
+    args: { requestId },
+  });
+};
+
+/** Cloud side: Staff claims a PENDING request. Atomic — only the first caller wins. */
+export const acknowledgeAssistanceRequest = async (
+  id: string,
+  staffUsername: string,
+): Promise<AssistanceRequestRow | null> => {
+  const result = await getDb().execute({
+    sql: `UPDATE assistance_requests
+          SET status = 'ACKNOWLEDGED', acknowledged_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+              acknowledged_by = @staffUsername, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id = @id AND status = 'PENDING'`,
+    args: { id, staffUsername },
+  });
+  if (result.rowsAffected === 0) return null;
+  await markNotificationsReadForRequest(id);
+  return getAssistanceRequestById(id);
+};
+
+/** Cloud side: mark an ACKNOWLEDGED request done. */
+export const resolveAssistanceRequest = async (
+  id: string,
+  staffUsername: string,
+): Promise<AssistanceRequestRow | null> => {
+  const result = await getDb().execute({
+    sql: `UPDATE assistance_requests
+          SET status = 'RESOLVED', resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+              resolved_by = @staffUsername, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id = @id AND status = 'ACKNOWLEDGED'`,
+    args: { id, staffUsername },
+  });
+  if (result.rowsAffected === 0) return null;
+  return getAssistanceRequestById(id);
+};
+
+/**
+ * Cancel a still-active request. Used both kiosk-side (customer cancels their
+ * own still-PENDING request) and cloud-side (Admin cancels PENDING or
+ * ACKNOWLEDGED). `fromStatuses` scopes which starting states are allowed.
+ */
+export const cancelAssistanceRequest = async (
+  id: string,
+  fromStatuses: AssistanceStatus[] = ACTIVE_ASSISTANCE_STATUSES,
+): Promise<AssistanceRequestRow | null> => {
+  const db = getDb();
+  const placeholders = fromStatuses.map((_, i) => `@s${i}`).join(', ');
+  const args: Record<string, string> = { id };
+  fromStatuses.forEach((s, i) => (args[`s${i}`] = s));
+  const result = await db.execute({
+    sql: `UPDATE assistance_requests SET status = 'CANCELLED', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id = @id AND status IN (${placeholders})`,
+    args,
+  });
+  if (result.rowsAffected === 0) return null;
+  await markNotificationsReadForRequest(id);
+  return getAssistanceRequestById(id);
+};
+
+/** Kiosk side: apply a status change received via the command downlink (rule: cloud → kiosk). */
+export const applyAssistanceStatusFromCommand = async (
+  id: string,
+  status: AssistanceStatus,
+  by: string | null,
+): Promise<void> => {
+  const db = getDb();
+  const now = `strftime('%Y-%m-%dT%H:%M:%SZ','now')`;
+  if (status === 'ACKNOWLEDGED') {
+    await db.execute({
+      sql: `UPDATE assistance_requests SET status='ACKNOWLEDGED', acknowledged_at=${now}, acknowledged_by=@by, updated_at=${now} WHERE id=@id`,
+      args: { id, by: by ?? null },
+    });
+  } else if (status === 'RESOLVED') {
+    await db.execute({
+      sql: `UPDATE assistance_requests SET status='RESOLVED', resolved_at=${now}, resolved_by=@by, updated_at=${now} WHERE id=@id`,
+      args: { id, by: by ?? null },
+    });
+  } else if (status === 'CANCELLED') {
+    await db.execute({
+      sql: `UPDATE assistance_requests SET status='CANCELLED', updated_at=${now} WHERE id=@id`,
+      args: { id },
+    });
+  }
+};
+
+/** Rule 30: PENDING → EXPIRED after ASSISTANCE_EXPIRATION_TIME. Returns the newly-expired rows. */
+export const expireStaleAssistanceRequests = async (): Promise<AssistanceRequestRow[]> => {
+  const db = getDb();
+  const staleRes = await db.execute(
+    `SELECT * FROM assistance_requests WHERE status = 'PENDING'
+       AND requested_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(1, config.assistance.expirationSeconds)} seconds')`,
+  );
+  const stale = toRows<Record<string, unknown>>(staleRes).map(mapAssistance);
+  if (stale.length === 0) return [];
+  const placeholders = stale.map((_, i) => `@id${i}`).join(', ');
+  const args: Record<string, string> = {};
+  stale.forEach((r, i) => (args[`id${i}`] = r.id));
+  await db.execute({
+    sql: `UPDATE assistance_requests SET status = 'EXPIRED', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id IN (${placeholders})`,
+    args,
+  });
+  return stale.map((r) => ({ ...r, status: 'EXPIRED' as AssistanceStatus }));
+};
+
+/**
+ * Rule 30/31: PENDING → escalate (once) after ASSISTANCE_ESCALATION_TIME.
+ * Reuses the existing incidents mechanism as the admin notification channel
+ * instead of a second one — returns the rows so the caller can log + incident
+ * each one exactly once (escalated_at guards against re-escalating).
+ */
+export const escalateStaleAssistanceRequests = async (): Promise<AssistanceRequestRow[]> => {
+  const db = getDb();
+  const dueRes = await db.execute(
+    `SELECT * FROM assistance_requests WHERE status = 'PENDING' AND escalated_at IS NULL
+       AND requested_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(1, config.assistance.escalationSeconds)} seconds')`,
+  );
+  const due = toRows<Record<string, unknown>>(dueRes).map(mapAssistance);
+  if (due.length === 0) return [];
+  const placeholders = due.map((_, i) => `@id${i}`).join(', ');
+  const args: Record<string, string> = {};
+  due.forEach((r, i) => (args[`id${i}`] = r.id));
+  await db.execute({
+    sql: `UPDATE assistance_requests SET escalated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id IN (${placeholders})`,
+    args,
+  });
+  return due;
+};
+
+export const listAssistanceRequests = async (
+  opts: { status?: AssistanceStatus; kioskId?: string; limit?: number } = {},
+): Promise<AssistanceRequestRow[]> => {
+  const args: Record<string, string | number> = { limit: Math.min(opts.limit ?? 100, 500) };
+  const clauses: string[] = [];
+  if (opts.status) {
+    clauses.push('status = @status');
+    args.status = opts.status;
+  }
+  if (opts.kioskId) {
+    clauses.push('kiosk_id = @kioskId');
+    args.kioskId = opts.kioskId;
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const result = await getDb().execute({
+    sql: `SELECT * FROM assistance_requests${where} ORDER BY requested_at DESC LIMIT @limit`,
+    args,
+  });
+  return toRows<Record<string, unknown>>(result).map(mapAssistance);
+};
+
+export const getActiveAssistanceCount = async (): Promise<number> => {
+  const result = await getDb().execute(
+    `SELECT COUNT(*) AS n FROM assistance_requests WHERE status IN ('PENDING','ACKNOWLEDGED')`,
+  );
+  return Number(firstRow<{ n: number }>(result)?.n ?? 0);
+};
+
+// ─── Staff notifications (broadcast; see staff_notifications table comment) ──
+
+export interface StaffNotificationRow {
+  id: string;
+  assistance_request_id: string;
+  type: string;
+  status: 'UNREAD' | 'READ';
+  created_at: string;
+  read_at: string | null;
+  // Joined from the assistance request, for a self-contained list item.
+  kiosk_id: string;
+  request_status: AssistanceStatus;
+  requested_at: string;
+}
+
+export const listStaffNotifications = async (
+  opts: { status?: 'UNREAD' | 'READ'; limit?: number } = {},
+): Promise<StaffNotificationRow[]> => {
+  const args: Record<string, string | number> = { limit: Math.min(opts.limit ?? 50, 200) };
+  const where = opts.status ? ' WHERE n.status = @status' : '';
+  if (opts.status) args.status = opts.status;
+  const result = await getDb().execute({
+    sql: `SELECT n.id, n.assistance_request_id, n.type, n.status, n.created_at, n.read_at,
+                 a.kiosk_id, a.status AS request_status, a.requested_at
+          FROM staff_notifications n
+          JOIN assistance_requests a ON a.id = n.assistance_request_id${where}
+          ORDER BY n.created_at DESC LIMIT @limit`,
+    args,
+  });
+  return toRows<Record<string, unknown>>(result).map((r) => ({
+    id: String(r.id),
+    assistance_request_id: String(r.assistance_request_id),
+    type: String(r.type),
+    status: String(r.status) as 'UNREAD' | 'READ',
+    created_at: String(r.created_at),
+    read_at: (r.read_at as string) ?? null,
+    kiosk_id: String(r.kiosk_id),
+    request_status: String(r.request_status) as AssistanceStatus,
+    requested_at: String(r.requested_at),
+  }));
+};
+
+export const getUnreadNotificationCount = async (): Promise<number> => {
+  const result = await getDb().execute(`SELECT COUNT(*) AS n FROM staff_notifications WHERE status = 'UNREAD'`);
+  return Number(firstRow<{ n: number }>(result)?.n ?? 0);
+};
+
+export const markNotificationRead = async (id: string): Promise<boolean> => {
+  const result = await getDb().execute({
+    sql: `UPDATE staff_notifications SET status='READ', read_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id = @id AND status = 'UNREAD'`,
+    args: { id },
+  });
+  return result.rowsAffected > 0;
 };

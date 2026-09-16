@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 import { ConditionalLayout } from '@/components/conditional-layout';
+import { getSession } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'DocuCenter Admin',
@@ -11,12 +12,19 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Read once, server-side, and hand the role down as a prop — the nav (a
+  // Client Component, for usePathname()) filters what it renders from this
+  // instead of re-deriving auth state itself. Absent on /login and /legal,
+  // where no session exists yet.
+  const session = await getSession().catch(() => null);
+  const role = session?.user?.role ?? null;
+
   return (
     <html lang="en">
       <body className="text-slate-800 antialiased">
         <Providers>
-          <ConditionalLayout>{children}</ConditionalLayout>
+          <ConditionalLayout role={role}>{children}</ConditionalLayout>
         </Providers>
       </body>
     </html>

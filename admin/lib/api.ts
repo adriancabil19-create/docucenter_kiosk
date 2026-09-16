@@ -31,6 +31,9 @@ import type {
   StaffActivityResponse,
   PinResetRequestsResponse,
   PinResetDecisionResponse,
+  AssistanceRequestsResponse,
+  AssistanceMutationResponse,
+  NotificationsResponse,
 } from './types';
 
 export type { DateRange };
@@ -231,6 +234,8 @@ export const createStaff = (payload: {
   username: string;
   pin: string;
   confirmPin: string;
+  password: string;
+  confirmPassword: string;
   role: StaffRole;
   actor?: string;
 }): Promise<StaffMutationResponse> =>
@@ -268,6 +273,17 @@ export const resetStaffPin = (
     body: JSON.stringify({ newPin, confirmPin, actor }),
   });
 
+export const resetStaffPassword = (
+  id: string,
+  newPassword: string,
+  confirmPassword: string,
+  actor?: string,
+): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/staff/${encodeURIComponent(id)}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword, confirmPassword, actor }),
+  });
+
 export const getStaffActivity = (limit = 100): Promise<StaffActivityResponse> =>
   apiFetch<StaffActivityResponse>(`/api/staff/activity?limit=${limit}`);
 
@@ -285,3 +301,47 @@ export const denyPinResetRequest = (id: string, actor?: string): Promise<PinRese
     method: 'POST',
     body: JSON.stringify({ actor }),
   });
+
+// ─── Customer Assistance ────────────────────────────────────────────────────
+
+export const getAssistanceRequests = (opts?: {
+  status?: string;
+  kioskId?: string;
+  limit?: number;
+}): Promise<AssistanceRequestsResponse> => {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.kioskId) params.set('kioskId', opts.kioskId);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  return apiFetch<AssistanceRequestsResponse>(`/api/assistance${qs ? `?${qs}` : ''}`);
+};
+
+export const acknowledgeAssistanceRequest = (id: string, actor?: string): Promise<AssistanceMutationResponse> =>
+  apiFetch<AssistanceMutationResponse>(`/api/assistance/${encodeURIComponent(id)}/acknowledge`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const resolveAssistanceRequest = (id: string, actor?: string): Promise<AssistanceMutationResponse> =>
+  apiFetch<AssistanceMutationResponse>(`/api/assistance/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const cancelAssistanceRequest = (id: string, actor?: string): Promise<AssistanceMutationResponse> =>
+  apiFetch<AssistanceMutationResponse>(`/api/assistance/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });
+
+export const getNotifications = (opts?: { status?: 'UNREAD' | 'READ'; limit?: number }): Promise<NotificationsResponse> => {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  return apiFetch<NotificationsResponse>(`/api/assistance/notifications${qs ? `?${qs}` : ''}`);
+};
+
+export const markNotificationRead = (id: string): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/assistance/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });

@@ -28,10 +28,13 @@ import {
   applyStaffPinHash,
   bumpStaffLogin,
   getPaperTrays,
+  insertAssistanceRequestFromSync,
+  cancelAssistanceRequest,
   TransactionRow,
   PrintJobRow,
   StorageDocMetaInput,
   PinResetRequestRow,
+  AssistanceRequestRow,
 } from '../database';
 import { getDb } from '../database';
 
@@ -298,6 +301,39 @@ router.post('/staff-login', async (req: Request, res: Response): Promise<void> =
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: failed to record staff login', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/assistance-request', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const row = req.body as AssistanceRequestRow;
+    if (!row?.id || !row?.kiosk_id || !row?.status) {
+      res.status(400).json({ success: false, error: 'id, kiosk_id, status required' });
+      return;
+    }
+    await insertAssistanceRequestFromSync(row);
+    logger.info('Sync: assistance request received', { id: row.id, kiosk_id: row.kiosk_id });
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to insert assistance request', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/assistance-cancel', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id } = req.body as { id?: string };
+    if (!id) {
+      res.status(400).json({ success: false, error: 'id required' });
+      return;
+    }
+    await cancelAssistanceRequest(id);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: assistance-cancel failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

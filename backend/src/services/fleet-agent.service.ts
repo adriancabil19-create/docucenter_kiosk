@@ -31,6 +31,7 @@ import {
   listStaffRoster,
   upsertStaffFromRoster,
   applyPinResetDecision,
+  applyAssistanceStatusFromCommand,
   getPaperTrays,
   applyPaperTrayFromCloud,
   type DeviceState,
@@ -272,6 +273,20 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         }
         await applyPinResetDecision(params.requestId, params.decision, cmd.created_by ?? 'admin');
         result = `PIN recovery request ${params.decision}`;
+        break;
+      }
+      case 'ASSISTANCE_STATUS_CHANGED': {
+        const params = cmd.params as { requestId?: string; status?: string; by?: string } | null;
+        if (!params?.requestId || !params.status) {
+          result = 'ignored (missing params)';
+          break;
+        }
+        await applyAssistanceStatusFromCommand(
+          params.requestId,
+          params.status as 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+          params.by ?? null,
+        );
+        result = `assistance request ${params.status.toLowerCase()}`;
         break;
       }
       default:

@@ -11,6 +11,27 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+// Pages role STAFF may not open. Everything not listed here (Dashboard,
+// Kiosks, Kiosk Status, Assistance) is shared with ADMIN. Enforced here (not
+// just by hiding nav links) since this runs server-side before the page
+// renders — see rule 6, "hiding buttons is not sufficient."
+const ADMIN_ONLY_PATH_PREFIXES = [
+  '/staff',
+  '/pricing',
+  '/payments',
+  '/storage',
+  '/paper',
+  '/print-jobs',
+  '/transactions',
+  '/analytics',
+  '/logs',
+  '/alerts',
+];
+
+function isAdminOnlyPath(pathname: string): boolean {
+  return ADMIN_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -26,13 +47,13 @@ export async function proxy(request: NextRequest) {
   // enough, a forged cookie value must be rejected. Any failure (bad cookie,
   // missing/short SESSION_SECRET) is treated as "not authenticated".
   const res = NextResponse.next();
-  let authed = false;
+  let session: SessionData | null = null;
   try {
-    const session = await getIronSession<SessionData>(request, res, sessionOptions);
-    authed = Boolean(session.user);
+    session = await getIronSession<SessionData>(request, res, sessionOptions);
   } catch {
-    authed = false;
+    session = null;
   }
+  const authed = Boolean(session?.user);
 
   if (!authed) {
     if (pathname.startsWith('/api/')) {
@@ -40,6 +61,12 @@ export async function proxy(request: NextRequest) {
     }
     const loginUrl = new URL('/login', request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Role is decided server-side at login (session.user.role) — never trust a
+  // client-supplied role for this check.
+  if (session!.user!.role === 'STAFF' && !pathname.startsWith('/api/') && isAdminOnlyPath(pathname)) {
+    return NextResponse.redirect(new URL('/assistance', request.url));
   }
 
   return res;

@@ -20,6 +20,8 @@ import {
   updateStaff,
   setStaffStatus,
   setStaffPin,
+  setStaffPassword,
+  verifyStaffPassword,
   getStaffRowByUsername,
   getStaffRowById,
   isStaffLocked,
@@ -43,6 +45,7 @@ const router = Router();
 
 const PIN_RE = /^\d{6}$/;
 const isValidPin = (v: unknown): v is string => typeof v === 'string' && PIN_RE.test(v);
+const isValidPassword = (v: unknown): v is string => typeof v === 'string' && v.length >= 8;
 
 // ─── Admin-gated: Staff CRUD ──────────────────────────────────────────────────
 
@@ -58,8 +61,9 @@ router.get('/', requireAdminApiToken, async (_req: Request, res: Response): Prom
 
 router.post('/', requireAdminApiToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, username, pin, confirmPin, role, actor } = req.body as {
-      name?: string; username?: string; pin?: string; confirmPin?: string; role?: string; actor?: string;
+    const { name, username, pin, confirmPin, password, confirmPassword, role, actor } = req.body as {
+      name?: string; username?: string; pin?: string; confirmPin?: string;
+      password?: string; confirmPassword?: string; role?: string; actor?: string;
     };
     if (!name?.trim() || !username?.trim()) {
       res.status(400).json({ success: false, error: 'Name and username are required' });
@@ -73,12 +77,24 @@ router.post('/', requireAdminApiToken, async (req: Request, res: Response): Prom
       res.status(400).json({ success: false, error: 'PIN confirmation does not match' });
       return;
     }
+    if (!isValidPassword(password)) {
+      res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+      return;
+    }
+    if (password !== confirmPassword) {
+      res.status(400).json({ success: false, error: 'Password confirmation does not match' });
+      return;
+    }
     if (await getStaffRowByUsername(username)) {
       res.status(409).json({ success: false, error: 'Username is already taken' });
       return;
     }
+    // Role here is the kiosk Staff-Mode privilege level, never the admin
+    // console identity — a staff account created here can only ever reach the
+    // console as role STAFF (see admin/app/api/auth/login/route.ts). Nothing
+    // in this endpoint can mint a console ADMIN.
     const roleValue: StaffRole = role === 'admin' ? 'admin' : 'staff';
-    const staff = await createStaff({ name, username, pin, role: roleValue });
+    const staff = await createStaff({ name, username, pin, password, role: roleValue });
     await insertLog('info', 'staff', `${actor ?? 'Admin'} created staff account`, {
       actor: actor ?? 'admin',
       staffId: staff.id,
@@ -182,6 +198,73 @@ router.post('/:id/reset-pin', requireAdminApiToken, async (req: Request, res: Re
     res.json({ success: true });
   } catch (err) {
     logger.error('Staff: admin PIN reset failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+/** Admin-initiated password reset — the recovery path, since Staff has no self-service "forgot password". */
+router.post('/:id/reset-password', requireAdminApiToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { newPassword, confirmPassword, actor } = req.body as {
+      newPassword?: string; confirmPassword?: string; actor?: string;
+    };
+    if (!isValidPassword(newPassword)) {
+      res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      res.status(400).json({ success: false, error: 'Password confirmation does not match' });
+      return;
+    }
+    const staff = await getStaffById(id);
+    if (!staff) {
+      res.status(404).json({ success: false, error: 'Staff not found' });
+      return;
+    }
+    await setStaffPassword(id, newPassword);
+    await insertLog('warn', 'staff', `${actor ?? 'Admin'} reset a staff console password`, {
+      actor: actor ?? 'admin',
+      staffId: id,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Staff: admin password reset failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+/**
+ * Server-to-server only: called by the Next.js admin app's own login route
+ * (never by the browser) using the admin bearer token to check a Staff web
+ * login attempt. Not reachable through the public `/api/backend/*` proxy —
+ * that allowlist does not include this path.
+ */
+router.post('/verify-password', requireAdminApiToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { username, password } = req.body as { username?: string; password?: string };
+    if (!username || !password) {
+      res.status(400).json({ success: false, error: 'Username and password are required' });
+      return;
+    }
+    const result = await verifyStaffPassword(username, password);
+    if (!result.ok) {
+      // strictNullChecks is off project-wide, so the union doesn't narrow
+      // across statements here — assert the failure shape explicitly.
+      const failure = result as Exclude<typeof result, { ok: true }>;
+      if (failure.reason !== 'DISABLED') {
+        await insertLog('warn', 'staff', 'Staff console login failed', { username });
+      }
+      res.status(failure.reason === 'DISABLED' ? 403 : 401).json({ success: false, error: failure.reason });
+      return;
+    }
+    await insertLog('info', 'staff', `${result.staff.username} logged into the admin console`, {
+      username: result.staff.username,
+      staffId: result.staff.id,
+    });
+    res.json({ success: true, staff: result.staff });
+  } catch (err) {
+    logger.error('Staff: verify-password failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

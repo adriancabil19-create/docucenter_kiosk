@@ -22,7 +22,9 @@ export type SyncEventType =
   | 'storage-doc-delete'
   | 'staff-pin-reset-request'
   | 'staff-pin-set'
-  | 'staff-login';
+  | 'staff-login'
+  | 'assistance-request'
+  | 'assistance-cancel';
 
 /** Give up on an outbox row after this many failed POSTs (~1 day with backoff). */
 const MAX_SYNC_ATTEMPTS = 25;

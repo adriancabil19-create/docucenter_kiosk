@@ -258,6 +258,60 @@ export interface FleetSummary {
   openIncidents: number;
   kiosks: { total: number; online: number; offline: number };
   pendingStaffPinRequests: number;
+  pendingAssistanceRequests: number;
+}
+
+// ─── Customer Assistance ──────────────────────────────────────────────────────
+
+export type AssistanceStatus = 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED' | 'EXPIRED';
+
+export interface AssistanceRequest {
+  id: string;
+  kiosk_id: string;
+  status: AssistanceStatus;
+  message: string | null;
+  customer_session_id: string | null;
+  requested_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  escalated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type NotificationStatus = 'UNREAD' | 'READ';
+
+export interface StaffNotification {
+  id: string;
+  assistance_request_id: string;
+  type: string;
+  status: NotificationStatus;
+  created_at: string;
+  read_at: string | null;
+  kiosk_id: string;
+  request_status: AssistanceStatus;
+  requested_at: string;
+}
+
+export interface AssistanceRequestsResponse {
+  success: boolean;
+  requests: AssistanceRequest[];
+  count: number;
+}
+
+export interface AssistanceMutationResponse {
+  success: boolean;
+  request?: AssistanceRequest;
+  error?: string;
+}
+
+export interface NotificationsResponse {
+  success: boolean;
+  notifications: StaffNotification[];
+  count: number;
+  unreadCount: number;
 }
 
 // ─── Staff ────────────────────────────────────────────────────────────────────

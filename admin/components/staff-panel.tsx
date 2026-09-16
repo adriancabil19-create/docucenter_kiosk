@@ -28,6 +28,7 @@ import {
   disableStaff,
   reactivateStaff,
   resetStaffPin,
+  resetStaffPassword,
   getPendingPinResetRequests,
   approvePinResetRequest,
   denyPinResetRequest,
@@ -100,7 +101,15 @@ function StaffStatusChip({ status }: { status: StaffMember['status'] }) {
   );
 }
 
-const emptyCreateForm = { name: '', username: '', pin: '', confirmPin: '', role: 'staff' as StaffRole };
+const emptyCreateForm = {
+  name: '',
+  username: '',
+  pin: '',
+  confirmPin: '',
+  password: '',
+  confirmPassword: '',
+  role: 'staff' as StaffRole,
+};
 
 export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
   const staffFetcher = useMemo(() => () => getStaff().then((r) => r.staff), []);
@@ -140,7 +149,7 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
   const [creating, setCreating] = useState(false);
 
   const submitCreate = async () => {
-    const { name, username, pin, confirmPin, role } = createForm;
+    const { name, username, pin, confirmPin, password, confirmPassword, role } = createForm;
     if (!name.trim() || !username.trim()) {
       addToast({ title: 'Missing fields', description: 'Name and username are required.', color: 'warning' });
       return;
@@ -153,9 +162,30 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
       addToast({ title: 'PIN mismatch', description: 'PIN and confirmation do not match.', color: 'warning' });
       return;
     }
+    if (password.length < 8) {
+      addToast({
+        title: 'Invalid password',
+        description: 'Password must be at least 8 characters.',
+        color: 'warning',
+      });
+      return;
+    }
+    if (password !== confirmPassword) {
+      addToast({ title: 'Password mismatch', description: 'Password and confirmation do not match.', color: 'warning' });
+      return;
+    }
     setCreating(true);
     try {
-      const res = await createStaff({ name, username, pin, confirmPin, role, actor: currentAdmin });
+      const res = await createStaff({
+        name,
+        username,
+        pin,
+        confirmPin,
+        password,
+        confirmPassword,
+        role,
+        actor: currentAdmin,
+      });
       if (!res.success || !res.staff) throw new Error(res.error ?? 'Failed to create staff account');
       addToast({
         title: 'Staff account created',
@@ -232,6 +262,50 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
       addToast({ title: 'Reset failed', description: (err as Error).message, color: 'danger' });
     } finally {
       setResetting(false);
+    }
+  };
+
+  // Reset Password (web-console login, separate from Reset PIN above)
+  const resetPasswordModal = useDisclosure();
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<StaffMember | null>(null);
+  const [resetPasswordForm, setResetPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [resettingPassword, setResettingPassword] = useState(false);
+
+  const openResetPassword = (s: StaffMember) => {
+    setResetPasswordTarget(s);
+    setResetPasswordForm({ newPassword: '', confirmPassword: '' });
+    resetPasswordModal.onOpen();
+  };
+
+  const submitResetPassword = async () => {
+    if (!resetPasswordTarget) return;
+    if (resetPasswordForm.newPassword.length < 8 || resetPasswordForm.newPassword !== resetPasswordForm.confirmPassword) {
+      addToast({
+        title: 'Invalid password',
+        description: 'Enter a matching password of at least 8 characters in both fields.',
+        color: 'warning',
+      });
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      const res = await resetStaffPassword(
+        resetPasswordTarget.id,
+        resetPasswordForm.newPassword,
+        resetPasswordForm.confirmPassword,
+        currentAdmin,
+      );
+      if (!res.success) throw new Error(res.error ?? 'Failed to reset password');
+      addToast({
+        title: 'Password reset',
+        description: `${resetPasswordTarget.username}'s console password has been changed.`,
+        color: 'success',
+      });
+      resetPasswordModal.onClose();
+    } catch (err) {
+      addToast({ title: 'Reset failed', description: (err as Error).message, color: 'danger' });
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -351,6 +425,7 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
                   <div className="flex flex-wrap gap-1.5">
                     <Button size="sm" variant="flat" onPress={() => openEdit(s)}>Edit</Button>
                     <Button size="sm" variant="flat" onPress={() => openReset(s)}>Reset PIN</Button>
+                    <Button size="sm" variant="flat" onPress={() => openResetPassword(s)}>Reset Password</Button>
                     <ConfirmButton
                       label={s.status === 'active' ? 'Disable' : 'Reactivate'}
                       confirmLabel="Confirm?"
@@ -430,14 +505,31 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
                   onChange={(e) => setCreateForm((f) => ({ ...f, confirmPin: e.target.value.replace(/\D/g, '') }))} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">Console Password</label>
+                <input className={inputClass} type="password" value={createForm.password}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">Confirm Password</label>
+                <input className={inputClass} type="password" value={createForm.confirmPassword}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, confirmPassword: e.target.value }))} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              The PIN above is for Staff Mode on the physical kiosk. This password is separate — it&apos;s
+              what this staff member uses to sign in to this admin console (at least 8 characters), always
+              with limited (Staff) console access — this account can never sign in as the console Admin.
+            </p>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Role</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Kiosk Staff-Mode Role</label>
               <Select
                 selectedKeys={[createForm.role]}
                 onSelectionChange={(keys) =>
                   setCreateForm((f) => ({ ...f, role: (Array.from(keys)[0] as StaffRole) ?? 'staff' }))
                 }
-                aria-label="Role"
+                aria-label="Kiosk Staff-Mode role"
               >
                 <SelectItem key="staff">Staff</SelectItem>
                 <SelectItem key="admin">Admin</SelectItem>
@@ -467,13 +559,13 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
                 onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Role</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Kiosk Staff-Mode Role</label>
               <Select
                 selectedKeys={[editForm.role]}
                 onSelectionChange={(keys) =>
                   setEditForm((f) => ({ ...f, role: (Array.from(keys)[0] as StaffRole) ?? 'staff' }))
                 }
-                aria-label="Role"
+                aria-label="Kiosk Staff-Mode role"
               >
                 <SelectItem key="staff">Staff</SelectItem>
                 <SelectItem key="admin">Admin</SelectItem>
@@ -507,6 +599,30 @@ export function StaffPanel({ currentAdmin }: { currentAdmin: string }) {
           <ModalFooter>
             <Button variant="flat" onPress={resetModal.onClose}>Cancel</Button>
             <Button color="primary" isLoading={resetting} onPress={submitReset}>Reset PIN</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Reset Password (web-console login) */}
+      <Modal isOpen={resetPasswordModal.isOpen} onOpenChange={resetPasswordModal.onOpenChange} classNames={glassModalClassNames}>
+        <ModalContent>
+          <ModalHeader>Reset Console Password</ModalHeader>
+          <ModalBody className="space-y-3">
+            <p className="text-sm text-slate-700">Staff: <span className="font-semibold">{resetPasswordTarget?.name}</span></p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">New Password</label>
+              <input className={inputClass} type="password" value={resetPasswordForm.newPassword}
+                onChange={(e) => setResetPasswordForm((f) => ({ ...f, newPassword: e.target.value }))} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Confirm New Password</label>
+              <input className={inputClass} type="password" value={resetPasswordForm.confirmPassword}
+                onChange={(e) => setResetPasswordForm((f) => ({ ...f, confirmPassword: e.target.value }))} />
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={resetPasswordModal.onClose}>Cancel</Button>
+            <Button color="primary" isLoading={resettingPassword} onPress={submitResetPassword}>Reset Password</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

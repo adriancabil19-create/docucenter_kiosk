@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { getIronSession } from 'iron-session';
 import { cookies } from 'next/headers';
 import { sessionOptions, SessionData } from '@/lib/session';
+import { backendFetch } from '@/lib/backend';
 
 // In-memory, per-process rate limit. Fine for a single admin instance; if the
 // console is ever scaled past one replica this needs a shared store.
@@ -54,9 +55,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Username and password are required' }, { status: 400 });
   }
 
-  const ok =
+  const isAdmin =
     safeEqual(username.trim(), expectedUser) && safeEqual(password.trim(), expectedPass);
-  if (!ok) {
+
+  // Staff web login (role STAFF) — a separate credential (password) from the
+  // Staff Mode PIN used on the physical kiosk. Checked against the kiosk
+  // backend's staff table via a trusted server-to-server call (this route
+  // already holds ADMIN_API_TOKEN through backendFetch); the browser never
+  // talks to that endpoint directly. Only attempted when the Admin check
+  // above didn't match, so the single env-based Admin account keeps working
+  // exactly as before.
+  let staffLogin: { id: string; name: string; username: string } | null = null;
+  if (!isAdmin) {
+    try {
+      const res = await backendFetch('/api/staff/verify-password', {
+        method: 'POST',
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          success: boolean;
+          staff?: { id: string; name: string; username: string };
+        };
+        if (data.success && data.staff) staffLogin = data.staff;
+      }
+    } catch (err) {
+      console.error('Staff login check failed (backend unreachable):', err);
+    }
+  }
+
+  if (!isAdmin && !staffLogin) {
     const next =
       current && current.resetAt > now
         ? { count: current.count + 1, resetAt: current.resetAt }
@@ -69,7 +97,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
-    session.user = { username: expectedUser };
+    session.user = isAdmin
+      ? { username: expectedUser, role: 'ADMIN' }
+      : { username: staffLogin!.username, role: 'STAFF', staffId: staffLogin!.id, name: staffLogin!.name };
     await session.save();
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -2,8 +2,15 @@
 
 import { usePathname } from 'next/navigation';
 import { NavSidebar } from '@/components/nav-sidebar';
+import type { ConsoleRole } from '@/lib/session';
 
-export function ConditionalLayout({ children }: { children: React.ReactNode }) {
+export function ConditionalLayout({
+  children,
+  role,
+}: {
+  children: React.ReactNode;
+  role: ConsoleRole | null;
+}) {
   const pathname = usePathname();
 
   // The login screen brings its own full-screen layout.
@@ -18,7 +25,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <NavSidebar />
+      <NavSidebar role={role} />
       {/* Extra top padding clears the fixed hamburger toggle everywhere it's
           visible (below `lg`) — kept separate from the sm: padding shorthand
           so it isn't overridden between the sm and lg breakpoints.

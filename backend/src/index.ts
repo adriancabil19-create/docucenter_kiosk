@@ -18,9 +18,11 @@ import transferRoutes from './routes/transfer';
 import fleetRoutes from './routes/fleet';
 import kioskRoutes from './routes/kiosk';
 import staffRoutes from './routes/staff';
+import assistanceRoutes from './routes/assistance';
 import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
 import { startMaintenanceJob } from './services/maintenance.service';
+import { startAssistanceScheduler } from './services/assistance-scheduler.service';
 import { backfillStorageDocMetas } from './services/storage.service';
 import {
   corsMiddleware,
@@ -134,6 +136,8 @@ app.use('/api/fleet', requireAdminApiToken, fleetRoutes);
 app.use('/api/kiosk', requireKioskApiToken, kioskRoutes);
 // Mixed audience (admin CRUD + kiosk login/diagnostics) — auth applied per-route inside staffRoutes.
 app.use('/api/staff', staffRoutes);
+// Mixed audience (customer create/cancel/poll + Staff/Admin console manage) — auth applied per-route.
+app.use('/api/assistance', assistanceRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 
@@ -177,6 +181,7 @@ initSchema()
     startFleetAgent();
     startRetentionJob();
     startMaintenanceJob();
+    startAssistanceScheduler();
     // Reconcile any pre-existing uploads into storage_documents (kiosk role).
     if (config.isKioskRole) void backfillStorageDocMetas();
 

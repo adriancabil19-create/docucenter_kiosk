@@ -5,23 +5,28 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getFleetSummary } from '@/lib/api';
 import type { FleetSummary } from '@/lib/types';
+import type { ConsoleRole } from '@/lib/session';
 import { LogoMark } from '@/components/logo';
 
+// `adminOnly` items are also enforced server-side in proxy.ts
+// (ADMIN_ONLY_PATH_PREFIXES) and the backend proxy route (staffAllowed) —
+// this filter is the UX layer, not the security boundary (rule 6).
 const NAV_ITEMS = [
-  { href: '/', label: 'Dashboard', icon: '📊' },
-  { href: '/kiosks', label: 'Kiosks', icon: '🖥️' },
-  { href: '/alerts', label: 'Alerts', icon: '🚨' },
-  { href: '/analytics', label: 'Analytics', icon: '📈' },
-  { href: '/transactions', label: 'Transactions', icon: '💳' },
-  { href: '/payments', label: 'Payments', icon: '💰' },
-  { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️' },
-  { href: '/paper', label: 'Paper Trays', icon: '📄' },
-  { href: '/pricing', label: 'Pricing', icon: '🏷️' },
-  { href: '/storage', label: 'Storage', icon: '🗄️' },
-  { href: '/staff', label: 'Staff Management', icon: '🧑‍💼' },
-  { href: '/logs', label: 'Activity Logs', icon: '📋' },
-  { href: '/kiosk', label: 'Kiosk Status', icon: '🩺' },
-  { href: '/legal', label: 'Legal & Privacy', icon: '📜' },
+  { href: '/', label: 'Dashboard', icon: '📊', adminOnly: false },
+  { href: '/kiosks', label: 'Kiosks', icon: '🖥️', adminOnly: false },
+  { href: '/assistance', label: 'Assistance', icon: '🆘', adminOnly: false },
+  { href: '/alerts', label: 'Alerts', icon: '🚨', adminOnly: true },
+  { href: '/analytics', label: 'Analytics', icon: '📈', adminOnly: true },
+  { href: '/transactions', label: 'Transactions', icon: '💳', adminOnly: true },
+  { href: '/payments', label: 'Payments', icon: '💰', adminOnly: true },
+  { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️', adminOnly: true },
+  { href: '/paper', label: 'Paper Trays', icon: '📄', adminOnly: true },
+  { href: '/pricing', label: 'Pricing', icon: '🏷️', adminOnly: true },
+  { href: '/storage', label: 'Storage', icon: '🗄️', adminOnly: true },
+  { href: '/staff', label: 'Staff Management', icon: '🧑‍💼', adminOnly: true },
+  { href: '/logs', label: 'Activity Logs', icon: '📋', adminOnly: true },
+  { href: '/kiosk', label: 'Kiosk Status', icon: '🩺', adminOnly: false },
+  { href: '/legal', label: 'Legal & Privacy', icon: '📜', adminOnly: false },
 ];
 
 function HamburgerIcon({ open }: { open: boolean }) {
@@ -40,8 +45,9 @@ function HamburgerIcon({ open }: { open: boolean }) {
   );
 }
 
-export function NavSidebar() {
+export function NavSidebar({ role }: { role: ConsoleRole | null }) {
   const pathname = usePathname();
+  const items = role === 'STAFF' ? NAV_ITEMS.filter((i) => !i.adminOnly) : NAV_ITEMS;
   const router = useRouter();
   const [summary, setSummary] = useState<FleetSummary | null>(null);
   // Off-canvas drawer state — only matters below the `lg` breakpoint; on
@@ -79,6 +85,9 @@ export function NavSidebar() {
     if (href === '/alerts' && summary && summary.openIncidents > 0) return summary.openIncidents;
     if (href === '/kiosks' && summary && summary.kiosks.offline > 0) return summary.kiosks.offline;
     if (href === '/staff' && summary && summary.pendingStaffPinRequests > 0) return summary.pendingStaffPinRequests;
+    if (href === '/assistance' && summary && summary.pendingAssistanceRequests > 0) {
+      return summary.pendingAssistanceRequests;
+    }
     return null;
   };
 
@@ -122,7 +131,7 @@ export function NavSidebar() {
 
         {/* Navigation */}
         <nav aria-label="Primary" className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-          {NAV_ITEMS.map(({ href, label, icon }) => {
+          {items.map(({ href, label, icon }) => {
             const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
             const badge = badgeFor(href);
             return (

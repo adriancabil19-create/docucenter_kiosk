@@ -13,6 +13,7 @@ import 'widgets/kiosk_status_overlays.dart';
 import 'widgets/idle_screen.dart';
 import 'widgets/settings_panel.dart';
 import 'widgets/docucenter_logo.dart';
+import 'widgets/ask_for_assistance_button.dart';
 import 'pages/staff/staff_mode_shell.dart';
 
 void main() async {
@@ -229,6 +230,15 @@ class _MainAppState extends State<MainApp> {
                       ),
                     ),
                   ),
+                  // Customer-facing "Ask for Assistance" (rule 12) — floats above
+                  // whichever service screen is open. Hidden during the idle
+                  // standby screen and Staff Mode, both rendered after it here.
+                  if (!_showIdleScreen && !_showStaffMode)
+                    const Positioned(
+                      right: 24,
+                      bottom: 24,
+                      child: AskForAssistanceButton(),
+                    ),
                   if (_showIdleScreen)
                     Positioned.fill(
                       child: IdleScreen(onDismiss: _dismissIdleScreen),

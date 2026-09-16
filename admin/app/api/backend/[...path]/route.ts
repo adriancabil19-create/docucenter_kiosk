@@ -12,11 +12,29 @@ const ALLOWED_PREFIXES = [
   'api/storage/',
   'api/fleet/',
   'api/staff/',
+  'api/assistance/',
 ];
-const ALLOWED_EXACT = ['health', 'api/staff'];
+const ALLOWED_EXACT = ['health', 'api/staff', 'api/assistance'];
 
 function isAllowed(path: string): boolean {
   return ALLOWED_EXACT.includes(path) || ALLOWED_PREFIXES.some((p) => path.startsWith(p));
+}
+
+// role STAFF is limited to what its console nav actually needs (rule 6:
+// backend/API authorization must enforce this, not just hidden buttons).
+// Read-only kiosk roster/liveness (for Kiosk Monitoring), the nav summary
+// badge, and the full Assistance surface. Everything else — Staff
+// Management, pricing, payments-adjacent monitoring, storage, paper trays,
+// analytics/logs — is ADMIN only.
+function staffAllowed(path: string, method: string): boolean {
+  if (path.startsWith('api/assistance')) return true;
+  if (path === 'api/fleet/summary') return true;
+  if (method !== 'GET') return false;
+  if (path === 'api/fleet/kiosks' || /^api\/fleet\/kiosks\/[^/]+$/.test(path)) return true;
+  // Kiosk Status page (rule 6/7 nav: "Kiosk Monitoring") — read-only health
+  // summary, not the broader Monitoring surface (stats/transactions/jobs/logs).
+  if (path === 'api/monitoring/kiosk-status') return true;
+  return false;
 }
 
 async function handle(
@@ -33,6 +51,10 @@ async function handle(
 
   if (path.includes('..') || !isAllowed(path)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  if (session.user.role === 'STAFF' && !staffAllowed(path, request.method)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const search = request.nextUrl.search;

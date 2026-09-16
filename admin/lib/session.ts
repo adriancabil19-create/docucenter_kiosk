@@ -1,7 +1,16 @@
 import { SessionOptions } from 'iron-session';
 
+export type ConsoleRole = 'ADMIN' | 'STAFF';
+
 export interface SessionData {
-  user?: { username: string };
+  user?: {
+    username: string;
+    /** Determined server-side at login — never trust a role from the browser. */
+    role: ConsoleRole;
+    /** Set only for role STAFF — the staff.id this session was authenticated as. */
+    staffId?: string;
+    name?: string;
+  };
 }
 
 export const sessionOptions: SessionOptions = {

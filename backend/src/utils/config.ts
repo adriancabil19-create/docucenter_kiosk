@@ -136,6 +136,22 @@ export const config = {
     secret: process.env.SYNC_SECRET || '',
   },
 
+  // Customer "Ask for Assistance" — request pacing and staff response SLAs.
+  assistance: {
+    /** Minimum seconds between two requests from the same kiosk. */
+    requestCooldownSeconds: parseInt(process.env.ASSISTANCE_REQUEST_COOLDOWN || '60', 10),
+    /** Max requests a single kiosk may create within the rate-limit window. */
+    maxRequestsPerWindow: parseInt(process.env.ASSISTANCE_MAX_REQUESTS || '5', 10),
+    /** Rolling window (seconds) the max-requests cap applies over. */
+    rateLimitWindowSeconds: parseInt(process.env.ASSISTANCE_RATE_LIMIT_WINDOW || '600', 10),
+    /** Unacknowledged PENDING request age (seconds) that triggers an admin escalation incident. */
+    escalationSeconds: parseInt(process.env.ASSISTANCE_ESCALATION_TIME || '300', 10),
+    /** Unacknowledged PENDING request age (seconds) after which it auto-expires. */
+    expirationSeconds: parseInt(process.env.ASSISTANCE_EXPIRATION_TIME || '600', 10),
+    /** How long a read notification is kept before housekeeping prunes it. */
+    notificationRetentionDays: parseInt(process.env.NOTIFICATION_RETENTION_DAYS || '30', 10),
+  },
+
   // Aiven / External DB (optional)
   aiven: {
     databaseUrl: process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '',

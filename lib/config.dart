@@ -43,6 +43,11 @@ class BackendConfig {
   /// and exempt from rate limiting / request logging.
   static const Duration kioskRuntimePollInterval = Duration(seconds: 3);
 
+  /// Customer "Ask for Assistance" — create/cancel/poll this kiosk's own
+  /// (single, server-enforced) active request.
+  static const String assistanceApiUrl = '$serverUrl/api/assistance';
+  static const Duration assistancePollInterval = Duration(seconds: 5);
+
     /// Upload endpoint on the Railway transfer relay (kiosk → phone)
     static const String transferUploadUrl = '$railwayUrl/api/transfer/upload';
 
