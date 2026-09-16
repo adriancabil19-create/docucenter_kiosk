@@ -36,7 +36,7 @@ export default function LoginPage() {
       <div className="glass-strong w-full max-w-sm p-8">
         <div className="mb-6 flex flex-col items-center text-center">
           <LogoMark size={56} />
-          <h1 className="mt-2 text-xl font-bold text-slate-900">DocuCenter Admin</h1>
+          <h1 className="mt-2 text-xl font-bold text-slate-900">DocuCenter</h1>
           <p className="text-sm text-slate-600">Sign in to continue</p>
         </div>
 
