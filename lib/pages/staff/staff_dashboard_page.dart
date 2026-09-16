@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../assistance_service.dart';
 import '../../kiosk_runtime_service.dart';
 import '../../scanner_status.dart';
 import '../../staff_service.dart';
@@ -30,6 +31,10 @@ class _StaffDashboardPageState extends State<StaffDashboardPage> {
   void initState() {
     super.initState();
     _refreshOnDemandChecks();
+    // Already polling app-wide (started by the customer-facing Ask-for-
+    // Assistance button in main.dart) — the dashboard just listens in,
+    // rather than starting a second poll of the same endpoint.
+    AssistanceState.instance.start();
   }
 
   Future<void> _refreshOnDemandChecks() async {
@@ -92,22 +97,42 @@ class _StaffDashboardPageState extends State<StaffDashboardPage> {
                     const SizedBox(height: 12),
                     _ExpiringBanner(onContinue: () => StaffSession.instance.noteActivity()),
                   ],
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  AnimatedBuilder(
+                    animation: AssistanceState.instance,
+                    builder: (context, _) {
+                      if (!AssistanceState.instance.isActive) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _AssistanceBanner(
+                          acknowledged: AssistanceState.instance.status == AssistanceStatus.acknowledged,
+                          onTap: () => widget.onNavigate('assistance'),
+                        ),
+                      );
+                    },
+                  ),
                   const Text('SYSTEM STATUS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
                   const SizedBox(height: 8),
-                  AnimatedBuilder(
-                    animation: KioskRuntime.instance,
-                    builder: (context, _) => Column(
-                      children: [
-                        const _StatusRow('Kiosk Application', _Status.ok),
-                        _StatusRow('Printer', KioskRuntime.instance.printerState == 'ONLINE' ? _Status.ok : _Status.bad),
-                        _StatusRow('Scanner', _scanner),
-                        _StatusRow('Receipt Printer', KioskRuntime.instance.printerState == 'ONLINE' ? _Status.ok : _Status.bad),
-                        _StatusRow('Payment Gateway', _payment),
-                        _StatusRow('Backend', KioskRuntime.instance.connected ? _Status.ok : _Status.bad),
-                        _StatusRow('Internet', _internet),
-                        _StatusRow('Storage', _storage),
-                      ],
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: AnimatedBuilder(
+                      animation: KioskRuntime.instance,
+                      builder: (context, _) => Column(
+                        children: [
+                          const _StatusRow('Kiosk Application', _Status.ok),
+                          _StatusRow('Printer', KioskRuntime.instance.printerState == 'ONLINE' ? _Status.ok : _Status.bad),
+                          _StatusRow('Scanner', _scanner),
+                          _StatusRow('Payment Gateway', _payment),
+                          _StatusRow('Backend', KioskRuntime.instance.connected ? _Status.ok : _Status.bad),
+                          _StatusRow('Internet', _internet),
+                          _StatusRow('Storage', _storage),
+                        ],
+                      ),
                     ),
                   ),
                   Align(
@@ -119,12 +144,25 @@ class _StaffDashboardPageState extends State<StaffDashboardPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _MenuButton('Diagnostics', Icons.fact_check_outlined, () => widget.onNavigate('diagnostics')),
-                  _MenuButton('Printer & Scanner', Icons.print_outlined, () => widget.onNavigate('printerScanner')),
-                  _MenuButton('Payment Test', Icons.payments_outlined, () => widget.onNavigate('payment')),
-                  _MenuButton('Transactions', Icons.receipt_long_outlined, () => widget.onNavigate('transactions')),
-                  _MenuButton('Error Logs', Icons.report_outlined, () => widget.onNavigate('errorLogs')),
-                  _MenuButton('Storage / Cleanup', Icons.folder_delete_outlined, () => widget.onNavigate('storage')),
+                  const Text('TOOLS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.15,
+                    children: [
+                      _MenuTile('Assistance', Icons.support_agent_outlined, () => widget.onNavigate('assistance')),
+                      _MenuTile('Diagnostics', Icons.fact_check_outlined, () => widget.onNavigate('diagnostics')),
+                      _MenuTile('Printer & Scanner', Icons.print_outlined, () => widget.onNavigate('printerScanner')),
+                      _MenuTile('Payment Test', Icons.payments_outlined, () => widget.onNavigate('payment')),
+                      _MenuTile('Transactions', Icons.receipt_long_outlined, () => widget.onNavigate('transactions')),
+                      _MenuTile('Error Logs', Icons.report_outlined, () => widget.onNavigate('errorLogs')),
+                      _MenuTile('Storage / Cleanup', Icons.folder_delete_outlined, () => widget.onNavigate('storage')),
+                    ],
+                  ),
                   const SizedBox(height: 20),
                   SizedBox(
                     height: 52,
@@ -192,6 +230,44 @@ class _ExpiringBanner extends StatelessWidget {
   }
 }
 
+/// Eye-catching call-to-action when a customer at this kiosk needs help —
+/// the whole point of surfacing it here is so staff don't have to go looking
+/// for it.
+class _AssistanceBanner extends StatelessWidget {
+  const _AssistanceBanner({required this.acknowledged, required this.onTap});
+  final bool acknowledged;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = acknowledged ? const Color(0xFF1D4ED8) : const Color(0xFFB45309);
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(acknowledged ? Icons.support_agent_rounded : Icons.notifications_active_rounded, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  acknowledged ? 'You are assisting a customer' : 'A customer at this kiosk needs assistance',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusRow extends StatelessWidget {
   const _StatusRow(this.label, this.status);
   final String label;
@@ -216,23 +292,35 @@ class _StatusRow extends StatelessWidget {
   }
 }
 
-class _MenuButton extends StatelessWidget {
-  const _MenuButton(this.label, this.icon, this.onTap);
+class _MenuTile extends StatelessWidget {
+  const _MenuTile(this.label, this.icon, this.onTap);
   final String label;
   final IconData icon;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: SizedBox(
-        height: 54,
-        child: OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft, foregroundColor: Colors.black87),
-          onPressed: onTap,
-          icon: Icon(icon, color: _brandBlue),
-          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: _brandBlue, size: 28),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -117,6 +117,71 @@ router.post('/:id/cancel-request', requireKioskApiToken, async (req: Request, re
   }
 });
 
+// ─── Kiosk-gated: Staff Mode acting on THIS kiosk's own request ─────────────
+// A staff member standing right at the kiosk shouldn't have to reach for the
+// web console to help the customer in front of them. Mirrors the admin-gated
+// acknowledge/resolve below, but applies to the local copy directly and syncs
+// the decision *up* to the cloud (the same direction cancel-request already
+// uses), rather than down via the command queue.
+
+router.post('/:id/acknowledge-local', requireKioskApiToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { actor } = req.body as { actor?: string };
+    const staffUsername = actor ?? 'staff';
+    const existing = await getAssistanceRequestById(id);
+    if (!existing || existing.kiosk_id !== config.kioskId) {
+      res.status(404).json({ success: false, error: 'Request not found' });
+      return;
+    }
+    const request = await acknowledgeAssistanceRequest(id, staffUsername);
+    if (!request) {
+      res
+        .status(409)
+        .json({ success: false, error: 'This request is already being handled by another staff member.' });
+      return;
+    }
+    syncEvent('assistance-ack', { id, staffUsername });
+    await insertLog('info', 'assistance', `${staffUsername} acknowledged an assistance request (at the kiosk)`, {
+      actor: staffUsername,
+      requestId: id,
+      kioskId: request.kiosk_id,
+    });
+    res.json({ success: true, request });
+  } catch (err) {
+    logger.error('Assistance: kiosk acknowledge failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/:id/resolve-local', requireKioskApiToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { actor } = req.body as { actor?: string };
+    const staffUsername = actor ?? 'staff';
+    const existing = await getAssistanceRequestById(id);
+    if (!existing || existing.kiosk_id !== config.kioskId) {
+      res.status(404).json({ success: false, error: 'Request not found' });
+      return;
+    }
+    const request = await resolveAssistanceRequest(id, staffUsername);
+    if (!request) {
+      res.status(409).json({ success: false, error: 'Request is not currently acknowledged' });
+      return;
+    }
+    syncEvent('assistance-resolve', { id, staffUsername });
+    await insertLog('info', 'assistance', `${staffUsername} resolved an assistance request (at the kiosk)`, {
+      actor: staffUsername,
+      requestId: id,
+      kioskId: request.kiosk_id,
+    });
+    res.json({ success: true, request });
+  } catch (err) {
+    logger.error('Assistance: kiosk resolve failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 // ─── Admin-gated: Staff/Admin console ────────────────────────────────────────
 
 router.get('/', requireAdminApiToken, async (req: Request, res: Response): Promise<void> => {

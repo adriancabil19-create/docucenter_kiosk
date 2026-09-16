@@ -30,6 +30,8 @@ import {
   getPaperTrays,
   insertAssistanceRequestFromSync,
   cancelAssistanceRequest,
+  acknowledgeAssistanceRequest,
+  resolveAssistanceRequest,
   TransactionRow,
   PrintJobRow,
   StorageDocMetaInput,
@@ -334,6 +336,46 @@ router.post('/assistance-cancel', async (req: Request, res: Response): Promise<v
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: assistance-cancel failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+/**
+ * Staff acted from the kiosk itself (see assistance.ts's -local routes) —
+ * apply the same transition to the cloud's copy. If the cloud's copy has
+ * already moved on (e.g. a web Staff member claimed it first), the guarded
+ * DB function just no-ops rather than erroring — same "first one wins,
+ * everyone else told no" rule as the web path, just resolved by whichever
+ * side got there first instead of a single atomic table.
+ */
+router.post('/assistance-ack', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id, staffUsername } = req.body as { id?: string; staffUsername?: string };
+    if (!id || !staffUsername) {
+      res.status(400).json({ success: false, error: 'id and staffUsername required' });
+      return;
+    }
+    await acknowledgeAssistanceRequest(id, staffUsername);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: assistance-ack failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/assistance-resolve', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const { id, staffUsername } = req.body as { id?: string; staffUsername?: string };
+    if (!id || !staffUsername) {
+      res.status(400).json({ success: false, error: 'id and staffUsername required' });
+      return;
+    }
+    await resolveAssistanceRequest(id, staffUsername);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: assistance-resolve failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

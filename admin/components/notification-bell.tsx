@@ -73,7 +73,12 @@ export function NotificationBell({ role }: { role: ConsoleRole | null }) {
   const { data: incidents } = usePoll<Incident[]>(incidentFetcher, 15000, []);
 
   // Toast pop-ups for genuinely NEW items only (ids not seen since mount) —
-  // the existing backlog at page-load doesn't spam toasts.
+  // the existing backlog at page-load doesn't spam toasts. Staff only: they
+  // are the ones expected to act immediately. Admin still sees these in the
+  // dropdown below for passive monitoring, but isn't interrupted for a
+  // routine request Staff is already handling — Admin's toast/push is
+  // reserved for the escalation path (unhandled after 5 minutes, which shows
+  // up here as an Alert, not an Assistance item).
   const seenNotifIds = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!notifications) return;
@@ -84,13 +89,14 @@ export function NotificationBell({ role }: { role: ConsoleRole | null }) {
     for (const n of notifications) {
       if (seenNotifIds.current.has(n.id)) continue;
       seenNotifIds.current.add(n.id);
+      if (role !== 'STAFF') continue;
       addToast({
         title: '🔔 New Assistance Request',
         description: `Kiosk ${n.kiosk_id} is requesting assistance — ${when(n.requested_at)}`,
         color: 'warning',
       });
     }
-  }, [notifications]);
+  }, [notifications, role]);
 
   const seenIncidentIds = useRef<Set<string> | null>(null);
   useEffect(() => {

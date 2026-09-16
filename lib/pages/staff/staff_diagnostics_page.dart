@@ -32,7 +32,6 @@ class _StaffDiagnosticsPageState extends State<StaffDiagnosticsPage> {
     'payment': _Check('Payment Connection'),
     'printer': _Check('Printer'),
     'scanner': _Check('Scanner'),
-    'receipt': _Check('Receipt Printer'),
   };
   bool _running = false;
 
@@ -50,7 +49,6 @@ class _StaffDiagnosticsPageState extends State<StaffDiagnosticsPage> {
 
     set('backend', KioskRuntime.instance.connected);
     set('printer', KioskRuntime.instance.printerState == 'ONLINE');
-    set('receipt', KioskRuntime.instance.printerState == 'ONLINE');
 
     final storageStats = await StorageService.getStorageStats();
     set('storage', storageStats != null);

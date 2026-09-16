@@ -10,7 +10,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../storage_service.dart';
 import '../config.dart';
-import '../payment_service.dart';
 import '../scanner_status.dart';
 
 class ScanningInterface extends StatefulWidget {
@@ -975,46 +974,4 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     );
   }
 
-  Future<void> _printScanReceipt(String fileName) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final docName =
-          _documentName.trim().isEmpty ? fileName : _documentName.trim();
-      final scanReceipt = '''
-========================================
-         SCANNING RECEIPT
-   ${DateTime.now().toString().split('.')[0]}
-========================================
-
-Document Name: $docName
-Output Format: $_outputFormat
-Pages Scanned: ${_scannedPages.length}
-Color Mode: ${_colorMode == 'color' ? 'Color' : _colorMode == 'grayscale' ? 'Grayscale' : 'B&W'}
-DPI Resolution: $_dpi DPI
-Paper Size: $_paperSize
-Scan Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
-
-----------------------------------------
-File Size (est.): ${(_scannedPages.length * 250)} KB
-Date: ${DateTime.now().toString().split('.')[0]}
-
-Status: [SCAN COMPLETE]
-Document saved to system storage.
-
-----------------------------------------
-Thank you for using our service!
-''';
-
-      final success = await PrintService.printReceipt(scanReceipt);
-      messenger.showSnackBar(SnackBar(
-        content: Text(success
-            ? 'Scan receipt printed!'
-            : 'Print unavailable (demo mode)'),
-        backgroundColor: success ? Colors.green : Colors.orange,
-        duration: const Duration(seconds: 2),
-      ));
-    } catch (e) {
-      debugPrint('Error printing scan receipt: $e');
-    }
-  }
 }

@@ -240,6 +240,43 @@ class StaffService {
     }
   }
 
+  /// Staff at this kiosk claims its own active assistance request, without
+  /// needing the web console. Mirrors the admin-console acknowledge action,
+  /// but applies locally and syncs the decision up to the cloud.
+  static Future<bool> acknowledgeAssistanceRequest(String requestId, {String? actor}) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.assistanceApiUrl}/$requestId/acknowledge-local'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({if (actor != null) 'actor': actor}),
+          )
+          .timeout(const Duration(seconds: 10));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return response.statusCode == 200 && body['success'] == true;
+    } catch (e) {
+      debugPrint('Staff acknowledge-assistance error: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> resolveAssistanceRequest(String requestId, {String? actor}) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.assistanceApiUrl}/$requestId/resolve-local'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({if (actor != null) 'actor': actor}),
+          )
+          .timeout(const Duration(seconds: 10));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return response.statusCode == 200 && body['success'] == true;
+    } catch (e) {
+      debugPrint('Staff resolve-assistance error: $e');
+      return false;
+    }
+  }
+
   /// Payment gateway connectivity check — never creates a charge. Reuses the
   /// backend's `/api/paymongo/health`, whose PayMongo check is now real (see
   /// PayMongoService.checkConnectivity).

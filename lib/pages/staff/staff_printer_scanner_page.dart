@@ -4,8 +4,9 @@ import '../../scanner_status.dart';
 import '../../staff_session.dart';
 import '_staff_scaffold.dart';
 
-/// Printer, scanner, and receipt-printer diagnostics (rules 15-17), grouped
-/// under one dashboard entry per rule 13's "Printer & Scanner" menu item.
+/// Printer and scanner diagnostics (rules 15-17), grouped under one dashboard
+/// entry per rule 13's "Printer & Scanner" menu item. No receipt printer here
+/// — receipts are shown on-screen after a transaction, never printed.
 class StaffPrinterScannerPage extends StatefulWidget {
   const StaffPrinterScannerPage({super.key, required this.onBack});
   final VoidCallback onBack;
@@ -19,8 +20,6 @@ class _StaffPrinterScannerPageState extends State<StaffPrinterScannerPage> {
 
   bool _printing = false;
   String? _printResult;
-  bool _printingReceipt = false;
-  String? _receiptResult;
 
   var _scanner = const ScannerStatusSnapshot.checking();
 
@@ -51,22 +50,6 @@ class _StaffPrinterScannerPageState extends State<StaffPrinterScannerPage> {
     });
   }
 
-  Future<void> _printTestReceipt() async {
-    setState(() {
-      _printingReceipt = true;
-      _receiptResult = null;
-    });
-    final ok = await PrintingService.printReceipt(
-      'DOCUCENTER KIOSK\n--- STAFF DIAGNOSTIC RECEIPT ---\nThis is a test receipt.\nNo transaction was recorded.',
-      actor: StaffSession.instance.currentStaff?.name,
-    );
-    if (!mounted) return;
-    setState(() {
-      _printingReceipt = false;
-      _receiptResult = ok ? 'Test receipt printed.' : 'Receipt test failed — check the printer.';
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return StaffScaffold(
@@ -92,18 +75,6 @@ class _StaffPrinterScannerPageState extends State<StaffPrinterScannerPage> {
           width: double.infinity,
           child: OutlinedButton(onPressed: _checkScanner, child: const Text('Refresh Status')),
         ),
-        const SizedBox(height: 24),
-
-        const Text('RECEIPT PRINTER', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _printingReceipt ? null : _printTestReceipt,
-            child: Text(_printingReceipt ? 'Printing…' : 'Print Test Receipt'),
-          ),
-        ),
-        if (_receiptResult != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_receiptResult!)),
       ],
     );
   }

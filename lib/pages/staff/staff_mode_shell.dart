@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../staff_session.dart';
+import 'staff_assistance_page.dart';
 import 'staff_dashboard_page.dart';
 import 'staff_diagnostics_page.dart';
 import 'staff_error_logs_page.dart';
@@ -56,6 +57,8 @@ class _StaffModeShellState extends State<StaffModeShell> {
         return StaffPinRecoveryPage(onDone: () => _go('login'));
       case 'dashboard':
         return StaffDashboardPage(onNavigate: _go, onReturnToKiosk: _returnToKiosk);
+      case 'assistance':
+        return StaffAssistancePage(onBack: () => _go('dashboard'));
       case 'diagnostics':
         return StaffDiagnosticsPage(onBack: () => _go('dashboard'));
       case 'printerScanner':

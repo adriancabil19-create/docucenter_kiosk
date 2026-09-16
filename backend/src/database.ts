@@ -2389,12 +2389,15 @@ export const createAssistanceRequest = async (
   // Only where subscriptions actually live (see push.service.ts) — in split
   // deployment this is a no-op here and fires instead from
   // insertAssistanceRequestFromSync once the cloud ingests it.
+  // Staff only: they're the ones expected to acknowledge it. Admin is
+  // reserved for the escalation path (unhandled after ASSISTANCE_ESCALATION_TIME,
+  // see insertIncident's push hook) so a routine request Staff is already
+  // handling doesn't also interrupt Admin.
   if (config.isCloudRole) {
-    sendPushToAll({
-      title: '🔔 New Assistance Request',
-      body: `Kiosk ${kioskId} is requesting assistance`,
-      url: '/assistance',
-    });
+    sendPushToAll(
+      { title: '🔔 New Assistance Request', body: `Kiosk ${kioskId} is requesting assistance`, url: '/assistance' },
+      { role: 'STAFF' },
+    );
   }
   return { ok: true, request };
 };
@@ -2432,12 +2435,12 @@ export const insertAssistanceRequestFromSync = async (row: AssistanceRequestRow)
   });
   // rowsAffected > 0 guards against a re-delivered outbox event (already
   // accepted once via X-Sync-Event-Id, but defense in depth) double-pushing.
+  // Staff only — see the matching comment in createAssistanceRequest.
   if (result.rowsAffected > 0) {
-    sendPushToAll({
-      title: '🔔 New Assistance Request',
-      body: `Kiosk ${row.kiosk_id} is requesting assistance`,
-      url: '/assistance',
-    });
+    sendPushToAll(
+      { title: '🔔 New Assistance Request', body: `Kiosk ${row.kiosk_id} is requesting assistance`, url: '/assistance' },
+      { role: 'STAFF' },
+    );
   }
 };
 

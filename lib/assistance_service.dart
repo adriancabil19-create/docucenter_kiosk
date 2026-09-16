@@ -7,7 +7,9 @@ import 'config.dart';
 /// Status values mirrored from the backend's `assistance_requests.status`.
 enum AssistanceStatus { pending, acknowledged, resolved, cancelled, expired }
 
-AssistanceStatus? _parseStatus(String? s) {
+/// Public so staff_assistance_page.dart (Staff Mode) can parse the same
+/// `/api/assistance/active` response this customer-facing service polls.
+AssistanceStatus? parseAssistanceStatus(String? s) {
   switch (s) {
     case 'PENDING':
       return AssistanceStatus.pending;
@@ -102,7 +104,7 @@ class AssistanceState extends ChangeNotifier {
       final data = json.decode(res.body) as Map<String, dynamic>;
       final request = data['request'] as Map<String, dynamic>?;
       var nextId = request?['id'] as String?;
-      var nextStatus = _parseStatus(request?['status'] as String?);
+      var nextStatus = parseAssistanceStatus(request?['status'] as String?);
 
       // Already shown-and-dismissed locally — ignore the server's lingering
       // grace-window copy until it reports something genuinely new.

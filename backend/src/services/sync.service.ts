@@ -24,7 +24,9 @@ export type SyncEventType =
   | 'staff-pin-set'
   | 'staff-login'
   | 'assistance-request'
-  | 'assistance-cancel';
+  | 'assistance-cancel'
+  | 'assistance-ack'
+  | 'assistance-resolve';
 
 /** Give up on an outbox row after this many failed POSTs (~1 day with backoff). */
 const MAX_SYNC_ATTEMPTS = 25;
