@@ -28,12 +28,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             listener attached from a Client Component's useEffect can miss
             it. `beforeInteractive` runs this before hydration so it's
             captured no matter how fast (or slow) the page loads; components
-            like install-prompt.tsx read window.__deferredInstallPrompt. */}
+            like install-prompt.tsx read window.__deferredInstallPrompt.
+            Also registers the service worker here, on every page, as early
+            as possible — Chrome's installability check needs an ACTIVE
+            (not just registering) service worker, and registering only from
+            within install-prompt.tsx's useEffect (after hydration, /login
+            only) left less time for that activation to finish first. */}
         <Script id="capture-install-prompt" strategy="beforeInteractive">
           {`window.addEventListener('beforeinstallprompt', function (e) {
             e.preventDefault();
             window.__deferredInstallPrompt = e;
-          });`}
+          });
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(function () {});
+          }`}
         </Script>
         <Providers>
           <ConditionalLayout role={role}>{children}</ConditionalLayout>
