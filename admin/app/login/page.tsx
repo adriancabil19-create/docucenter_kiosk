@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { LogoMark } from '@/components/logo';
+import { InstallPrompt } from '@/components/install-prompt';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -31,7 +32,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center p-4">
       <div className="glass-strong w-full max-w-sm p-8">
         <div className="mb-6 flex flex-col items-center text-center">
           <LogoMark size={56} />
@@ -100,6 +101,8 @@ export default function LoginPage() {
           </a>
         </p>
       </div>
+
+      <InstallPrompt />
     </div>
   );
 }

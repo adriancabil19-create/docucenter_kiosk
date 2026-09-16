@@ -22,6 +22,23 @@ function isSupported(): boolean {
   return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
 }
 
+/**
+ * Register the service worker ahead of any explicit "enable notifications"
+ * action. A registered SW (plus the manifest) is part of what makes Chrome
+ * consider this site installable at all — without it, "Add to Home Screen"
+ * on Android falls back to the same screenshot-icon behavior the login page
+ * had before (see the manifest.ts / proxy.ts fixes). Safe to call repeatedly
+ * — the browser no-ops re-registering the same script at the same scope.
+ */
+export async function registerServiceWorker(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('/sw.js');
+  } catch {
+    // Non-fatal — push/install just won't be available this session.
+  }
+}
+
 export async function getPushStatus(): Promise<PushSupport> {
   if (!isSupported()) return 'unsupported';
   const reg = await navigator.serviceWorker.getRegistration('/sw.js').catch(() => undefined);
