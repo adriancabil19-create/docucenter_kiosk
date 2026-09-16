@@ -9,6 +9,14 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+declare global {
+  interface Window {
+    // Stashed by the beforeInteractive inline script in app/layout.tsx, in
+    // case the event fires before this component's own listener attaches.
+    __deferredInstallPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
 const DISMISS_KEY = 'docucenter_install_prompt_dismissed_at';
 const DISMISS_FOR_DAYS = 14;
 
@@ -69,8 +77,20 @@ export function InstallPrompt() {
       return;
     }
 
+    // Already captured by the beforeInteractive script before this component
+    // even mounted — the common case, since the event tends to fire early.
+    if (window.__deferredInstallPrompt) {
+      setDeferredEvent(window.__deferredInstallPrompt);
+      setPlatform('android');
+      return;
+    }
+
+    // Otherwise keep listening — Chrome can also delay firing it until its
+    // own engagement heuristic (roughly 30s of interaction) is satisfied,
+    // which can happen well after this component has already mounted.
     const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
+      window.__deferredInstallPrompt = e as BeforeInstallPromptEvent;
       setDeferredEvent(e as BeforeInstallPromptEvent);
       setPlatform('android');
     };
@@ -91,6 +111,7 @@ export function InstallPrompt() {
       const choice = await deferredEvent.userChoice;
       if (choice.outcome === 'accepted') rememberDismissed();
     } finally {
+      window.__deferredInstallPrompt = undefined;
       setDeferredEvent(null);
       setInstalling(false);
     }

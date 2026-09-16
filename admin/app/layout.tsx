@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { Providers } from './providers';
 import { ConditionalLayout } from '@/components/conditional-layout';
@@ -23,6 +24,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="text-slate-800 antialiased">
+        {/* Chrome can fire `beforeinstallprompt` before React hydrates — a
+            listener attached from a Client Component's useEffect can miss
+            it. `beforeInteractive` runs this before hydration so it's
+            captured no matter how fast (or slow) the page loads; components
+            like install-prompt.tsx read window.__deferredInstallPrompt. */}
+        <Script id="capture-install-prompt" strategy="beforeInteractive">
+          {`window.addEventListener('beforeinstallprompt', function (e) {
+            e.preventDefault();
+            window.__deferredInstallPrompt = e;
+          });`}
+        </Script>
         <Providers>
           <ConditionalLayout role={role}>{children}</ConditionalLayout>
         </Providers>
