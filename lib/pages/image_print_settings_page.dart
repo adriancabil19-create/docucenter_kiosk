@@ -163,7 +163,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
     PAYMONGOPaymentPageState.colorMode = _colorMode;
     PAYMONGOPaymentPageState.quality = _quality;
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
-    PAYMONGOPaymentPageState.pendingJob = () => PrintingService.printImageLayoutJob(
+    PAYMONGOPaymentPageState.pendingJob = (transactionId) => PrintingService.printImageLayoutJob(
           filenames,
           imagesPerPage: perPage,
           imageSize: _imageSizeChoice,
@@ -176,6 +176,7 @@ Total Cost: PHP ${cost.toStringAsFixed(2)}''';
           copies: _copies,
           unitPrice: _costPerPage,
           serviceType: 'image-print',
+          transactionId: transactionId,
         );
     widget.onNavigate('payment');
   }

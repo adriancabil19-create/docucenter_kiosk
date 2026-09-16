@@ -30,6 +30,8 @@ export interface Transaction {
 
 export type PrintJobStatus = 'submitted' | 'printing' | 'done' | 'failed';
 
+export type PrintBillingType = 'paid' | 'recovery' | 'staff_test' | 'admin_authorized';
+
 export interface PrintJob {
   id: string;
   transaction_id: string | null;
@@ -44,6 +46,7 @@ export interface PrintJob {
   duplex?: boolean;
   unit_price?: number;
   service_type?: string;
+  billing_type?: PrintBillingType;
   created_at: string;
 }
 
@@ -470,4 +473,45 @@ export interface PinResetDecisionResponse {
   success: boolean;
   request?: PinResetRequest;
   error?: string;
+}
+
+// ─── Staff Print Recovery ──────────────────────────────────────────────────────
+
+export type PrintRecoveryReason =
+  | 'paper_jam'
+  | 'printer_error'
+  | 'incorrect_output'
+  | 'power_interruption'
+  | 'printer_offline'
+  | 'other';
+
+export type PrintRecoveryResult = 'pending' | 'success' | 'failed';
+
+export interface PrintRecoveryAction {
+  id: string;
+  transaction_id: string;
+  original_print_job_id: string;
+  recovery_print_job_id: string | null;
+  staff_id: string | null;
+  staff_name: string;
+  reason: PrintRecoveryReason;
+  reason_note: string | null;
+  pages: number;
+  copies: number;
+  result: PrintRecoveryResult;
+  reauthorized_at: string | null;
+  created_at: string;
+}
+
+export interface PrintRecoveryCounts {
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+}
+
+export interface RecoveryActionsResponse {
+  success: boolean;
+  actions: PrintRecoveryAction[];
+  counts: PrintRecoveryCounts;
+  count: number;
 }

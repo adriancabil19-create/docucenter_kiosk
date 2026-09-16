@@ -26,6 +26,7 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/analytics',
   '/logs',
   '/alerts',
+  '/recovery',
 ];
 
 function isAdminOnlyPath(pathname: string): boolean {

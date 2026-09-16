@@ -34,6 +34,7 @@ import type {
   AssistanceRequestsResponse,
   AssistanceMutationResponse,
   NotificationsResponse,
+  RecoveryActionsResponse,
 } from './types';
 
 export type { DateRange };
@@ -345,3 +346,14 @@ export const getNotifications = (opts?: { status?: 'UNREAD' | 'READ'; limit?: nu
 
 export const markNotificationRead = (id: string): Promise<MutationResponse> =>
   apiFetch<MutationResponse>(`/api/assistance/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+
+// ─── Staff Print Recovery ───────────────────────────────────────────────────
+
+export const getRecoveryActions = (limit = 100): Promise<RecoveryActionsResponse> =>
+  apiFetch<RecoveryActionsResponse>(`/api/fleet/recovery-actions?limit=${limit}`);
+
+export const reauthorizeRecovery = (transactionId: string, actor?: string): Promise<MutationResponse> =>
+  apiFetch<MutationResponse>(`/api/fleet/recovery-actions/${encodeURIComponent(transactionId)}/reauthorize`, {
+    method: 'POST',
+    body: JSON.stringify({ actor }),
+  });

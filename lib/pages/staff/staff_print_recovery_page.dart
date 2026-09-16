@@ -1,0 +1,238 @@
+import 'package:flutter/material.dart';
+import '../../print_service.dart';
+import '../../staff_session.dart';
+import '_staff_scaffold.dart';
+
+const _reasons = <String, String>{
+  'paper_jam': '🔧 Paper Jam',
+  'printer_error': '🖨️ Printer Error',
+  'incorrect_output': '📄 Incorrect Output',
+  'power_interruption': '⚡ Power Interruption',
+  'printer_offline': '🔌 Printer Offline',
+  'other': '⚠️ Other',
+};
+
+/// Staff Print Recovery — reprint a paid transaction whose print failed, at
+/// no additional charge. Deliberately not a generic "Free Print": only
+/// transactions the backend confirms are actually eligible (paid, print
+/// failed, within the recovery window, not already recovered) are shown.
+class StaffPrintRecoveryPage extends StatefulWidget {
+  const StaffPrintRecoveryPage({super.key, required this.onBack});
+  final VoidCallback onBack;
+
+  @override
+  State<StaffPrintRecoveryPage> createState() => _StaffPrintRecoveryPageState();
+}
+
+class _StaffPrintRecoveryPageState extends State<StaffPrintRecoveryPage> {
+  List<RecoverableTransaction> _items = [];
+  bool _loading = true;
+  String? _actingOnTransactionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    final items = await PrintingService.getRecoverableTransactions();
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _loading = false;
+    });
+  }
+
+  Future<void> _startRecovery(RecoverableTransaction item) async {
+    final picked = await showModalBottomSheet<(String, String?)>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _ReasonSheet(item: item),
+    );
+    if (picked == null) return;
+    final (reason, reasonNote) = picked;
+
+    setState(() => _actingOnTransactionId = item.transactionId);
+    final result = await PrintingService.recoverPrint(
+      item.transactionId,
+      reason: reason,
+      reasonNote: reasonNote,
+      actor: StaffSession.instance.currentStaff?.name ?? 'Staff',
+      staffId: StaffSession.instance.currentStaff?.id,
+    );
+    if (!mounted) return;
+    setState(() => _actingOnTransactionId = null);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.success
+              ? 'Recovery print sent to the printer.'
+              : (result.error ?? 'Recovery print failed. Try again.'),
+        ),
+        backgroundColor: result.success ? Colors.green : Colors.red,
+      ),
+    );
+    await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffScaffold(
+      title: 'Print Recovery',
+      onBack: widget.onBack,
+      actions: [
+        IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+      ],
+      children: [
+        Text(
+          'Paid transactions from the last hour whose printing failed. Reprinting here does not '
+          'charge the customer again.',
+          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              children: [
+                Icon(Icons.check_circle_outline, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 12),
+                Text(
+                  'No transactions currently need recovery.',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          )
+        else
+          for (final item in _items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _RecoveryCard(
+                item: item,
+                busy: _actingOnTransactionId == item.transactionId,
+                onRecover: () => _startRecovery(item),
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _RecoveryCard extends StatelessWidget {
+  const _RecoveryCard({required this.item, required this.busy, required this.onRecover});
+  final RecoverableTransaction item;
+  final bool busy;
+  final VoidCallback onRecover;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(item.referenceNumber, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            '₱${item.amount.toStringAsFixed(2)} · ${item.printJob.pageCount}p × ${item.printJob.copies} · ${item.printJob.serviceType}',
+            style: TextStyle(color: Colors.grey[700], fontSize: 13),
+          ),
+          Text(item.createdAt, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: busy ? null : onRecover,
+              child: Text(busy ? 'Working…' : 'Recover Print'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReasonSheet extends StatefulWidget {
+  const _ReasonSheet({required this.item});
+  final RecoverableTransaction item;
+
+  @override
+  State<_ReasonSheet> createState() => _ReasonSheetState();
+}
+
+class _ReasonSheetState extends State<_ReasonSheet> {
+  String? _reason;
+  final _noteController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _canConfirm => _reason != null && (_reason != 'other' || _noteController.text.trim().isNotEmpty);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Why did printing fail?', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(widget.item.referenceNumber, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 12),
+          for (final entry in _reasons.entries)
+            RadioListTile<String>(
+              contentPadding: EdgeInsets.zero,
+              value: entry.key,
+              groupValue: _reason,
+              onChanged: (v) => setState(() => _reason = v),
+              title: Text(entry.value),
+            ),
+          if (_reason == 'other') ...[
+            const SizedBox(height: 4),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(labelText: 'Briefly explain what happened', border: OutlineInputBorder()),
+              maxLines: 2,
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: FilledButton(
+              onPressed: _canConfirm
+                  ? () => Navigator.pop(context, (_reason!, _noteController.text.trim().isEmpty ? null : _noteController.text.trim()))
+                  : null,
+              child: const Text('Confirm Recovery Print'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

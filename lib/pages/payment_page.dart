@@ -47,7 +47,9 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   static String pendingReceiptContent = '';
 
   /// Optional async job to run after payment succeeds (e.g., backend scan+print).
-  static Future<void> Function()? pendingJob;
+  /// Receives the now-paid transaction's id, so the job can link its print
+  /// job back to the transaction (needed for Staff Print Recovery).
+  static Future<void> Function(String? transactionId)? pendingJob;
 
   bool _showReceiptScreen = false;
   String _receiptDisplayText = '';
@@ -490,12 +492,12 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
               : SingleChildScrollView(
                   child: PaymentInterface(
                     amount: pendingAmount,
-                    onPaymentComplete: (success, receiptText) async {
+                    onPaymentComplete: (success, receiptText, transactionId) async {
                       if (success) {
                         // Fire any pending backend job (e.g. photocopy scan+print) async
                         if (pendingJob != null) {
                           final messenger = ScaffoldMessenger.of(context);
-                          pendingJob!().then((_) {
+                          pendingJob!(transactionId).then((_) {
                             messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('Job completed successfully!'),
@@ -520,6 +522,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 paperSize: paperSize,
                                 colorMode: colorMode,
                                 quality: quality,
+                                transactionId: transactionId,
                               );
                             } else {
                               printSuccess = await PrintingService.printFromStorage(
@@ -527,6 +530,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 paperSize: paperSize,
                                 colorMode: colorMode,
                                 quality: quality,
+                                transactionId: transactionId,
                               );
                             }
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -592,7 +596,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
 
 class PaymentInterface extends StatefulWidget {
   final double amount;
-  final Future<void> Function(bool success, String? receiptText) onPaymentComplete;
+  final Future<void> Function(bool success, String? receiptText, String? transactionId) onPaymentComplete;
   final Function() onTimeout;
 
   const PaymentInterface({
@@ -727,7 +731,7 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
     final receiptText = _buildReceiptDisplayText();
 
     await Future.delayed(const Duration(milliseconds: 200));
-    if (mounted) await widget.onPaymentComplete(true, receiptText);
+    if (mounted) await widget.onPaymentComplete(true, receiptText, _transaction?.transactionId);
   }
 
   String _buildReceiptDisplayText() {
@@ -765,7 +769,7 @@ $pending'''
       });
     }
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) widget.onPaymentComplete(false, null);
+      if (mounted) widget.onPaymentComplete(false, null, null);
     });
   }
 
@@ -789,7 +793,7 @@ $pending'''
       await _paymentService.cancelPayment(_transaction!.transactionId,
           reason: 'User cancelled');
       setState(() => _paymentStatus = 'cancelled');
-      widget.onPaymentComplete(false, null);
+      widget.onPaymentComplete(false, null, null);
     } catch (e) {
       setState(() => _errorMessage = 'Failed to cancel payment: $e');
     }

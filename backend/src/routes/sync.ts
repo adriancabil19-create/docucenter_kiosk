@@ -32,11 +32,13 @@ import {
   cancelAssistanceRequest,
   acknowledgeAssistanceRequest,
   resolveAssistanceRequest,
+  insertRecoveryActionFromSync,
   TransactionRow,
   PrintJobRow,
   StorageDocMetaInput,
   PinResetRequestRow,
   AssistanceRequestRow,
+  PrintRecoveryActionRow,
 } from '../database';
 import { getDb } from '../database';
 
@@ -103,6 +105,23 @@ router.post('/print-job', async (req: Request, res: Response): Promise<void> => 
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: failed to insert print job', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/print-recovery', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const row = req.body as PrintRecoveryActionRow;
+    if (!row?.id || !row?.transaction_id) {
+      res.status(400).json({ success: false, error: 'id and transaction_id required' });
+      return;
+    }
+    await insertRecoveryActionFromSync(row);
+    logger.info('Sync: print recovery action received', { id: row.id, transactionId: row.transaction_id });
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to insert print recovery action', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { href: '/transactions', label: 'Transactions', icon: '💳', adminOnly: true },
   { href: '/payments', label: 'Payments', icon: '💰', adminOnly: true },
   { href: '/print-jobs', label: 'Print Jobs', icon: '🖨️', adminOnly: true },
+  { href: '/recovery', label: 'Print Recovery', icon: '♻️', adminOnly: true },
   { href: '/paper', label: 'Paper Trays', icon: '📄', adminOnly: true },
   { href: '/pricing', label: 'Pricing', icon: '🏷️', adminOnly: true },
   { href: '/storage', label: 'Storage', icon: '🗄️', adminOnly: true },

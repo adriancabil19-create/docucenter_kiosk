@@ -13,6 +13,7 @@ class PrintingService {
     String paperSize = 'A4',
     String colorMode = 'bw',
     String quality = 'standard',
+    String? transactionId,
   }) async {
     try {
       // Convert images to base64 for sending to backend
@@ -36,6 +37,7 @@ class PrintingService {
             paperSize: paperSize,
             colorMode: colorMode,
             quality: quality,
+            transactionId: transactionId,
           );
         }
       }
@@ -54,6 +56,7 @@ class PrintingService {
     String paperSize = 'A4',
     String colorMode = 'bw',
     String quality = 'standard',
+    String? transactionId,
   }) async {
     try {
       final response = await http.post(
@@ -64,6 +67,7 @@ class PrintingService {
           'paperSize': paperSize,
           'colorMode': colorMode,
           'quality': quality,
+          if (transactionId != null) 'transactionId': transactionId,
         }),
       );
 
@@ -113,6 +117,7 @@ class PrintingService {
     int copies = 1,
     double? unitPrice,
     String serviceType = 'image-print',
+    String? transactionId,
   }) async {
     try {
       final response = await http.post(
@@ -126,6 +131,7 @@ class PrintingService {
           'copies': copies,
           'serviceType': serviceType,
           if (unitPrice != null) 'unitPrice': unitPrice,
+          if (transactionId != null) 'transactionId': transactionId,
           'imageLayout': {
             'imagesPerPage': imagesPerPage,
             'imageSize': imageSize,
@@ -256,5 +262,119 @@ class PrintingService {
       print('Error printing test page: $e');
       return false;
     }
+  }
+
+  // ── Staff Print Recovery ────────────────────────────────────────────────
+  // Reprint a paid transaction's failed job without asking the customer to
+  // pay again. Staff Mode only — see backend/src/routes/print.ts.
+
+  static Future<List<RecoverableTransaction>> getRecoverableTransactions() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/api/print/recoverable'))
+          .timeout(const Duration(seconds: 10));
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        return (body['recoverable'] as List<dynamic>)
+            .map((e) => RecoverableTransaction.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching recoverable transactions: $e');
+      return [];
+    }
+  }
+
+  static Future<RecoveryOutcome> recoverPrint(
+    String transactionId, {
+    required String reason,
+    String? reasonNote,
+    required String actor,
+    String? staffId,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/print/recover/$transactionId'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'reason': reason,
+              if (reasonNote != null) 'reasonNote': reasonNote,
+              'actor': actor,
+              if (staffId != null) 'staffId': staffId,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      return RecoveryOutcome(
+        success: response.statusCode == 200 && body['success'] == true,
+        error: body['error'] as String?,
+      );
+    } catch (e) {
+      print('Error recovering print: $e');
+      return const RecoveryOutcome(success: false, error: 'Network error. Please try again.');
+    }
+  }
+}
+
+class RecoveryOutcome {
+  final bool success;
+  final String? error;
+  const RecoveryOutcome({required this.success, this.error});
+}
+
+class RecoverablePrintJob {
+  final String id;
+  final List<String> filenames;
+  final String paperSize;
+  final int copies;
+  final int pageCount;
+  final String serviceType;
+
+  const RecoverablePrintJob({
+    required this.id,
+    required this.filenames,
+    required this.paperSize,
+    required this.copies,
+    required this.pageCount,
+    required this.serviceType,
+  });
+
+  factory RecoverablePrintJob.fromJson(Map<String, dynamic> j) => RecoverablePrintJob(
+        id: j['id'] as String? ?? '',
+        filenames: (j['filenames'] as List<dynamic>? ?? []).cast<String>(),
+        paperSize: j['paper_size'] as String? ?? 'A4',
+        copies: (j['copies'] as num?)?.toInt() ?? 1,
+        pageCount: (j['page_count'] as num?)?.toInt() ?? 0,
+        serviceType: j['service_type'] as String? ?? 'printing',
+      );
+}
+
+class RecoverableTransaction {
+  final String transactionId;
+  final String referenceNumber;
+  final double amount;
+  final String createdAt;
+  final RecoverablePrintJob printJob;
+
+  const RecoverableTransaction({
+    required this.transactionId,
+    required this.referenceNumber,
+    required this.amount,
+    required this.createdAt,
+    required this.printJob,
+  });
+
+  factory RecoverableTransaction.fromJson(Map<String, dynamic> j) {
+    final t = j['transaction'] as Map<String, dynamic>;
+    final p = j['printJob'] as Map<String, dynamic>;
+    return RecoverableTransaction(
+      transactionId: t['id'] as String? ?? '',
+      referenceNumber: t['reference_number'] as String? ?? '',
+      amount: (t['amount'] as num?)?.toDouble() ?? 0,
+      createdAt: t['created_at'] as String? ?? '',
+      printJob: RecoverablePrintJob.fromJson(p),
+    );
   }
 }

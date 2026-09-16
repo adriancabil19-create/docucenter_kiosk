@@ -29,6 +29,9 @@ import {
   insertLog,
   listPendingPinResetRequests,
   listAssistanceRequests,
+  listRecoveryActions,
+  getRecoveryActionCounts,
+  reauthorizeRecovery,
   type KioskCommandName,
 } from '../database';
 import { deleteAllDocuments, purgeExpiredDocuments } from '../services/storage.service';
@@ -332,6 +335,39 @@ router.get('/summary', async (_req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// ─── Staff Print Recovery — admin visibility ─────────────────────────────────
+
+router.get('/recovery-actions', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const limit = Math.min(parseInt(String(req.query.limit ?? '100'), 10) || 100, 500);
+    const [actions, counts] = await Promise.all([listRecoveryActions(limit), getRecoveryActionCounts()]);
+    res.json({ success: true, actions, counts, count: actions.length });
+  } catch (err) {
+    logger.error('Fleet: recovery-actions list failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/recovery-actions/:transactionId/reauthorize', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { transactionId } = req.params;
+    const { actor } = req.body as { actor?: string };
+    const ok = await reauthorizeRecovery(transactionId);
+    if (!ok) {
+      res.status(404).json({ success: false, error: 'No locked recovery action found for this transaction' });
+      return;
+    }
+    await insertLog('warn', 'print-recovery', `${actor ?? 'Admin'} reauthorized recovery for transaction ${transactionId}`, {
+      actor: actor ?? 'admin',
+      transactionId,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Fleet: reauthorize recovery failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

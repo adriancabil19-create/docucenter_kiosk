@@ -155,6 +155,7 @@ class _StaffDashboardPageState extends State<StaffDashboardPage> {
                     childAspectRatio: 1.15,
                     children: [
                       _MenuTile('Assistance', Icons.support_agent_outlined, () => widget.onNavigate('assistance')),
+                      _MenuTile('Print Recovery', Icons.restart_alt_outlined, () => widget.onNavigate('printRecovery')),
                       _MenuTile('Diagnostics', Icons.fact_check_outlined, () => widget.onNavigate('diagnostics')),
                       _MenuTile('Printer & Scanner', Icons.print_outlined, () => widget.onNavigate('printerScanner')),
                       _MenuTile('Payment Test', Icons.payments_outlined, () => widget.onNavigate('payment')),

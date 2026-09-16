@@ -239,6 +239,26 @@ export const initSchema = async (): Promise<void> => {
       read_at               TEXT
     );
 
+    -- Staff Print Recovery: one row per staff-initiated reprint of an
+    -- already-paid transaction whose original print failed. A successful row
+    -- (result='success') locks the transaction against further recovery
+    -- until an Admin explicitly reauthorizes it (see reauthorized_at).
+    CREATE TABLE IF NOT EXISTS print_recovery_actions (
+      id                     TEXT PRIMARY KEY,
+      transaction_id         TEXT NOT NULL,
+      original_print_job_id  TEXT NOT NULL,
+      recovery_print_job_id  TEXT,
+      staff_id               TEXT,
+      staff_name             TEXT NOT NULL,
+      reason                 TEXT NOT NULL,
+      reason_note            TEXT,
+      pages                  INTEGER NOT NULL,
+      copies                 INTEGER NOT NULL,
+      result                 TEXT NOT NULL DEFAULT 'pending',
+      reauthorized_at        TEXT,
+      created_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
     -- One row per browser that has granted Web Push permission for the admin
     -- console. owner_role/owner_username identify who it belongs to (Admin is
     -- env-based, not a DB row, hence a plain string rather than a staff_id FK).
@@ -267,6 +287,7 @@ export const initSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_assistance_status       ON assistance_requests(status, requested_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_status    ON staff_notifications(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_push_subscriptions_role ON push_subscriptions(owner_role);
+    CREATE INDEX IF NOT EXISTS idx_recovery_actions_txn    ON print_recovery_actions(transaction_id, created_at);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -284,6 +305,11 @@ export const initSchema = async (): Promise<void> => {
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN duplex INTEGER NOT NULL DEFAULT 0`);
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN unit_price REAL NOT NULL DEFAULT 0`);
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN service_type TEXT NOT NULL DEFAULT 'printing'`);
+  // print_jobs: who/why this job was billed — distinguishes a normal paid
+  // job from a staff-initiated Recovery Print / test print / admin-
+  // authorized print, without overloading service_type (which answers "what
+  // was printed", a different axis).
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN billing_type TEXT NOT NULL DEFAULT 'paid'`);
   // kiosk_commands: re-delivery bookkeeping so a command that is claimed but
   // never ACKed (kiosk crash, lost ACK, flaky link) is handed out again instead
   // of silently stalling as 'delivered' forever.
@@ -388,6 +414,8 @@ export const updateTransactionStatus = async (
 
 // ─── Print job helpers ────────────────────────────────────────────────────────
 
+export type PrintBillingType = 'paid' | 'recovery' | 'staff_test' | 'admin_authorized';
+
 export interface PrintJobRow {
   id: string;
   transaction_id?: string;
@@ -404,6 +432,8 @@ export interface PrintJobRow {
   /** Price per page/copy at time of job, for revenue attribution. */
   unit_price?: number;
   service_type?: string;
+  /** Who/why this job was billed — 'paid' unless a staff action created it. */
+  billing_type?: PrintBillingType;
 }
 
 export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
@@ -411,10 +441,10 @@ export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
     await getDb().execute({
       sql: `INSERT INTO print_jobs
               (id, transaction_id, filenames, paper_size, copies, status, method, simulated,
-               page_count, color_mode, duplex, unit_price, service_type)
+               page_count, color_mode, duplex, unit_price, service_type, billing_type)
             VALUES
               (@id, @transaction_id, @filenames, @paper_size, @copies, @status, @method, @simulated,
-               @page_count, @color_mode, @duplex, @unit_price, @service_type)`,
+               @page_count, @color_mode, @duplex, @unit_price, @service_type, @billing_type)`,
       args: {
         id: row.id,
         transaction_id: row.transaction_id ?? null,
@@ -429,6 +459,7 @@ export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
         duplex: row.duplex ? 1 : 0,
         unit_price: row.unit_price ?? 0,
         service_type: row.service_type ?? 'printing',
+        billing_type: row.billing_type ?? 'paid',
       },
     });
     syncEvent('print-job', row);
@@ -436,6 +467,41 @@ export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
     logger.warn('Failed to insert print job', { id: row.id, error: String(err) });
     throw err;
   }
+};
+
+export const getPrintJobById = async (id: string): Promise<PrintJobRow | null> => {
+  const result = await getDb().execute({ sql: `SELECT * FROM print_jobs WHERE id = @id`, args: { id } });
+  const row = firstRow<Record<string, unknown>>(result);
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    transaction_id: (row.transaction_id as string) ?? undefined,
+    filenames: JSON.parse(String(row.filenames)) as string[],
+    paper_size: String(row.paper_size),
+    copies: Number(row.copies),
+    status: String(row.status),
+    method: (row.method as string) ?? undefined,
+    simulated: Number(row.simulated) === 1,
+    page_count: Number(row.page_count ?? 0),
+    color_mode: String(row.color_mode ?? 'bw'),
+    duplex: Number(row.duplex) === 1,
+    unit_price: Number(row.unit_price ?? 0),
+    service_type: String(row.service_type ?? 'printing'),
+    billing_type: (String(row.billing_type ?? 'paid') as PrintBillingType),
+  };
+};
+
+/** The most recent failed, paid print job for a transaction — the thing Recovery Print reprints. */
+export const getFailedPaidPrintJobForTransaction = async (transactionId: string): Promise<PrintJobRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM print_jobs
+          WHERE transaction_id = @transactionId AND status = 'failed' AND billing_type = 'paid'
+          ORDER BY created_at DESC LIMIT 1`,
+    args: { transactionId },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  if (!row) return null;
+  return getPrintJobById(String(row.id));
 };
 
 // ─── Monitoring queries ───────────────────────────────────────────────────────
@@ -2738,4 +2804,221 @@ export const isPushSubscribed = async (endpoint: string): Promise<boolean> => {
     args: { endpoint },
   });
   return result.rows.length > 0;
+};
+
+// ─── Staff Print Recovery ─────────────────────────────────────────────────────
+
+export type PrintRecoveryReason =
+  | 'paper_jam'
+  | 'printer_error'
+  | 'incorrect_output'
+  | 'power_interruption'
+  | 'printer_offline'
+  | 'other';
+
+export type PrintRecoveryResult = 'pending' | 'success' | 'failed';
+
+export interface PrintRecoveryActionRow {
+  id: string;
+  transaction_id: string;
+  original_print_job_id: string;
+  recovery_print_job_id: string | null;
+  staff_id: string | null;
+  staff_name: string;
+  reason: PrintRecoveryReason;
+  reason_note: string | null;
+  pages: number;
+  copies: number;
+  result: PrintRecoveryResult;
+  reauthorized_at: string | null;
+  created_at: string;
+}
+
+const mapRecoveryAction = (r: Record<string, unknown>): PrintRecoveryActionRow => ({
+  id: String(r.id),
+  transaction_id: String(r.transaction_id),
+  original_print_job_id: String(r.original_print_job_id),
+  recovery_print_job_id: (r.recovery_print_job_id as string) ?? null,
+  staff_id: (r.staff_id as string) ?? null,
+  staff_name: String(r.staff_name),
+  reason: String(r.reason) as PrintRecoveryReason,
+  reason_note: (r.reason_note as string) ?? null,
+  pages: Number(r.pages ?? 0),
+  copies: Number(r.copies ?? 1),
+  result: String(r.result) as PrintRecoveryResult,
+  reauthorized_at: (r.reauthorized_at as string) ?? null,
+  created_at: String(r.created_at),
+});
+
+/**
+ * Transactions eligible for Staff Print Recovery: a paid (SUCCESS) transaction
+ * within the configured window whose most recent paid print job failed, and
+ * that has no un-reauthorized successful recovery already on record. Returns
+ * the transaction alongside the failed job it would reprint.
+ */
+export interface RecoverableTransaction {
+  transaction: TransactionRow;
+  printJob: PrintJobRow;
+}
+
+export const getRecoverableTransactions = async (): Promise<RecoverableTransaction[]> => {
+  const result = await getDb().execute(
+    `SELECT t.*, j.id AS job_id FROM transactions t
+     JOIN print_jobs j ON j.transaction_id = t.id
+     WHERE t.status = 'SUCCESS' AND j.status = 'failed' AND j.billing_type = 'paid'
+       AND t.created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(
+         1,
+         config.printRecoveryWindowMinutes,
+       )} minutes')
+       AND NOT EXISTS (
+         SELECT 1 FROM print_recovery_actions a
+         WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
+       )
+     ORDER BY t.created_at DESC`,
+  );
+  const rows = toRows<Record<string, unknown>>(result);
+  const out: RecoverableTransaction[] = [];
+  for (const r of rows) {
+    const printJob = await getPrintJobById(String(r.job_id));
+    if (!printJob) continue;
+    out.push({
+      transaction: {
+        id: String(r.id),
+        reference_number: String(r.reference_number),
+        amount: Number(r.amount),
+        status: String(r.status),
+        service_type: (r.service_type as string) ?? undefined,
+        created_at: String(r.created_at),
+        completed_at: (r.completed_at as string) ?? undefined,
+      },
+      printJob,
+    });
+  }
+  return out;
+};
+
+export interface CreateRecoveryActionInput {
+  transactionId: string;
+  originalPrintJobId: string;
+  staffId?: string;
+  staffName: string;
+  reason: PrintRecoveryReason;
+  reasonNote?: string;
+  pages: number;
+  copies: number;
+}
+
+export const createRecoveryAction = async (input: CreateRecoveryActionInput): Promise<PrintRecoveryActionRow> => {
+  const id = randomUUID();
+  await getDb().execute({
+    sql: `INSERT INTO print_recovery_actions
+            (id, transaction_id, original_print_job_id, staff_id, staff_name, reason, reason_note, pages, copies, result)
+          VALUES (@id, @transactionId, @originalPrintJobId, @staffId, @staffName, @reason, @reasonNote, @pages, @copies, 'pending')`,
+    args: {
+      id,
+      transactionId: input.transactionId,
+      originalPrintJobId: input.originalPrintJobId,
+      staffId: input.staffId ?? null,
+      staffName: input.staffName,
+      reason: input.reason,
+      reasonNote: input.reasonNote ?? null,
+      pages: input.pages,
+      copies: input.copies,
+    },
+  });
+  const row = await getRecoveryActionById(id);
+  if (!row) throw new Error('Failed to read back recovery action');
+  return row;
+};
+
+export const getRecoveryActionById = async (id: string): Promise<PrintRecoveryActionRow | null> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM print_recovery_actions WHERE id = @id`,
+    args: { id },
+  });
+  const row = firstRow<Record<string, unknown>>(result);
+  return row ? mapRecoveryAction(row) : null;
+};
+
+export const setRecoveryActionResult = async (
+  id: string,
+  result: PrintRecoveryResult,
+  recoveryPrintJobId?: string,
+): Promise<void> => {
+  await getDb().execute({
+    sql: `UPDATE print_recovery_actions SET result = @result, recovery_print_job_id = COALESCE(@jobId, recovery_print_job_id) WHERE id = @id`,
+    args: { id, result, jobId: recoveryPrintJobId ?? null },
+  });
+};
+
+/**
+ * Cloud side: idempotently ingest a recovery action pushed up from a kiosk.
+ * ON CONFLICT DO NOTHING mirrors insertIncident/insertAssistanceRequestFromSync
+ * — transport-level idempotency already guarantees single delivery, this is
+ * defense in depth.
+ */
+export const insertRecoveryActionFromSync = async (row: PrintRecoveryActionRow): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT INTO print_recovery_actions
+            (id, transaction_id, original_print_job_id, recovery_print_job_id, staff_id, staff_name,
+             reason, reason_note, pages, copies, result, created_at)
+          VALUES (@id, @transaction_id, @original_print_job_id, @recovery_print_job_id, @staff_id, @staff_name,
+                  @reason, @reason_note, @pages, @copies, @result, @created_at)
+          ON CONFLICT(id) DO UPDATE SET
+            result = @result, recovery_print_job_id = @recovery_print_job_id`,
+    args: {
+      id: row.id,
+      transaction_id: row.transaction_id,
+      original_print_job_id: row.original_print_job_id,
+      recovery_print_job_id: row.recovery_print_job_id,
+      staff_id: row.staff_id,
+      staff_name: row.staff_name,
+      reason: row.reason,
+      reason_note: row.reason_note,
+      pages: row.pages,
+      copies: row.copies,
+      result: row.result,
+      created_at: row.created_at,
+    },
+  });
+};
+
+export const listRecoveryActions = async (limit = 100): Promise<PrintRecoveryActionRow[]> => {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM print_recovery_actions ORDER BY created_at DESC LIMIT @limit`,
+    args: { limit: Math.min(limit, 500) },
+  });
+  return toRows<Record<string, unknown>>(result).map(mapRecoveryAction);
+};
+
+export interface RecoveryActionCounts {
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+}
+
+export const getRecoveryActionCounts = async (): Promise<RecoveryActionCounts> => {
+  const result = await getDb().execute(`
+    SELECT
+      SUM(CASE WHEN created_at >= strftime('%Y-%m-%dT00:00:00Z','now') THEN 1 ELSE 0 END) AS today,
+      SUM(CASE WHEN created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days') THEN 1 ELSE 0 END) AS thisWeek,
+      SUM(CASE WHEN created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days') THEN 1 ELSE 0 END) AS thisMonth
+    FROM print_recovery_actions WHERE result = 'success'
+  `);
+  const row = firstRow<{ today: number; thisWeek: number; thisMonth: number }>(result);
+  return {
+    today: Number(row?.today ?? 0),
+    thisWeek: Number(row?.thisWeek ?? 0),
+    thisMonth: Number(row?.thisMonth ?? 0),
+  };
+};
+
+/** Admin override: allow another recovery attempt on a transaction already locked by a successful one. */
+export const reauthorizeRecovery = async (transactionId: string): Promise<boolean> => {
+  const result = await getDb().execute({
+    sql: `UPDATE print_recovery_actions SET reauthorized_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE transaction_id = @transactionId AND result = 'success' AND reauthorized_at IS NULL`,
+    args: { transactionId },
+  });
+  return result.rowsAffected > 0;
 };

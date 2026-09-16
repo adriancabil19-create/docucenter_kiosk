@@ -15,10 +15,22 @@ import {
   VALID_IMAGES_PER_PAGE,
 } from '../services/print.service';
 import { logger } from '../utils/logger';
-import { insertPrintJob, getKioskById, getStorageSettings, insertLog } from '../database';
+import {
+  insertPrintJob,
+  getKioskById,
+  getStorageSettings,
+  insertLog,
+  getRecoverableTransactions,
+  createRecoveryAction,
+  setRecoveryActionResult,
+  getRecoveryActionById,
+  type PrintRecoveryReason,
+} from '../database';
 import { config } from '../utils/config';
 import { deleteDocument } from '../services/storage.service';
 import { PaperTrackerService } from '../services/paperTracker.service';
+import { sendPushToAll } from '../services/push.service';
+import { syncEvent } from '../services/sync.service';
 import { PDFDocument as PDFLib } from 'pdf-lib';
 
 /** Uploads directory — mirrors the path used in print.service.ts */
@@ -200,8 +212,18 @@ router.post('/document', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/from-storage', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { filenames, paperSize, colorMode, quality, copies, duplex, serviceType, unitPrice, imageLayout } =
-      req.body;
+    const {
+      filenames,
+      paperSize,
+      colorMode,
+      quality,
+      copies,
+      duplex,
+      serviceType,
+      unitPrice,
+      imageLayout,
+      transactionId,
+    } = req.body;
     const layout: ImageLayoutOptions | undefined = imageLayout ?? undefined;
     const numCopies: number = Math.max(1, parseInt(String(copies ?? '1'), 10) || 1);
 
@@ -270,6 +292,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
     // Log to SQLite regardless of outcome
     await insertPrintJob({
       id: result.jobID ?? randomUUID(),
+      transaction_id: typeof transactionId === 'string' && transactionId ? transactionId : undefined,
       filenames,
       paper_size: paperSize ?? 'A4',
       copies: numCopies,
@@ -282,6 +305,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
       service_type:
         typeof serviceType === 'string' ? serviceType : layout ? 'image-print' : 'printing',
+      billing_type: 'paid',
     });
 
     if (result.success) {
@@ -372,6 +396,23 @@ router.post('/test', async (req: Request, res: Response): Promise<void> => {
       await insertLog('info', 'staff', `${actor} printed a test page`, { actor, paperSize });
     }
 
+    // Staff test prints previously left no print_jobs row at all — now
+    // tracked (billing_type='staff_test') so they show up in monitoring
+    // instead of being invisible.
+    await insertPrintJob({
+      id: result.jobID ?? randomUUID(),
+      filenames: ['(staff test page)'],
+      paper_size: paperSize ?? 'A4',
+      copies: 1,
+      status: result.success ? 'submitted' : 'failed',
+      method: result.method,
+      simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
+      page_count: 1,
+      unit_price: 0,
+      service_type: 'printing',
+      billing_type: 'staff_test',
+    });
+
     if (result.success) {
       res.json({
         success: true,
@@ -402,6 +443,174 @@ router.get('/printers', async (_req: Request, res: Response) => {
   } catch (error) {
     const err = error as Error;
     logger.error('Printers endpoint error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── Staff Print Recovery ─────────────────────────────────────────────────────
+// Customer already paid, printing failed, staff reprints without asking the
+// customer to pay again. Deliberately narrow: only a paid transaction's own
+// most-recently-failed print job is reprintable, only within the configured
+// window, and only once per transaction unless an Admin reauthorizes it (see
+// database.ts's getRecoverableTransactions/reauthorizeRecovery).
+
+const VALID_RECOVERY_REASONS: PrintRecoveryReason[] = [
+  'paper_jam',
+  'printer_error',
+  'incorrect_output',
+  'power_interruption',
+  'printer_offline',
+  'other',
+];
+
+/**
+ * GET /api/print/recoverable
+ * Transactions Staff Mode may offer for recovery right now.
+ */
+router.get('/recoverable', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const recoverable = await getRecoverableTransactions();
+    res.json({ success: true, recoverable, count: recoverable.length });
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Recoverable-transactions endpoint error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/print/recover/:transactionId
+ * Reprint a paid transaction's failed job at no additional charge.
+ */
+router.post('/recover/:transactionId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { transactionId } = req.params;
+    const { reason, reasonNote, actor, staffId } = req.body as {
+      reason?: string;
+      reasonNote?: string;
+      actor?: string;
+      staffId?: string;
+    };
+
+    if (!actor?.trim()) {
+      res.status(400).json({ success: false, error: 'actor (staff name) is required' });
+      return;
+    }
+    if (!reason || !VALID_RECOVERY_REASONS.includes(reason as PrintRecoveryReason)) {
+      res.status(400).json({ success: false, error: `reason must be one of: ${VALID_RECOVERY_REASONS.join(', ')}` });
+      return;
+    }
+    if (reason === 'other' && !reasonNote?.trim()) {
+      res.status(400).json({ success: false, error: 'reasonNote is required when reason is "other"' });
+      return;
+    }
+
+    // Re-derive eligibility server-side rather than trusting that the kiosk's
+    // /recoverable list is still current — the same rule, checked again.
+    const recoverable = await getRecoverableTransactions();
+    const match = recoverable.find((r) => r.transaction.id === transactionId);
+    if (!match) {
+      res.status(409).json({ success: false, error: 'This transaction is not currently eligible for recovery.' });
+      return;
+    }
+    const originalJob = match.printJob;
+
+    const action = await createRecoveryAction({
+      transactionId,
+      originalPrintJobId: originalJob.id,
+      staffId,
+      staffName: actor.trim(),
+      reason: reason as PrintRecoveryReason,
+      reasonNote: reasonNote?.trim() || undefined,
+      pages: originalJob.page_count ?? 0,
+      copies: originalJob.copies,
+    });
+
+    // Reprint the same stored files at the same paper size/colour/copies.
+    // Note: N-up image-layout arrangement isn't persisted on the original
+    // job, so an image-print recovery reprints the source files individually
+    // rather than reproducing the exact original layout.
+    const result = await printFilesFromStorage(
+      originalJob.filenames,
+      originalJob.paper_size,
+      originalJob.color_mode,
+      'standard',
+      originalJob.copies,
+    );
+
+    const recoveryJobId = result.jobID ?? randomUUID();
+    await insertPrintJob({
+      id: recoveryJobId,
+      transaction_id: transactionId,
+      filenames: originalJob.filenames,
+      paper_size: originalJob.paper_size,
+      copies: originalJob.copies,
+      status: result.success ? 'submitted' : 'failed',
+      method: result.method,
+      simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
+      page_count: originalJob.page_count,
+      color_mode: originalJob.color_mode,
+      duplex: originalJob.duplex,
+      unit_price: 0,
+      service_type: originalJob.service_type,
+      billing_type: 'recovery',
+    });
+    await setRecoveryActionResult(action.id, result.success ? 'success' : 'failed', recoveryJobId);
+
+    if (result.success) {
+      try {
+        const sheetsUsed = (originalJob.page_count ?? 0) * originalJob.copies;
+        const normalizedSize = originalJob.paper_size.toUpperCase();
+        const allTrays = await PaperTrackerService.getTrays();
+        const withPaper = allTrays.filter((t) => t.current_count > 0);
+        const sizeMatch = withPaper
+          .filter((t) => (t.paper_size ?? 'A4').toUpperCase() === normalizedSize)
+          .sort((a, b) => b.current_count - a.current_count)[0];
+        const fallback = withPaper.sort((a, b) => b.current_count - a.current_count)[0];
+        const tray = sizeMatch ?? fallback;
+        if (tray) await PaperTrackerService.usePaper(tray.tray_name, sheetsUsed);
+      } catch (paperError) {
+        logger.warn('Failed to update paper tracking after recovery print', { error: String(paperError) });
+      }
+    }
+
+    const finalAction = await getRecoveryActionById(action.id);
+    if (finalAction) syncEvent('print-recovery', finalAction);
+
+    await insertLog(
+      'warn',
+      'print-recovery',
+      `${actor.trim()} used Recovery Print on transaction ${transactionId}`,
+      {
+        actor: actor.trim(),
+        transactionId,
+        originalPrintJobId: originalJob.id,
+        recoveryPrintJobId: recoveryJobId,
+        reason,
+        reasonNote,
+        pages: originalJob.page_count,
+        copies: originalJob.copies,
+        result: result.success ? 'success' : 'failed',
+      },
+    );
+
+    sendPushToAll(
+      {
+        title: '🔔 Recovery Print Used',
+        body: `${actor.trim()} reprinted transaction ${transactionId} (${originalJob.page_count ?? 0}p × ${originalJob.copies}) — ${reason}`,
+        url: '/print-jobs',
+      },
+      { role: 'ADMIN' },
+    );
+
+    if (result.success) {
+      res.json({ success: true, jobID: recoveryJobId, action: finalAction });
+    } else {
+      res.status(500).json({ success: false, error: result.error, action: finalAction });
+    }
+  } catch (error) {
+    const err = error as Error;
+    logger.error('Print recovery endpoint error', { error: err.message });
     res.status(500).json({ success: false, error: err.message });
   }
 });
