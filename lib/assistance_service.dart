@@ -34,6 +34,11 @@ class CreateResult {
   const CreateResult(this.outcome, {this.retryAfterSeconds});
 }
 
+/// How long a concluded pill (Resolved/Cancelled/Expired) stays on screen
+/// before the button snaps back to "Ask for Assistance", instead of relying
+/// on the backend's longer (60s) grace window for the /active poll.
+const _concludedDisplayDuration = Duration(seconds: 6);
+
 /// Live state of this kiosk's own "Ask for Assistance" request, polled from
 /// the local backend. A single instance is shared app-wide — same pattern as
 /// [KioskRuntime] in kiosk_runtime_service.dart.
@@ -48,11 +53,24 @@ class AssistanceState extends ChangeNotifier {
   AssistanceStatus? _status;
   DateTime? _lastCreateAttempt;
 
+  // Once a concluded request's pill has been shown for its full duration and
+  // dismissed locally, its id is remembered here so a further /active poll
+  // that still returns it (backend keeps it in a 60s grace window) doesn't
+  // resurrect the pill.
+  String? _dismissedRequestId;
+  Timer? _concludeTimer;
+
   String? get requestId => _requestId;
   AssistanceStatus? get status => _status;
 
   /// True while a request is open and still waiting on/being handled by staff.
   bool get isActive => _status == AssistanceStatus.pending || _status == AssistanceStatus.acknowledged;
+
+  static const _concludedStatuses = {
+    AssistanceStatus.resolved,
+    AssistanceStatus.cancelled,
+    AssistanceStatus.expired,
+  };
 
   void start() {
     if (_started) return;
@@ -64,7 +82,15 @@ class AssistanceState extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    _concludeTimer?.cancel();
     super.dispose();
+  }
+
+  void _dismiss(String? id) {
+    _dismissedRequestId = id;
+    _requestId = null;
+    _status = null;
+    notifyListeners();
   }
 
   Future<void> _poll() async {
@@ -75,12 +101,31 @@ class AssistanceState extends ChangeNotifier {
       if (res.statusCode != 200) return;
       final data = json.decode(res.body) as Map<String, dynamic>;
       final request = data['request'] as Map<String, dynamic>?;
-      final nextId = request?['id'] as String?;
-      final nextStatus = _parseStatus(request?['status'] as String?);
+      var nextId = request?['id'] as String?;
+      var nextStatus = _parseStatus(request?['status'] as String?);
+
+      // Already shown-and-dismissed locally — ignore the server's lingering
+      // grace-window copy until it reports something genuinely new.
+      if (nextId != null && nextId == _dismissedRequestId) {
+        nextId = null;
+        nextStatus = null;
+      } else if (nextId != _dismissedRequestId) {
+        // A different (or no) request — the dismissal no longer applies.
+        _dismissedRequestId = null;
+      }
+
       if (nextId != _requestId || nextStatus != _status) {
         _requestId = nextId;
         _status = nextStatus;
         notifyListeners();
+
+        _concludeTimer?.cancel();
+        if (nextId != null && _concludedStatuses.contains(nextStatus)) {
+          final idToDismiss = nextId;
+          _concludeTimer = Timer(_concludedDisplayDuration, () {
+            if (_requestId == idToDismiss) _dismiss(idToDismiss);
+          });
+        }
       }
     } catch (e) {
       debugPrint('AssistanceState poll failed: $e');

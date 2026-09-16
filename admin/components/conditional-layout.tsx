@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { NavSidebar } from '@/components/nav-sidebar';
+import { NotificationWatcher } from '@/components/notification-watcher';
 import type { ConsoleRole } from '@/lib/session';
 
 export function ConditionalLayout({
@@ -25,6 +26,7 @@ export function ConditionalLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <NotificationWatcher role={role} />
       <NavSidebar role={role} />
       {/* Extra top padding clears the fixed hamburger toggle everywhere it's
           visible (below `lg`) — kept separate from the sm: padding shorthand
