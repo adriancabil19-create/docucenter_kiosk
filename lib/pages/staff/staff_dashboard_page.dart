@@ -147,12 +147,12 @@ class _StaffDashboardPageState extends State<StaffDashboardPage> {
                   const Text('TOOLS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
                   const SizedBox(height: 8),
                   GridView.count(
-                    crossAxisCount: 2,
+                    crossAxisCount: 3,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.15,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.3,
                     children: [
                       _MenuTile('Assistance', Icons.support_agent_outlined, () => widget.onNavigate('assistance')),
                       _MenuTile('Print Recovery', Icons.restart_alt_outlined, () => widget.onNavigate('printRecovery')),
@@ -308,17 +308,19 @@ class _MenuTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
-          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.black12)),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: _brandBlue, size: 28),
-              const SizedBox(height: 8),
+              Icon(icon, color: _brandBlue, size: 20),
+              const SizedBox(height: 4),
               Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
               ),
             ],
           ),
