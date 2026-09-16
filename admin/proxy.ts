@@ -38,7 +38,11 @@ export async function proxy(request: NextRequest) {
   if (
     isPublic(pathname) ||
     pathname.startsWith('/_next/') ||
-    pathname === '/favicon.ico'
+    pathname === '/favicon.ico' ||
+    pathname === '/icon.png' ||
+    pathname === '/apple-icon.png' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/sw.js'
   ) {
     return NextResponse.next();
   }

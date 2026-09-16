@@ -19,6 +19,7 @@ import fleetRoutes from './routes/fleet';
 import kioskRoutes from './routes/kiosk';
 import staffRoutes from './routes/staff';
 import assistanceRoutes from './routes/assistance';
+import pushRoutes from './routes/push';
 import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
 import { startMaintenanceJob } from './services/maintenance.service';
@@ -138,6 +139,7 @@ app.use('/api/kiosk', requireKioskApiToken, kioskRoutes);
 app.use('/api/staff', staffRoutes);
 // Mixed audience (customer create/cancel/poll + Staff/Admin console manage) — auth applied per-route.
 app.use('/api/assistance', assistanceRoutes);
+app.use('/api/push', requireAdminApiToken, pushRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/', transferRoutes);
 

@@ -152,6 +152,18 @@ export const config = {
     notificationRetentionDays: parseInt(process.env.NOTIFICATION_RETENTION_DAYS || '30', 10),
   },
 
+  // Web Push (phone/browser OS-level notifications for the admin console).
+  // Generate a pair with `npx web-push generate-vapid-keys`. The public key
+  // must also be set as NEXT_PUBLIC_VAPID_PUBLIC_KEY on the admin console
+  // (same value) so the browser can create a subscription. Push is only ever
+  // sent from the cloud-role instance (see push.service.ts) — that's where
+  // subscriptions live, since only the console talks to it.
+  push: {
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
+    vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
+    vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+  },
+
   // Aiven / External DB (optional)
   aiven: {
     databaseUrl: process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '',

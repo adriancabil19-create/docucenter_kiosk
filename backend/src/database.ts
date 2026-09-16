@@ -6,6 +6,7 @@ import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { createClient, type Client, type ResultSet } from '@libsql/client';
 import { logger } from './utils/logger';
 import { syncEvent } from './services/sync.service';
+import { sendPushToAll } from './services/push.service';
 import { config } from './utils/config';
 
 // ─── Client singleton ─────────────────────────────────────────────────────────
@@ -238,6 +239,19 @@ export const initSchema = async (): Promise<void> => {
       read_at               TEXT
     );
 
+    -- One row per browser that has granted Web Push permission for the admin
+    -- console. owner_role/owner_username identify who it belongs to (Admin is
+    -- env-based, not a DB row, hence a plain string rather than a staff_id FK).
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id             TEXT PRIMARY KEY,
+      owner_role     TEXT NOT NULL,
+      owner_username TEXT NOT NULL,
+      endpoint       TEXT NOT NULL UNIQUE,
+      p256dh         TEXT NOT NULL,
+      auth           TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
@@ -252,6 +266,7 @@ export const initSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_assistance_kiosk_status ON assistance_requests(kiosk_id, status);
     CREATE INDEX IF NOT EXISTS idx_assistance_status       ON assistance_requests(status, requested_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_status    ON staff_notifications(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_push_subscriptions_role ON push_subscriptions(owner_role);
   `);
 
   // Step 2: Migrations (column may already exist — ignore the error)
@@ -1008,7 +1023,8 @@ export interface IncidentInput {
 
 export const insertIncident = async (input: IncidentInput): Promise<string> => {
   const id = input.id ?? randomUUID();
-  await getDb().execute({
+  const severity = input.severity ?? 'warning';
+  const result = await getDb().execute({
     sql: `INSERT INTO incidents (id, kiosk_id, device, error_code, severity, message, metadata, created_at)
           VALUES (@id, @kiosk_id, @device, @error_code, @severity, @message, @metadata,
                   COALESCE(@created_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')))
@@ -1018,12 +1034,23 @@ export const insertIncident = async (input: IncidentInput): Promise<string> => {
       kiosk_id: input.kiosk_id ?? 'DOCUCENTER-01',
       device: input.device ?? 'kiosk',
       error_code: input.error_code,
-      severity: input.severity ?? 'warning',
+      severity,
       message: input.message,
       metadata: input.metadata ? JSON.stringify(input.metadata) : null,
       created_at: input.created_at ?? null,
     },
   });
+  // Only for a row that was actually just inserted (not a duplicate/idempotent
+  // sync retry hitting ON CONFLICT DO NOTHING), only cloud-role (that's where
+  // Admin subscriptions live — see push.service.ts), and only warning/critical
+  // (an 'info' incident, e.g. a routine soft-reload note, isn't worth a phone
+  // alert).
+  if (result.rowsAffected > 0 && config.isCloudRole && severity !== 'info') {
+    sendPushToAll(
+      { title: severity === 'critical' ? '🔴 Critical Alert' : '🚨 New Alert', body: `${input.message} (${input.kiosk_id ?? 'DOCUCENTER-01'})`, url: '/alerts' },
+      { role: 'ADMIN' },
+    );
+  }
   return id;
 };
 
@@ -2359,6 +2386,16 @@ export const createAssistanceRequest = async (
   const request = await getAssistanceRequestById(id);
   if (!request) throw new Error('Failed to read back assistance request');
   syncEvent('assistance-request', request);
+  // Only where subscriptions actually live (see push.service.ts) — in split
+  // deployment this is a no-op here and fires instead from
+  // insertAssistanceRequestFromSync once the cloud ingests it.
+  if (config.isCloudRole) {
+    sendPushToAll({
+      title: '🔔 New Assistance Request',
+      body: `Kiosk ${kioskId} is requesting assistance`,
+      url: '/assistance',
+    });
+  }
   return { ok: true, request };
 };
 
@@ -2370,7 +2407,7 @@ export const createAssistanceRequest = async (
  */
 export const insertAssistanceRequestFromSync = async (row: AssistanceRequestRow): Promise<void> => {
   const db = getDb();
-  await db.execute({
+  const result = await db.execute({
     sql: `INSERT INTO assistance_requests
             (id, kiosk_id, status, message, customer_session_id, requested_at, created_at, updated_at)
           VALUES (@id, @kiosk_id, @status, @message, @customer_session_id, @requested_at, @created_at, @updated_at)
@@ -2393,6 +2430,15 @@ export const insertAssistanceRequestFromSync = async (row: AssistanceRequestRow)
           )`,
     args: { id: randomUUID(), requestId: row.id },
   });
+  // rowsAffected > 0 guards against a re-delivered outbox event (already
+  // accepted once via X-Sync-Event-Id, but defense in depth) double-pushing.
+  if (result.rowsAffected > 0) {
+    sendPushToAll({
+      title: '🔔 New Assistance Request',
+      body: `Kiosk ${row.kiosk_id} is requesting assistance`,
+      url: '/assistance',
+    });
+  }
 };
 
 const markNotificationsReadForRequest = async (requestId: string): Promise<void> => {
@@ -2611,4 +2657,82 @@ export const markNotificationRead = async (id: string): Promise<boolean> => {
     args: { id },
   });
   return result.rowsAffected > 0;
+};
+
+// ─── Web Push subscriptions ──────────────────────────────────────────────────
+
+export interface PushSubscriptionRow {
+  id: string;
+  owner_role: 'ADMIN' | 'STAFF';
+  owner_username: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+}
+
+export interface PushSubscriptionInput {
+  ownerRole: 'ADMIN' | 'STAFF';
+  ownerUsername: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/** Upsert by endpoint — a browser re-subscribing (e.g. after clearing data) just replaces its old row. */
+export const savePushSubscription = async (input: PushSubscriptionInput): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT INTO push_subscriptions (id, owner_role, owner_username, endpoint, p256dh, auth)
+          VALUES (@id, @owner_role, @owner_username, @endpoint, @p256dh, @auth)
+          ON CONFLICT(endpoint) DO UPDATE SET
+            owner_role = @owner_role, owner_username = @owner_username,
+            p256dh = @p256dh, auth = @auth`,
+    args: {
+      id: randomUUID(),
+      owner_role: input.ownerRole,
+      owner_username: input.ownerUsername,
+      endpoint: input.endpoint,
+      p256dh: input.p256dh,
+      auth: input.auth,
+    },
+  });
+};
+
+export const removePushSubscription = async (endpoint: string): Promise<void> => {
+  await getDb().execute({
+    sql: `DELETE FROM push_subscriptions WHERE endpoint = @endpoint`,
+    args: { endpoint },
+  });
+};
+
+/** Drop a subscription the push service reports as gone (404/410) — housekeeping, not a user action. */
+export const deletePushSubscriptionById = async (id: string): Promise<void> => {
+  await getDb().execute({ sql: `DELETE FROM push_subscriptions WHERE id = @id`, args: { id } });
+};
+
+export const listPushSubscriptions = async (
+  opts: { role?: 'ADMIN' | 'STAFF' } = {},
+): Promise<PushSubscriptionRow[]> => {
+  const where = opts.role ? ' WHERE owner_role = @role' : '';
+  const result = await getDb().execute({
+    sql: `SELECT * FROM push_subscriptions${where}`,
+    args: opts.role ? { role: opts.role } : {},
+  });
+  return toRows<Record<string, unknown>>(result).map((r) => ({
+    id: String(r.id),
+    owner_role: String(r.owner_role) as 'ADMIN' | 'STAFF',
+    owner_username: String(r.owner_username),
+    endpoint: String(r.endpoint),
+    p256dh: String(r.p256dh),
+    auth: String(r.auth),
+    created_at: String(r.created_at),
+  }));
+};
+
+export const isPushSubscribed = async (endpoint: string): Promise<boolean> => {
+  const result = await getDb().execute({
+    sql: `SELECT 1 FROM push_subscriptions WHERE endpoint = @endpoint`,
+    args: { endpoint },
+  });
+  return result.rows.length > 0;
 };
