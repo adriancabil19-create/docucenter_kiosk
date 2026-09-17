@@ -490,6 +490,9 @@ Thank you for using our service!
               ),
             ),
           ),
+          const SizedBox(height: 16),
+
+          _buildEstimatedCostCard(),
           const SizedBox(height: 24),
 
           SizedBox(
@@ -800,6 +803,56 @@ Thank you for using our service!
                     child: Icon(Icons.broken_image_outlined, size: 48),
                   ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Shown on the settings screen, before scanning — the real total (in
+  // _buildConfirmView) needs the actual page count, which we don't have
+  // yet, so this is a clearly-labelled per-page estimate the customer can
+  // use to gauge cost before committing to scan.
+  Widget _buildEstimatedCostCard() {
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Estimated Cost',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            _costRow('Rate', '₱${_costPerPage.toStringAsFixed(2)} per page'),
+            _costRow('Copies', '× $_copies'),
+            const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Per page scanned',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  '₱${(_costPerPage * _copies).toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Final total depends on how many pages are scanned — you\'ll see the exact cost before paying.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
