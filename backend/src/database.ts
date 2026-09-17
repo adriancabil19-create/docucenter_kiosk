@@ -720,20 +720,29 @@ export const decrementPaperTray = async (trayName: string, amount: number): Prom
  */
 export const applyPaperTrayFromCloud = async (tray: PaperTrayRow): Promise<void> => {
   try {
+    // The command-poll downlink re-sends this snapshot every ~2s, racing
+    // against the kiosk's own local decrements (which sync UP asynchronously
+    // on the same channel). Without an ordering check, a downlink snapshot
+    // taken just before the cloud processed the kiosk's latest decrement
+    // would stomp the fresher local count right back to the stale value —
+    // only self-correcting once the next poll caught up. Only apply when the
+    // incoming row is actually newer than what's already here.
     await getDb().execute({
       sql: `UPDATE paper_trays
             SET current_count = @currentCount,
                 max_capacity  = @maxCapacity,
                 threshold     = @threshold,
                 paper_size    = @paperSize,
-                updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE tray_name = @trayName`,
+                updated_at    = @updatedAt
+            WHERE tray_name = @trayName
+              AND (updated_at IS NULL OR updated_at < @updatedAt)`,
       args: {
         trayName: tray.tray_name,
         currentCount: tray.current_count,
         maxCapacity: tray.max_capacity,
         threshold: tray.threshold,
         paperSize: tray.paper_size,
+        updatedAt: tray.updated_at,
       },
     });
   } catch (err) {
@@ -1184,7 +1193,8 @@ export type KioskCommandName =
   | 'DELETE_ALL_FILES'
   | 'DELETE_ALL_FILES_KEEP_META'
   | 'STAFF_PIN_REQUEST_DECIDED'
-  | 'ASSISTANCE_STATUS_CHANGED';
+  | 'ASSISTANCE_STATUS_CHANGED'
+  | 'PAPER_TRAY_REFILLED';
 
 export interface KioskCommandRow {
   id: string;

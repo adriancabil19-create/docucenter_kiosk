@@ -623,6 +623,14 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
   Timer? _countdownTimer;
   PaymentPollingManager? _pollingManager;
 
+  // Cache the decoded QR bytes by source string so the once-a-second
+  // countdown rebuild reuses the same Uint8List instance instead of
+  // re-decoding — Image.memory keys its cache on object identity, so a fresh
+  // Uint8List every rebuild made it flicker even though the content never
+  // changed for the lifetime of a given transaction's QR code.
+  String? _cachedQrCodeSource;
+  Uint8List? _cachedQrCodeBytes;
+
   @override
   void initState() {
     super.initState();
@@ -806,12 +814,20 @@ $pending'''
   }
 
   Uint8List? _decodeQRCodeImage(String qrCode) {
+    if (_cachedQrCodeSource == qrCode) return _cachedQrCodeBytes;
+
     final match =
         RegExp(r'data:image/[a-zA-Z]+;base64,(.+)').firstMatch(qrCode);
-    if (match == null) return null;
+    final bytes = match == null ? null : _tryDecodeBase64(match.group(1)!);
 
+    _cachedQrCodeSource = qrCode;
+    _cachedQrCodeBytes = bytes;
+    return bytes;
+  }
+
+  Uint8List? _tryDecodeBase64(String data) {
     try {
-      return base64Decode(match.group(1)!);
+      return base64Decode(data);
     } catch (_) {
       return null;
     }

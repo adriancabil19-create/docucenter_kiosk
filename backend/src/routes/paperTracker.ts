@@ -1,9 +1,24 @@
 import { Router } from 'express';
 import { PaperTrackerService } from '../services/paperTracker.service';
-import { updatePaperTrayThreshold } from '../database';
+import { updatePaperTrayThreshold, getPaperTrays, enqueueCommand } from '../database';
+import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// Admin edits on the cloud instance only take effect locally (this table has
+// no per-kiosk scoping) until the kiosk applies them. Rather than have the
+// kiosk poll this table down every 2s (which used to race the kiosk's own
+// concurrent decrements — see applyPaperTrayFromCloud), push the new state
+// down once via the existing one-shot command channel. A local kiosk/'both'
+// edit already lands in the table it's about to be read from, so no push is
+// needed there.
+const pushTrayToKiosk = async (trayName: string): Promise<void> => {
+  if (!config.isCloudRole) return;
+  const tray = (await getPaperTrays()).find((t) => t.tray_name === trayName);
+  if (!tray) return;
+  await enqueueCommand(config.kioskId, 'PAPER_TRAY_REFILLED', { ...tray });
+};
 
 router.get('/paper-trays', async (_req, res) => {
   try {
@@ -59,6 +74,8 @@ router.put('/paper-trays/:trayName', async (req, res) => {
       }
       await updatePaperTrayThreshold(trayName, threshold);
     }
+
+    await pushTrayToKiosk(trayName);
 
     return res.json({ success: true, message: `Tray "${trayName}" updated` });
   } catch (error) {
