@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../payment_service.dart';
 import '../config.dart';
 import '../print_service.dart';
+import '../kiosk_runtime_service.dart';
 
 // ============================================================================
 // PAYMONGO Payment Page — top-level page shown when user navigates to 'payment'
@@ -549,6 +550,11 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 backgroundColor: Colors.orange,
                               ),
                             );
+                          } finally {
+                            // Print job finished (success or failure) — paper
+                            // may have been consumed either way. One
+                            // event-triggered poll, not a timer.
+                            KioskRuntime.instance.pollPaperTraysOnce('print_completed');
                           }
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(

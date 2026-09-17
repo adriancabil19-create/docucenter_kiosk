@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../paper_tracker_service.dart';
+import '../kiosk_runtime_service.dart';
 
 class PaperTrackerPage extends StatefulWidget {
   final Function(String) onNavigate;
@@ -10,49 +11,41 @@ class PaperTrackerPage extends StatefulWidget {
   State<PaperTrackerPage> createState() => _PaperTrackerPageState();
 }
 
+// Tray data comes from KioskRuntime — the ONE centralized, event-triggered
+// tray-status mechanism shared by the whole app (see kiosk_runtime_service.dart
+// pollPaperTraysOnce). This page never fetches independently; it only
+// triggers that same shared poll (manual refresh / after a refill) and
+// displays whatever it last cached.
 class _PaperTrackerPageState extends State<PaperTrackerPage> {
-  List<PaperTray> _trays = [];
-  bool _isLoading = true;
-  String? _errorMessage;
+  bool _refreshing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadTrays();
-  }
-
-  Future<void> _loadTrays() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final trays = await PaperTrackerService.getTrays();
-      setState(() {
-        _trays = trays;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load paper trays: $e';
-        _isLoading = false;
-      });
-    }
+  Future<void> _refresh(String reason) async {
+    setState(() => _refreshing = true);
+    await KioskRuntime.instance.pollPaperTraysOnce(reason);
+    if (mounted) setState(() => _refreshing = false);
   }
 
   Future<void> _setTrayCapacity(String trayName, int capacity) async {
     final success = await PaperTrackerService.setTrayCapacity(trayName, capacity);
+    if (!mounted) return;
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Updated $trayName capacity to $capacity sheets')),
       );
-      _loadTrays(); // Refresh data
+      // Admin just refilled this tray physically — one event-triggered poll.
+      await _refresh('admin_manual_refresh');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to update tray capacity')),
       );
     }
+  }
+
+  String _lastCheckedLabel() {
+    final at = KioskRuntime.instance.paperTraysCheckedAt;
+    if (at == null) return 'Not checked yet';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'Last checked: ${two(at.hour)}:${two(at.minute)}:${two(at.second)}';
   }
 
   void _showCapacityDialog(String trayName) {
@@ -103,24 +96,43 @@ class _PaperTrackerPageState extends State<PaperTrackerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Paper Tracker'),
-        backgroundColor: const Color(0xFF2563EB),
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
+    return AnimatedBuilder(
+      animation: KioskRuntime.instance,
+      builder: (context, _) {
+        final trays = KioskRuntime.instance.paperTrays;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Paper Tracker'),
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                icon: _refreshing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.refresh),
+                tooltip: 'Refresh paper tray status',
+                onPressed:
+                    _refreshing ? null : () => _refresh('admin_manual_refresh'),
+              ),
+            ],
+          ),
+          body: trays.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+                      const Text('No paper tray data yet.'),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: _loadTrays,
-                        child: const Text('Retry'),
+                        onPressed: _refreshing
+                            ? null
+                            : () => _refresh('admin_manual_refresh'),
+                        child: const Text('Refresh'),
                       ),
                     ],
                   ),
@@ -142,12 +154,20 @@ class _PaperTrackerPageState extends State<PaperTrackerPage> {
                         'Monitor paper levels in each tray. Set capacity when you add papers.',
                         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _lastCheckedLabel(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       Expanded(
                         child: ListView.builder(
-                          itemCount: _trays.length,
+                          itemCount: trays.length,
                           itemBuilder: (context, index) {
-                            final tray = _trays[index];
+                            final tray = trays[index];
                             final isLow = tray.isLow;
 
                             return Card(
@@ -227,6 +247,8 @@ class _PaperTrackerPageState extends State<PaperTrackerPage> {
                     ],
                   ),
                 ),
+        );
+      },
     );
   }
 }

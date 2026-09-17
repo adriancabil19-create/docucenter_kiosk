@@ -74,6 +74,9 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     _copiesController = TextEditingController(text: _copies.toString());
     // Relabel the quality options / recompute cost when the admin retunes prices.
     KioskRuntime.instance.addListener(_onPricingChanged);
+    // Event-triggered paper-tray reading for this service session — not a
+    // timer; see KioskRuntime.pollPaperTraysOnce.
+    KioskRuntime.instance.pollPaperTraysOnce('printing_service_open');
   }
 
   @override

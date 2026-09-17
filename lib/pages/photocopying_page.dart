@@ -46,6 +46,11 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
     );
     // Recompute the cost breakdown when the admin retunes prices.
     KioskRuntime.instance.addListener(_onPricingChanged);
+    // Event-triggered paper-tray reading for this service session — not a
+    // timer; see KioskRuntime.pollPaperTraysOnce. (Distinct from the ADF
+    // feeder-status timer above, which checks the scanner's input tray, not
+    // the printer's output paper trays.)
+    KioskRuntime.instance.pollPaperTraysOnce('photocopying_service_open');
   }
 
   @override
@@ -167,6 +172,10 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
       }
       throw Exception(msg);
     }
+
+    // Job succeeded — paper was just consumed, so refresh the cached levels
+    // once. Event-triggered, not a timer.
+    KioskRuntime.instance.pollPaperTraysOnce('photocopy_completed');
   }
 
   // ── Navigate to payment; print job fires after payment succeeds ───────────

@@ -46,10 +46,15 @@ class PaperTray {
 class PaperTrackerService {
   static const String _baseUrl = BackendConfig.serverUrl;
 
-  /// Get all paper tray statuses
-  static Future<List<PaperTray>> getTrays() async {
+  /// Get all paper tray statuses. [reason] identifies the event that
+  /// triggered this call (e.g. 'printing_service_open', 'print_completed',
+  /// 'admin_manual_refresh') — sent to the backend purely for the [TRAY] logs
+  /// that verify polling is event-triggered, not continuous.
+  static Future<List<PaperTray>> getTrays({String reason = 'unspecified'}) async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/paper-tracker/paper-trays'));
+      final response = await http.get(Uri.parse(
+        '$_baseUrl/api/paper-tracker/paper-trays?reason=${Uri.encodeQueryComponent(reason)}',
+      ));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

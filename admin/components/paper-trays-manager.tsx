@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Button } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { PaperTray } from '@/lib/types';
@@ -28,23 +28,22 @@ export function PaperTraysManager({ initialData }: Props) {
   const [formThreshold, setFormThreshold] = useState('');
   const [formCapacity, setFormCapacity] = useState('');
 
-  const refresh = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  // Event-triggered only: the page load already fetches once server-side
+  // (see app/paper/page.tsx's initialData), and this button is the one
+  // explicit admin-triggered refresh — no interval polling the printer/DB
+  // in the background.
+  const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await getPaperTrays();
       setTrays(res.data);
-      if (!silent) addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
+      addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
     } catch (err) {
-      if (!silent) addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => refresh(true), 30_000);
-    return () => clearInterval(id);
-  }, [refresh]);
 
   const startEdit = useCallback((tray: PaperTray) => {
     setEditingTray(tray.tray_name);

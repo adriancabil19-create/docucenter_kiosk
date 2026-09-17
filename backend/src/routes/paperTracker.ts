@@ -20,9 +20,17 @@ const pushTrayToKiosk = async (trayName: string): Promise<void> => {
   await enqueueCommand(config.kioskId, 'PAPER_TRAY_REFILLED', { ...tray });
 };
 
-router.get('/paper-trays', async (_req, res) => {
+// The frontend calls this only on its specific event triggers now (service
+// opened, job completed, admin refresh) — never on a timer — so `reason`
+// should always be one of those; log it verbatim to make that verifiable in
+// the backend logs rather than trusting the client-side change alone.
+router.get('/paper-trays', async (req, res) => {
+  const reason = typeof req.query.reason === 'string' && req.query.reason ? req.query.reason : 'unspecified';
+  logger.info(`[TRAY] Poll requested: ${reason}`);
   try {
     const trays = await PaperTrackerService.getTrays();
+    logger.info('[TRAY] Poll completed');
+    logger.info('[TRAY] Status updated');
     res.json({ success: true, data: trays });
   } catch (error) {
     logger.error('Failed to get paper trays', { error: String(error) });

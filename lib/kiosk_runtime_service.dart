@@ -28,10 +28,21 @@ class KioskRuntime extends ChangeNotifier {
   int _openIncidents = 0;
   int _consecutiveFailures = 0;
 
-  /// Paper tray levels, polled independently of (and never affecting) the
+  /// Paper tray levels — event-triggered only (service opened, job
+  /// completed, admin refresh, one-time on boot), never on a timer. See
+  /// [pollPaperTraysOnce]. Independent of (and never affecting) the
   /// connectivity state above — a stale/unreachable paper-tracker endpoint
   /// should never be mistaken for the kiosk itself going offline.
   List<PaperTray> _trays = [];
+
+  /// Single-flight guard: rapid navigation between screens that each call
+  /// [pollPaperTraysOnce] on open must not fire concurrent HTTP requests —
+  /// callers arriving while one is in flight get the same pending future.
+  Future<void>? _paperTrayPollInFlight;
+
+  /// When the tray levels were last successfully refreshed — shown in the UI
+  /// so staff can see how fresh the reading is between event-triggered polls.
+  DateTime? _paperTraysCheckedAt;
 
   /// Per-page prices set by the admin. Defaults match the historical hard-coded
   /// rates so the app is usable before the first poll completes.
@@ -49,6 +60,7 @@ class KioskRuntime extends ChangeNotifier {
   int get openIncidents => _openIncidents;
 
   List<PaperTray> get paperTrays => _trays;
+  DateTime? get paperTraysCheckedAt => _paperTraysCheckedAt;
 
   /// True once every tray has reported in and every one of them is at zero —
   /// the point at which a print/copy job can no longer physically go through.
@@ -77,6 +89,11 @@ class KioskRuntime extends ChangeNotifier {
     _started = true;
     _poll();
     _timer = Timer.periodic(BackendConfig.kioskRuntimePollInterval, (_) => _poll());
+    // One-time paper-tray reading so the home screen's out-of-paper banner
+    // and service lock aren't blank/wrong from launch until a service is
+    // opened — NOT a loop; every refresh after this is event-triggered (see
+    // pollPaperTraysOnce).
+    pollPaperTraysOnce('kiosk_boot');
   }
 
   @override
@@ -89,10 +106,9 @@ class KioskRuntime extends ChangeNotifier {
   Future<void> refresh() => _poll();
 
   Future<void> _poll() async {
-    // Fire-and-forget: this has its own try/catch and must never affect the
-    // connectivity bookkeeping below.
-    _pollPaperTrays();
-
+    // Paper trays are event-triggered only (see pollPaperTraysOnce) and are
+    // deliberately NOT polled here — this loop is for connectivity,
+    // maintenance, pricing, and the reload signal only.
     try {
       final res = await http
           .get(Uri.parse(BackendConfig.kioskSelfUrl))
@@ -151,16 +167,39 @@ class KioskRuntime extends ChangeNotifier {
     }
   }
 
-  Future<void> _pollPaperTrays() async {
-    // PaperTrackerService already catches its own errors and returns []
-    // on failure, so a down paper-tracker endpoint just leaves the last
-    // known levels in place rather than flapping outOfPaper on/off.
-    final trays = await PaperTrackerService.getTrays();
-    if (trays.isEmpty) return;
-    if (_traysChanged(trays)) {
-      _trays = trays;
-      notifyListeners();
+  /// The ONE centralized entry point for refreshing paper tray levels.
+  /// Event-triggered only — call this from a specific, meaningful moment
+  /// (a service opening, a job completing, an admin refresh), never from a
+  /// timer or a widget's build/render path. [reason] identifies that moment
+  /// for the backend's [TRAY] logs.
+  ///
+  /// Single-flight: a poll already in progress is reused rather than firing
+  /// a second concurrent request — safe to call from multiple places (e.g.
+  /// rapid navigation) without ever overlapping requests.
+  Future<void> pollPaperTraysOnce(String reason) {
+    final inFlight = _paperTrayPollInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _doPollPaperTraysOnce(reason);
+    _paperTrayPollInFlight = future;
+    future.whenComplete(() => _paperTrayPollInFlight = null);
+    return future;
+  }
+
+  Future<void> _doPollPaperTraysOnce(String reason) async {
+    // PaperTrackerService already catches its own errors and returns [] on
+    // failure. One bounded retry for a transient hiccup (per spec: never
+    // retry indefinitely) — then accept it and keep the last known-good
+    // levels rather than flapping outOfPaper on/off.
+    var trays = await PaperTrackerService.getTrays(reason: reason);
+    if (trays.isEmpty) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      trays = await PaperTrackerService.getTrays(reason: '$reason (retry)');
     }
+    if (trays.isEmpty) return;
+
+    _paperTraysCheckedAt = DateTime.now();
+    if (_traysChanged(trays)) _trays = trays;
+    notifyListeners();
   }
 
   bool _traysChanged(List<PaperTray> next) {

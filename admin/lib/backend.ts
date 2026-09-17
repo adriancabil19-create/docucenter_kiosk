@@ -103,8 +103,10 @@ export const getKioskStatus = (): Promise<KioskStatusResponse> =>
 
 // ─── Paper Trays ──────────────────────────────────────────────────────────────
 
+// Called once per page load (server-side, see app/paper/page.tsx) — `reason`
+// is forwarded purely for the backend's [TRAY] logs.
 export const getPaperTrays = (): Promise<PaperTraysResponse> =>
-  apiFetch<PaperTraysResponse>('/api/paper-tracker/paper-trays');
+  apiFetch<PaperTraysResponse>('/api/paper-tracker/paper-trays?reason=admin_page_load');
 
 export const getPaperAlerts = (): Promise<{
   success: boolean;
