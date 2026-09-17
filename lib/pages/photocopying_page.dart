@@ -111,6 +111,8 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
           )
           .timeout(const Duration(minutes: 7));
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         setState(() {
@@ -133,6 +135,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isPreScanning = false;
         _preScanError = 'Scan error: $e';
