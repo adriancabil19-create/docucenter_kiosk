@@ -555,6 +555,91 @@ const setWindowsPrinterColor = (printerName: string, color: boolean): void => {
   }
 };
 
+/**
+ * Print quality (draft/standard/high) control.
+ *
+ * SumatraPDF's -print-settings has NO quality/resolution/DPI token at all —
+ * only fitpage/noscale/shrink, color/monochrome, duplex modes, odd/even,
+ * landscape/portrait, and bin=X (see pdf-to-printer's own docs). The 'draft'
+ * and 'nHires' values previously pushed into that string were never
+ * recognized by SumatraPDF and were silently ignored, which is why draft,
+ * standard, and high all printed identically — quality was never actually
+ * being applied anywhere.
+ *
+ * The real, driver-level control is the printer's own PrintTicketXml (Print
+ * Schema): this Brother driver exposes a standard
+ * <psf:Feature name="psk:PageOutputQuality"> with Draft/Normal/High options
+ * (verified against the live printer — Normal maps to 600x600 DPI here).
+ * Same pattern as setWindowsPrinterColor: read the current ticket, patch
+ * just that one feature, apply it, and the caller restores the original
+ * ticket afterward.
+ */
+const QUALITY_TICKET_OPTION: Record<string, string> = {
+  draft: 'psk:Draft',
+  standard: 'psk:Normal',
+  high: 'psk:High',
+};
+
+const getWindowsPrinterTicketXml = (printerName: string): string | null => {
+  try {
+    return execSync(
+      `powershell -NoProfile -Command "(Get-PrintConfiguration -PrinterName '${printerName.replace(/'/g, "''")}').PrintTicketXml"`,
+      { encoding: 'utf8', timeout: 5000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+    );
+  } catch {
+    return null;
+  }
+};
+
+const applyWindowsPrinterTicketXml = (printerName: string, ticketXml: string): boolean => {
+  const tmpFile = path.join(os.tmpdir(), `print_ticket_${Date.now()}_${Math.random().toString(36).slice(2)}.xml`);
+  try {
+    fs.writeFileSync(tmpFile, ticketXml, 'utf8');
+    execSync(
+      `powershell -NoProfile -Command "Set-PrintConfiguration -PrinterName '${printerName.replace(/'/g, "''")}' -PrintTicketXml (Get-Content -Raw -Path '${tmpFile.replace(/'/g, "''")}')"`,
+      { encoding: 'utf8', timeout: 8000, windowsHide: true },
+    );
+    return true;
+  } catch (err) {
+    logger.warn('Failed to apply printer PrintTicketXml', {
+      printerName,
+      error: String(err).substring(0, 300),
+    });
+    return false;
+  } finally {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      // Best-effort cleanup.
+    }
+  }
+};
+
+/**
+ * Patch the printer's stored ticket to the requested quality and apply it.
+ * Returns the ORIGINAL ticket XML (for the caller to restore afterward) on
+ * success, or null if the driver doesn't expose this feature or the quality
+ * value is unrecognized — in which case nothing was changed, matching the
+ * previous no-op behaviour rather than risking a malformed ticket.
+ */
+const setWindowsPrinterQuality = (printerName: string, quality: string): string | null => {
+  const option = QUALITY_TICKET_OPTION[quality];
+  if (!option) return null;
+
+  const current = getWindowsPrinterTicketXml(printerName);
+  if (!current) return null;
+
+  const pattern = /<psf:Feature name="psk:PageOutputQuality"><psf:Option name="psk:[A-Za-z]+"\s*\/><\/psf:Feature>/;
+  if (!pattern.test(current)) return null;
+  if (current.includes(`<psf:Option name="${option}"/>`)) return null; // already set — nothing to restore
+
+  const patched = current.replace(
+    pattern,
+    `<psf:Feature name="psk:PageOutputQuality"><psf:Option name="${option}"/></psf:Feature>`,
+  );
+  return applyWindowsPrinterTicketXml(printerName, patched) ? current : null;
+};
+
 export const printPdfFile = async (
   filePath: string,
   jobID: string,
@@ -591,23 +676,35 @@ export const printPdfFile = async (
       }
     }
 
+    // ── Set print quality at the driver level (see setWindowsPrinterQuality) ──
+    // SumatraPDF has no quality/resolution setting to pass here at all.
+    let originalTicketXml: string | null = null;
+    if (printerName && quality) {
+      originalTicketXml = setWindowsPrinterQuality(printerName, quality);
+      if (originalTicketXml) {
+        logger.info('Printer quality set', { jobID, printerName, quality });
+      }
+    }
+
     // Build -print-settings — comma-separated, no spaces in values
-    // SumatraPDF 3.x uses 'mono' for B&W (not 'color=no')
+    // SumatraPDF 3.x uses 'mono' for B&W (not 'color=no'). No quality/DPI
+    // token exists here — that's handled above via PrintTicketXml instead.
     const buildSettings = (): string => {
       const parts: string[] = ['fitPage']; // always scale content to fill the paper
       if (paperSize) parts.push(`paper=${paperSize.toLowerCase()}`);
       if (colorMode === 'bw') parts.push('mono');
       else if (colorMode === 'color') parts.push('color');
-      if (quality === 'high') parts.push('nHires');
-      else if (quality === 'draft') parts.push('draft');
       if (copies && copies > 1) parts.push(`copies=${copies}`);
       return parts.join(',');
     };
 
-    // Restore the printer's original color setting after printing (or on failure).
+    // Restore the printer's original color/quality settings after printing (or on failure).
     const restoreColor = () => {
       if (originalColor !== null && printerName) {
         setWindowsPrinterColor(printerName, originalColor);
+      }
+      if (originalTicketXml && printerName) {
+        applyWindowsPrinterTicketXml(printerName, originalTicketXml);
       }
     };
 

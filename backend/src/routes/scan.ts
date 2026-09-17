@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 const router = Router();
 
@@ -191,6 +192,34 @@ router.post('/photocopy-prepare', async (req: Request, res: Response) => {
     logger.error('Photocopy prepare error', { error: err.message });
     res.status(500).json({ success: false, error: 'Internal server error during scanning' });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/scan/photocopy-preview/:sessionId/:pageIndex
+// Serves one already-scanned page's JPEG so the confirm screen can show a
+// real preview before payment — the pages already exist on disk from
+// photocopy-prepare (see scanAllADFPages), this just reads them back.
+// 404s once the session's files are consumed by photocopy-execute or expire.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/photocopy-preview/:sessionId/:pageIndex', (req: Request, res: Response) => {
+  const { sessionId, pageIndex } = req.params;
+
+  // Only ever serve our own generated session filenames — never let path
+  // segments from the URL reach the filesystem unvalidated.
+  if (!/^SESSION-\d+$/.test(sessionId) || !/^\d+$/.test(pageIndex)) {
+    res.status(400).json({ success: false, error: 'Invalid session or page index' });
+    return;
+  }
+
+  const filePath = path.join(os.tmpdir(), `${sessionId}_p${pageIndex}.jpg`);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ success: false, error: 'Preview not found (session expired or already printed)' });
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(filePath);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -571,6 +571,9 @@ Thank you for using our service!
               ],
             ),
           ),
+          const SizedBox(height: 16),
+
+          _buildScanPreview(),
           const SizedBox(height: 24),
 
           // Cost breakdown card
@@ -684,6 +687,120 @@ Thank you for using our service!
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Preview of the pages already scanned in this session — served straight
+  // from the temp JPEGs photocopy-prepare wrote to disk (see
+  // GET /api/scan/photocopy-preview on the backend). Lets the customer catch
+  // a mis-feed or a blank/skewed page before paying, since the print only
+  // happens after payment succeeds.
+  String _previewUrl(int pageIndex) =>
+      '${BackendConfig.serverUrl}/api/scan/photocopy-preview/$_sessionId/$pageIndex';
+
+  Widget _buildScanPreview() {
+    if (_sessionId == null || _pageCount == 0) return const SizedBox.shrink();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Preview',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 140,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _pageCount,
+                separatorBuilder: (context, index) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final url = _previewUrl(index);
+                  return GestureDetector(
+                    onTap: () => _showFullPreview(url, index),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        width: 100,
+                        color: Colors.grey[200],
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null
+                                  ? child
+                                  : const Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
+                                    ),
+                          errorBuilder: (context, error, stack) => const Center(
+                            child: Icon(Icons.broken_image_outlined,
+                                color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tap a page to view it larger.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullPreview(String url, int index) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  Text('Page ${index + 1} of $_pageCount',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                child: Image.network(
+                  url,
+                  errorBuilder: (context, error, stack) => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Icon(Icons.broken_image_outlined, size: 48),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
