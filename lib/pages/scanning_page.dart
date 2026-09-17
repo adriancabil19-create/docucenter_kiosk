@@ -28,7 +28,8 @@ class ScanningInterface extends StatefulWidget {
   State<ScanningInterface> createState() => _ScanningInterfaceState();
 }
 
-class _ScanningInterfaceState extends State<ScanningInterface> {
+class _ScanningInterfaceState extends State<ScanningInterface>
+    with SingleTickerProviderStateMixin {
   // State machine: settings → scanning → preview → (saved → settings)
   bool _isScanning = false;
   List<Uint8List> _scannedPages = []; // Store actual image data
@@ -40,6 +41,10 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   bool _isProcessing = false;
 
   String _scanStatus = '';
+  // Whether _scanStatus is currently reporting a failure — tracked
+  // separately from _scannedPages.isNotEmpty so a failed retry after some
+  // pages already scanned successfully doesn't get shown in success colors.
+  bool _scanFailed = false;
   String _adfMessage = ''; // Message for ADF status
   bool _adfLoaded = false;
   bool _checkingAdf = true;
@@ -50,6 +55,13 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   final String _paperSize = 'Auto';
   final String _outputFormat = 'PDF';
   final String _quality = 'standard';
+
+  // Plays once when the scan-complete/preview screen appears — a simple
+  // entrance fade + staggered thumbnail reveal, not a persistent animation.
+  late final AnimationController _completeAnimController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
 
   @override
   void initState() {
@@ -64,6 +76,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   @override
   void dispose() {
     _adfStatusTimer?.cancel();
+    _completeAnimController.dispose();
     super.dispose();
   }
 
@@ -95,6 +108,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
       _scannedPages = [];
       _scannedPageNames = [];
       _scanStatus = '';
+      _scanFailed = false;
     });
     await _scanAllADFPages();
   }
@@ -112,165 +126,228 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
   // ── Settings screen ──────────────────────────────────────────────────────
   Widget _buildScanSettings() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header — matches Printing / Photocopying Service
+          Row(
+            children: [
+              Icon(Icons.document_scanner, size: 32, color: colorScheme.primary),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Document Scanning',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: colorScheme.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'FREE SERVICE',
+                            style: TextStyle(
+                              color: colorScheme.onTertiaryContainer,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      'Scan to PC using the ADF — no payment required',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
           ScannerStatusPanel(
             snapshot: _scannerStatus,
             onRetry: _refreshAdfStatus,
           ),
           const AdfSafetyNotice(),
-          // Scan Settings - Simplified for ADF only
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
+              // Left column — how it works (stretched to match the right
+              // column's full height, since it has no third element like
+              // Photocopying's Estimated Cost card to fill the space).
+              Expanded(
+                child: Column(
                   children: [
-                    const Icon(Icons.settings, size: 32, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 16),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Document Scanning',
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                'How it works',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                               ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[100],
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.green[300]!),
-                                ),
-                                child: const Text(
-                                  'FREE SERVICE',
-                                  style: TextStyle(
-                                    color: Colors.green,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                              const SizedBox(height: 16),
+                              Expanded(
+                                child: Center(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: colorScheme.outlineVariant, width: 2),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.document_scanner_outlined,
+                                            size: 48, color: colorScheme.onSurfaceVariant),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          'Place documents in the ADF',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Choose your scan settings, then tap Start Scanning. '
+                                          'Pages are saved to Storage as a single PDF.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: colorScheme.onSurfaceVariant,
+                                              height: 1.4),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const Text('Scan to PC using ADF • No payment required • Color scanning default'),
-                        ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Scanner Configuration Cards - Restored with selectable options
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Color Mode',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: ['color', 'grayscale', 'bw'].map((mode) {
-                      final label = mode == 'bw'
-                          ? 'B&W'
-                          : mode == 'color'
-                              ? 'Color'
-                              : 'Grayscale';
-                      return FilterChip(
-                        label: Text(label),
-                        selected: _colorMode == mode,
-                        onSelected: (_) => setState(() => _colorMode = mode),
-                      );
-                    }).toList(),
-                  ),
-                ],
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('DPI (Resolution)',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: ['150', '200', '300', '600'].map((dpi) {
-                      return FilterChip(
-                        label: Text(dpi),
-                        selected: _dpi == dpi,
-                        onSelected: (_) => setState(() => _dpi = dpi),
-                      );
-                    }).toList(),
-                  ),
-                ],
+              const SizedBox(width: 32),
+              // Right column — scan settings + start button
+              Expanded(
+                child: Column(
+                  children: [
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Scan Settings',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDropdown(
+                              'Color Mode',
+                              _colorMode,
+                              const ['color', 'grayscale', 'bw'],
+                              (val) => setState(() => _colorMode = val),
+                              const ['Color', 'Grayscale', 'B&W'],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDropdown(
+                              'Resolution (DPI)',
+                              _dpi,
+                              const ['150', '200', '300', '600'],
+                              (val) => setState(() => _dpi = val),
+                              const ['150 DPI', '200 DPI', '300 DPI', '600 DPI'],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('Paper Size',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Detected automatically from your scanned document.',
+                              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: _checkingAdf || !_adfLoaded ? null : _startScanning,
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Start Scanning'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Paper Size Detection',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Paper size will be detected automatically from your scanned document. '
-                    'The saved PDF will use the correct detected page size.',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _checkingAdf || !_adfLoaded ? null : _startScanning,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Start Scanning with ADF'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: const Color(0xFF2563EB),
-              ),
+            ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDropdown(
+    String label,
+    String value,
+    List<String> values,
+    void Function(String) onChanged,
+    List<String> labels,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 4),
+        DropdownButton<String>(
+          value: value,
+          onChanged: (val) => onChanged(val ?? value),
+          isExpanded: true,
+          items: values.asMap().entries.map((entry) {
+            return DropdownMenuItem(
+              value: entry.value,
+              child: Text(labels[entry.key]),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
@@ -284,6 +361,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
       _scannedPageNames = [];
       _documentName = '';
       _scanStatus = '';
+      _scanFailed = false;
       _adfMessage = '';
       _isProcessing = false;
     });
@@ -324,6 +402,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     setState(() {
       _isProcessing = true;
       _scanStatus = 'Scanning all pages from ADF...';
+      _scanFailed = false;
     });
 
     try {
@@ -348,6 +427,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
             _scannedPageNames.add('Page $i');
           }
           _scanStatus = 'Scan complete! ${_scannedPages.length} page(s) scanned.';
+          _scanFailed = false;
           _isProcessing = false;
         });
         if (mounted) {
@@ -365,6 +445,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
         }
         setState(() {
           _scanStatus = errorMsg;
+          _scanFailed = true;
           _isProcessing = false;
         });
         if (mounted) {
@@ -374,6 +455,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     } catch (e) {
       setState(() {
         _scanStatus = 'Scan error: $e';
+        _scanFailed = true;
         _isProcessing = false;
       });
       if (mounted) {
@@ -387,6 +469,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     setState(() {
       _isProcessing = true;
       _scanStatus = 'Scanning page...';
+      _scanFailed = false;
     });
 
     try {
@@ -407,6 +490,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
           _scannedPages.add(imageBytes);
           _scannedPageNames.add('Page ${_scannedPages.length}');
           _scanStatus = 'Scan complete! ${_scannedPages.length} page(s) scanned.';
+          _scanFailed = false;
           _isProcessing = false;
         });
         if (mounted) {
@@ -424,6 +508,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
         }
         setState(() {
           _scanStatus = errorMsg;
+          _scanFailed = true;
           _isProcessing = false;
         });
         if (mounted) {
@@ -435,6 +520,7 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
     } catch (e) {
       setState(() {
         _scanStatus = 'Scan error: $e';
+        _scanFailed = true;
         _isProcessing = false;
       });
       if (mounted) {
@@ -447,6 +533,8 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
 
 
   Widget _buildScanning() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Column(
       children: [
         if (_isProcessing)
@@ -454,11 +542,14 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 16),
-            color: Colors.blue[50],
-            child: const Text(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
               'Scanning in progress. Do not remove documents from the ADF.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
             ),
           ),
         if (_adfMessage.isNotEmpty)
@@ -496,62 +587,85 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: _scannedPages.isNotEmpty ? Colors.green[50] : Colors.blue[50],
-              border: Border.all(color: _scannedPages.isNotEmpty ? Colors.green : Colors.blue),
+              color: _scanFailed
+                  ? colorScheme.errorContainer
+                  : _scannedPages.isNotEmpty
+                      ? Colors.green[50]
+                      : colorScheme.surfaceContainerHighest,
+              border: _scanFailed
+                  ? null
+                  : Border.all(color: _scannedPages.isNotEmpty ? Colors.green : colorScheme.outlineVariant),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
                 Icon(
-                  _scannedPages.isNotEmpty ? Icons.check_circle : Icons.info,
-                  color: _scannedPages.isNotEmpty ? Colors.green : Colors.blue,
+                  _scanFailed
+                      ? Icons.error_outline
+                      : _scannedPages.isNotEmpty
+                          ? Icons.check_circle
+                          : Icons.info_outline,
+                  color: _scanFailed
+                      ? colorScheme.onErrorContainer
+                      : _scannedPages.isNotEmpty
+                          ? Colors.green
+                          : colorScheme.onSurfaceVariant,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _scanStatus,
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _scanFailed ? colorScheme.onErrorContainer : colorScheme.onSurface,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.blue[50],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: _isProcessing
-                    ? const CircularProgressIndicator(
-                        strokeWidth: 4,
-                        valueColor: AlwaysStoppedAnimation(Color(0xFF2563EB)),
-                      )
-                    : const Icon(Icons.document_scanner, size: 40, color: Color(0xFF2563EB)),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _isProcessing ? 'Scanning with ADF...' : 'Ready to Scan',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Pages scanned: ${_scannedPages.length}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+        Card(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: _isProcessing
+                      ? CircularProgressIndicator(
+                          strokeWidth: 4,
+                          valueColor: AlwaysStoppedAnimation(
+                              Theme.of(context).colorScheme.onPrimaryContainer),
+                        )
+                      : Icon(Icons.document_scanner,
+                          size: 40, color: Theme.of(context).colorScheme.onPrimaryContainer),
                 ),
-              ),
-            ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _isProcessing ? 'Scanning with ADF...' : 'Ready to Scan',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                      ),
+                      Text(
+                        'Pages scanned: ${_scannedPages.length}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 24),
@@ -613,23 +727,37 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
         Row(
           children: [
             Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _scanSinglePage,
-                icon: const Icon(Icons.add),
-                label: const Text('Scan Page'),
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _isProcessing ? null : _scanSinglePage,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Scan Page'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF2563EB),
+                    side: const BorderSide(color: Color(0xFF2563EB)),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _scannedPages.isEmpty ? null : () => setState(() {
-                _isScanning = false;
-                _showPreview = true;
-              }),
-                icon: const Icon(Icons.check),
-                label: const Text('Finish'),
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: SizedBox(
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _scannedPages.isEmpty
+                      ? null
+                      : () => setState(() {
+                            _isScanning = false;
+                            _showPreview = true;
+                            _completeAnimController.forward(from: 0);
+                          }),
+                  icon: const Icon(Icons.check),
+                  label: const Text('Finish'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                  ),
+                ),
               ),
             ),
           ],
@@ -732,14 +860,30 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
   }
 
   Widget _buildScanningComplete() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_scanStatus.isNotEmpty)
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AnimatedBuilder(
+      animation: _completeAnimController,
+      builder: (context, child) {
+        final entrance = CurvedAnimation(
+          parent: _completeAnimController,
+          curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+        );
+        return Opacity(
+          opacity: entrance.value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - entrance.value) * 16),
+            child: child,
+          ),
+        );
+      },
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // One success banner instead of two stacked green boxes.
             Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.green[50],
                 border: Border.all(color: Colors.green),
@@ -747,217 +891,268 @@ class _ScanningInterfaceState extends State<ScanningInterface> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle, size: 32, color: Colors.green),
+                  const SizedBox(width: 16),
                   Expanded(
-                    child: Text(
-                      _scanStatus,
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_scannedPages.length} page(s) scanned',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[900],
+                              ),
+                        ),
+                        Text(
+                          'Review the pages below, then save as PDF.',
+                          style: TextStyle(color: Colors.green[700], fontSize: 13),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.green[50],
-              border: Border.all(color: Colors.green),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.preview, size: 32, color: Colors.green),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Scan Preview',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green[900],
-                            ),
-                      ),
-                      Text(
-                        '${_scannedPages.length} page(s) scanned — review before saving',
-                        style: TextStyle(color: Colors.green[700], fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-          // Scan settings summary
-          Card(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Wrap(
-                spacing: 16,
-                runSpacing: 4,
-                children: [
-                  _summaryChip(Icons.color_lens, _colorMode == 'color'
-                      ? 'Color'
-                      : _colorMode == 'grayscale'
-                          ? 'Grayscale'
-                          : 'B&W'),
-                  _summaryChip(Icons.high_quality, '$_dpi DPI'),
-                  _summaryChip(Icons.article, _paperSize),
-                  _summaryChip(Icons.file_present, _outputFormat),
-                  _summaryChip(Icons.star, _quality == 'draft' ? 'Draft' : 'Standard'),
-                ],
+            // Scan settings summary
+            Card(
+              color: colorScheme.surfaceContainerHighest,
+              elevation: 0,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Wrap(
+                  spacing: 20,
+                  runSpacing: 8,
+                  children: [
+                    _summaryChip(Icons.color_lens, _colorMode == 'color'
+                        ? 'Color'
+                        : _colorMode == 'grayscale'
+                            ? 'Grayscale'
+                            : 'B&W'),
+                    _summaryChip(Icons.high_quality, '$_dpi DPI'),
+                    _summaryChip(Icons.article, _paperSize),
+                    _summaryChip(Icons.file_present, _outputFormat),
+                    _summaryChip(Icons.star, _quality == 'draft' ? 'Draft' : 'Standard'),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-          // Page thumbnails grid
-          Text(
-            'Pages',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
+            Text(
+              'Pages',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _scannedPages.length,
-            itemBuilder: (context, index) {
-              return Card(
-                child: Stack(
+            const SizedBox(height: 4),
+            Text(
+              'Tap a page to view it larger.',
+              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+
+            // Horizontal strip instead of a fixed-column grid — a grid with
+            // more columns than pages (e.g. 4 columns for 2 pages) left half
+            // the row empty and looked lopsided. This scales to any page
+            // count and matches the Photocopying preview pattern.
+            SizedBox(
+              height: 170,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _scannedPages.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  // Staggered reveal — each thumbnail fades/slides in a beat
+                  // after the previous one, capped so it never drags on.
+                  final start = (index * 0.08).clamp(0.0, 0.5);
+                  final anim = CurvedAnimation(
+                    parent: _completeAnimController,
+                    curve: Interval(start, (start + 0.5).clamp(0.0, 1.0), curve: Curves.easeOut),
+                  );
+                  return AnimatedBuilder(
+                    animation: anim,
+                    builder: (context, child) => Opacity(
+                      opacity: anim.value,
+                      child: Transform.translate(
+                        offset: Offset(0, (1 - anim.value) * 12),
+                        child: child,
+                      ),
+                    ),
+                    child: GestureDetector(
+                      onTap: () => _showFullPagePreview(index),
+                      child: Card(
+                        clipBehavior: Clip.antiAlias,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: Stack(
+                          children: [
+                            SizedBox(
+                              width: 120,
+                              height: 170,
+                              child: Image.memory(
+                                _scannedPages[index],
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  color: const Color(0xFFE0E0E0),
+                                  child: const Center(
+                                      child: Icon(Icons.image, size: 32, color: Color(0xFFBDBDBD))),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2563EB),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Name input + save
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Save Document',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      onChanged: (val) => _documentName = val,
+                      decoration: InputDecoration(
+                        labelText: 'Document Name',
+                        hintText: 'e.g., Thesis_Draft_2026',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        suffixText: '.$_outputFormat'.toLowerCase(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
-                      height: 120,
-                      child: Image.memory(
-                        _scannedPages[index],
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: const Color(0xFFE0E0E0),
-                            child: const Center(child: Icon(Icons.image, size: 40, color: Color(0xFFBDBDBD))),
-                          );
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2563EB),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        child: Text(
-                          '${index + 1}',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold),
-                        ),
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: _isProcessing ? null : _combineAndSaveAsPDF,
+                        icon: _isProcessing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.save),
+                        label: _isProcessing ? const Text('Creating PDF...') : const Text('Save as PDF'),
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
                       ),
                     ),
                   ],
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
+              ),
+            ),
+            const SizedBox(height: 12),
 
-          // Name input + save
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // Secondary actions
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () => setState(() {
+                        _isScanning = false;
+                        _scannedPages = [];
+                        _scannedPageNames = [];
+                        _documentName = '';
+                      }),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Discard'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.error,
+                        side: BorderSide(color: colorScheme.error),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () => setState(() {
+                        _isScanning = true;
+                        _scannedPages = [];
+                        _scannedPageNames = [];
+                        _documentName = '';
+                      }),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Scan More'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2563EB),
+                        side: const BorderSide(color: Color(0xFF2563EB)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullPagePreview(int index) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
                 children: [
-                  Text(
-                    'Save Document',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    onChanged: (val) => _documentName = val,
-                    decoration: InputDecoration(
-                      labelText: 'Document Name (Charles Adrian)',
-                      hintText: 'e.g., Thesis_Draft_2026',
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      suffixText: '.$_outputFormat'.toLowerCase(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : _combineAndSaveAsPDF,
-                      icon: _isProcessing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save),
-                      label: _isProcessing ? const Text('Creating PDF...') : const Text('Save as PDF'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                    ),
+                  Text('Page ${index + 1} of ${_scannedPages.length}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-
-          // Secondary actions
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => setState(() {
-                    _isScanning = false;
-                    _scannedPages = [];
-                    _scannedPageNames = [];
-                    _documentName = '';
-                  }),
-                  icon: const Icon(Icons.close),
-                  label: const Text('Discard'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
+            Flexible(
+              child: InteractiveViewer(
+                child: Image.memory(
+                  _scannedPages[index],
+                  errorBuilder: (context, error, stack) => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Icon(Icons.broken_image_outlined, size: 48),
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => setState(() {
-                    _isScanning = true;
-                    _scannedPages = [];
-                    _scannedPageNames = [];
-                    _documentName = '';
-                  }),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Scan More'),
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

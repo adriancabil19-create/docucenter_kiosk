@@ -268,30 +268,40 @@ Thank you for using our service!
   // ── Settings screen ───────────────────────────────────────────────────────
 
   Widget _buildSettingsView() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              border: Border.all(color: Colors.blue),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Place all documents in the ADF, select your options below, then tap Scan Documents.',
-                    style: TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
+          // Header — matches Printing Service
+          Row(
+            children: [
+              Icon(Icons.content_copy, size: 32, color: colorScheme.primary),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Photocopying Service',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    Text(
+                      'Scan first, see the exact page count, then pay',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 24),
 
           ScannerStatusPanel(
             snapshot: _scannerStatus,
@@ -304,211 +314,238 @@ Thank you for using our service!
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: Colors.red[50],
-                border: Border.all(color: Colors.red),
+                color: colorScheme.errorContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  Icon(Icons.error_outline, color: colorScheme.onErrorContainer, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _preScanError,
-                      style: const TextStyle(fontSize: 12, color: Colors.red),
+                      style: TextStyle(fontSize: 12, color: colorScheme.onErrorContainer),
                     ),
                   ),
                 ],
               ),
             ),
 
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.copyright, size: 32, color: Color(0xFF2563EB)),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Photocopying Service',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left column — how it works + estimated cost
+              Expanded(
+                child: Column(
+                  children: [
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'How it works',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                             ),
-                      ),
-                      const Text('Scan first → see page count → pay → print'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Number of Copies
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Number of Copies',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed:
-                            _copies > 1 ? () => setState(() => _copies--) : null,
-                        icon: const Icon(Icons.remove_circle),
-                      ),
-                      Expanded(
-                        child: Container(
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey[300]!),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _copies.toString(),
-                            style: const TextStyle(
-                                fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
+                            const SizedBox(height: 16),
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: colorScheme.outlineVariant, width: 2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.document_scanner_outlined,
+                                      size: 48, color: colorScheme.onSurfaceVariant),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Place documents in the ADF',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Choose your options, then tap Scan Documents below. '
+                                    'You\'ll see the exact page count and cost before paying.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        fontSize: 11, color: colorScheme.onSurfaceVariant, height: 1.4),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      IconButton(
-                        onPressed:
-                            _copies < 20 ? () => setState(() => _copies++) : null,
-                        icon: const Icon(Icons.add_circle),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildEstimatedCostCard(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 32),
+              // Right column — settings + scan button
+              Expanded(
+                child: Column(
+                  children: [
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Copy Settings',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('Number of Copies',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Tooltip(
+                                  message: 'Decrease number of copies',
+                                  child: ElevatedButton(
+                                    onPressed: _copies > 1
+                                        ? () => setState(() => _copies--)
+                                        : null,
+                                    child: const Text('-', semanticsLabel: 'Decrease copies'),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Container(
+                                      alignment: Alignment.center,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: colorScheme.outlineVariant),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        _copies.toString(),
+                                        style: const TextStyle(
+                                            fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Tooltip(
+                                  message: 'Increase number of copies',
+                                  child: ElevatedButton(
+                                    onPressed: _copies < 20
+                                        ? () => setState(() => _copies++)
+                                        : null,
+                                    child: const Text('+', semanticsLabel: 'Increase copies'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDropdown(
+                              'Color Mode',
+                              _colorMode,
+                              const ['color', 'bw'],
+                              (val) => setState(() => _colorMode = val),
+                              const ['Color', 'B&W'],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDropdown(
+                              'Paper Size',
+                              _paperSize,
+                              const ['A4', 'Letter', 'Folio'],
+                              (val) => setState(() => _paperSize = val),
+                              const [
+                                'A4 (210 x 297 mm)',
+                                'Letter (216 x 279 mm)',
+                                'Folio (216 x 330 mm)',
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDropdown(
+                              'Copy Quality',
+                              _quality,
+                              const ['draft', 'standard', 'high'],
+                              (val) => setState(() => _quality = val),
+                              [
+                                _qualityDropdownLabel('Draft',
+                                    KioskRuntime.instance.pricing.copyDraft),
+                                _qualityDropdownLabel('Standard',
+                                    KioskRuntime.instance.pricing.copyStandard),
+                                _qualityDropdownLabel('High',
+                                    KioskRuntime.instance.pricing.copyHigh),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: !_scannerStatus.canScan ? null : _preScanDocuments,
+                        icon: const Icon(Icons.document_scanner),
+                        label: const Text('Scan Documents'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Color Mode
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Color Mode',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: ['color', 'bw'].map((mode) {
-                      return FilterChip(
-                        label: Text(mode == 'color' ? 'Color' : 'B&W'),
-                        selected: _colorMode == mode,
-                        onSelected: (_) => setState(() => _colorMode = mode),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Paper Size
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Paper Size',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: ['A4', 'Letter', 'Folio'].map((size) {
-                      return FilterChip(
-                        label: Text(size),
-                        selected: _paperSize == size,
-                        onSelected: (_) => setState(() => _paperSize = size),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Copy Quality
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Copy Quality',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: ['high', 'standard', 'draft'].map((q) {
-                      return FilterChip(
-                        label: Text(q == 'high'
-                            ? 'High'
-                            : q == 'standard'
-                                ? 'Standard'
-                                : 'Draft'),
-                        selected: _quality == q,
-                        onSelected: (_) => setState(() => _quality = q),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          _buildEstimatedCostCard(),
-          const SizedBox(height: 24),
-
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: !_scannerStatus.canScan ? null : _preScanDocuments,
-              icon: const Icon(Icons.document_scanner),
-              label: const Text('Scan Documents'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: const Color(0xFF2563EB),
-              ),
-            ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  /// "Draft (₱1 B&W / ₱3 Color)" — mirrors Printing Service's quality labels.
+  static String _qualityDropdownLabel(String name, PagePrice p) {
+    String peso(double v) {
+      final s = v.toStringAsFixed(2);
+      return s.endsWith('.00') ? s.substring(0, s.length - 3) : s;
+    }
+
+    return '$name (₱${peso(p.bw)} B&W / ₱${peso(p.color)} Color)';
+  }
+
+  Widget _buildDropdown(
+    String label,
+    String value,
+    List<String> values,
+    void Function(String) onChanged,
+    List<String> labels,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 4),
+        DropdownButton<String>(
+          value: value,
+          onChanged: (val) => onChanged(val ?? value),
+          isExpanded: true,
+          items: values.asMap().entries.map((entry) {
+            return DropdownMenuItem(
+              value: entry.value,
+              child: Text(labels[entry.key]),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
@@ -584,7 +621,7 @@ Thank you for using our service!
 
           // Cost breakdown card
           Card(
-            color: Colors.blue[50],
+            color: Theme.of(context).colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -592,10 +629,10 @@ Thank you for using our service!
                 children: [
                   Text(
                     'Cost Breakdown',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
                   ),
                   const SizedBox(height: 16),
                   _costRow('Pages scanned', '$_pageCount pages'),
@@ -606,16 +643,17 @@ Thank you for using our service!
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Total',
+                      Text('Total',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer)),
                       Text(
                         '₱${_totalCost.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 22,
-                          color: Color(0xFF2563EB),
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
                       ),
                     ],
                   ),
@@ -816,43 +854,43 @@ Thank you for using our service!
   // yet, so this is a clearly-labelled per-page estimate the customer can
   // use to gauge cost before committing to scan.
   Widget _buildEstimatedCostCard() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      color: Colors.blue[50],
+      color: colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Estimated Cost',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            _costRow('Rate', '₱${_costPerPage.toStringAsFixed(2)} per page'),
-            _costRow('Copies', '× $_copies'),
-            const Divider(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Per page scanned',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  'Estimated Cost',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                ),
                 Text(
                   '₱${(_costPerPage * _copies).toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                    color: Color(0xFF2563EB),
-                  ),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              'Final total depends on how many pages are scanned — you\'ll see the exact cost before paying.',
+              '₱${_costPerPage.toStringAsFixed(2)} per page × $_copies ${_copies == 1 ? 'copy' : 'copies'}',
+              style: TextStyle(fontSize: 12, color: colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Per page scanned — final total depends on the actual page count, shown before you pay.',
               style: TextStyle(
                 fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
               ),
             ),
           ],

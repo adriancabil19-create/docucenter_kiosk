@@ -7,239 +7,116 @@ class AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-            child: Column(
-              children: [
-                Text(
-                  'About the Project',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Learn more about the team behind the DOCUCENTER Kiosk and our academic institution',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-
-          // Project Overview
-          _buildSection(
-            context,
-            'Project Overview',
-            Icons.info_outline,
-            '''The DocuCenter Kiosk is undergraduate thesis work undertaken as partial fulfillment of the requirements for the degree of Bachelor of Science in Computer Engineering at the University of Cebu - Lapu-Lapu and Mandaue Campus.
-
-The project looks at the need for more efficient and accessible document processing within the university environment. By combining a self-service kiosk, staff-side device monitoring, and an online payment integration, it aims to improve how students, faculty, and staff complete routine document tasks. It is currently a prototype being piloted for evaluation and is not a commercial service.
-
-The work draws on Human-Computer Interaction, Self-Service Technology theory, and the Technology Acceptance Model to keep the design both usable and practical to operate.''',
-          ),
-
-          // Business / Operator Details — kept short here; the Legal page is
-          // the single source of truth for the full operator record and
-          // policies, so this just points there instead of repeating it.
-          _buildSection(
-            context,
-            'Business / Operator Details',
-            Icons.storefront,
-            'DocuCenter is developed and operated by Charles Adrian L. Cabil '
-            '(adriancabil12@gmail.com). For the full operator record, payment '
-            'processor, and our Privacy Policy, Terms & Conditions, Cookie '
-            'Policy, and Refund Policy, see Legal & Privacy.',
-            trailing: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => onNavigate('legal'),
-                icon: const Icon(Icons.description_outlined, size: 18),
-                label: const Text('View Legal & Privacy'),
-              ),
-            ),
-          ),
-
-          // University Information
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF003D99), Color(0xFF1E40AF)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.apartment, size: 24, color: Colors.white),
-                      const SizedBox(width: 12),
-                      Text(
-                        'University Information',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Institution', style: TextStyle(fontSize: 10, color: Color(0xFFDBE9F8))),
-                            Text('University of Cebu', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Campus', style: TextStyle(fontSize: 10, color: Color(0xFFDBE9F8))),
-                            Text('Lapu-Lapu and Mandaue', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Program', style: TextStyle(fontSize: 10, color: Color(0xFFDBE9F8))),
-                            Text('BS in Computer Engineering', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Academic Year', style: TextStyle(fontSize: 10, color: Color(0xFFDBE9F8))),
-                            Text('2025–2026', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Research Team
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              children: [
-                Text(
-                  'Research Team',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 4),
-                GridView.count(
-                  crossAxisCount: MediaQuery.of(context).size.width < 768
-                      ? 1
-                      : MediaQuery.of(context).size.width < 1024
-                          ? 2
-                          : 3,
-                  childAspectRatio: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
+          // Header — matches the other service pages
+          Row(
+            children: [
+              Icon(Icons.info_outline, size: 32, color: colorScheme.primary),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildTeamMember(context, 'Charles Adrian Cabil', 'Lead Researcher & Developer'),
-                    _buildTeamMember(context, 'Mark Lee Duyag', 'Co-Researcher'),
-                    _buildTeamMember(context, 'Ignacio Maurice Vergara', 'Co-Researcher'),
+                    Text(
+                      'About',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    Text(
+                      'The project, the team, and how to reach us',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 24),
 
-          // Thesis Adviser
+          // Two columns — left is narrative (overview, operator/contact),
+          // right is structured facts (university, team) — so neither side
+          // ends up as a mostly-empty card next to a crowded one.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildSection(
+                      context,
+                      'Project Overview',
+                      Icons.description_outlined,
+                      'DocuCenter Kiosk is an undergraduate thesis project for the Bachelor of '
+                      'Science in Computer Engineering program at the University of Cebu – '
+                      'Lapu-Lapu and Mandaue Campus. It combines a self-service kiosk, staff '
+                      'device monitoring, and online payment to streamline routine document '
+                      'tasks — printing, photocopying, and scanning — for students, faculty, '
+                      'and staff.\n\n'
+                      'It is currently a working prototype under pilot evaluation and is not '
+                      'a commercial service.',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSection(
+                      context,
+                      'Operator & Contact',
+                      Icons.storefront_outlined,
+                      'Developed and operated by Charles Adrian L. Cabil, College of Computer '
+                      'Engineering, University of Cebu – Lapu-Lapu and Mandaue Campus.\n\n'
+                      'adriancabil12@gmail.com',
+                      trailing: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => onNavigate('legal'),
+                          icon: const Icon(Icons.description_outlined, size: 18),
+                          label: const Text('View Legal & Privacy'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildInfoGridSection(context, 'University', [
+                      ('Institution', 'University of Cebu'),
+                      ('Campus', 'Lapu-Lapu and Mandaue'),
+                      ('Program', 'BS in Computer Engineering'),
+                      ('Academic Year', '2025–2026'),
+                    ]),
+                    const SizedBox(height: 16),
+                    _buildTeamSection(context),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          _buildTimelineSection(context),
+          const SizedBox(height: 16),
+
           _buildSection(
             context,
-            'Thesis Adviser',
-            Icons.school,
-            'Engr. Darwin Espera\nThesis Adviser\nCollege of Engineering\n\nThe research team would like to express sincere gratitude to our thesis adviser for invaluable guidance, support, and expertise throughout the development of this project.',
-            showIcon: true,
+            'Acknowledgments',
+            Icons.volunteer_activism_outlined,
+            'Thanks to our thesis adviser for guidance throughout this project; the University '
+            'of Cebu – Lapu-Lapu and Mandaue Campus for resources and facilities; the College '
+            'of Computer Engineering faculty for feedback during development; and everyone who '
+            'took part in testing and evaluation.',
           ),
 
-          // Project Timeline
-          _buildTimelineSection(context),
-
-          // Acknowledgments
-          _buildAcknowledgmentsSection(context),
-
-          // Contact Information
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [Color(0xFF2563EB), Color(0xFF003D99)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Text(
-                    'Get in Touch',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'For inquiries about this research project or collaboration opportunities, please contact:',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: const Color(0xFFDBE9F8)),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'DocuCenter — Developer: Charles Adrian L. Cabil\n'
-                    'College of Computer Engineering\n'
-                    'University of Cebu - Lapu-Lapu and Mandaue Campus\n\n'
-                    'Email: adriancabil12@gmail.com',
-                    style: TextStyle(color: Colors.white, fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -250,111 +127,87 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
     String title,
     IconData icon,
     String content, {
-    bool showIcon = false,
     Widget? trailing,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, size: 28, color: const Color(0xFF2563EB)),
-                  const SizedBox(width: 12),
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (showIcon)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFDEE6F8),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.person, color: Color(0xFF2563EB), size: 32),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        content,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          height: 1.6,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 22, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 10),
                 Text(
-                  content,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              content,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface,
                     height: 1.6,
                   ),
-                ),
-              if (trailing != null) ...[
-                const SizedBox(height: 8),
-                trailing,
-              ],
+            ),
+            if (trailing != null) ...[
+              const SizedBox(height: 12),
+              trailing,
             ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildTeamMember(BuildContext context, String name, String role) {
+  Widget _buildInfoGridSection(
+    BuildContext context,
+    String title,
+    List<(String, String)> fields,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                color: Color(0xFFDEE6F8),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.person, size: 24, color: Color(0xFF2563EB)),
+            Row(
+              children: [
+                Icon(Icons.apartment_outlined, size: 22, color: colorScheme.primary),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    role,
-                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 2.6,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 16,
+              children: fields.map((f) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(f.$1, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                    const SizedBox(height: 2),
+                    Text(f.$2, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  ],
+                );
+              }).toList(),
             ),
           ],
         ),
@@ -362,177 +215,157 @@ The work draws on Human-Computer Interaction, Self-Service Technology theory, an
     );
   }
 
-  Widget _buildTimelineSection(BuildContext context) {
-    final timelineItems = [
-      ('Oct 2025', 'Project Conceptualization', 'Initial research, problem identification, and proposal development'),
-      ('Nov 2025', 'Thesis Paper Pre-Development', 'Comprehensive review of theoretical frameworks and related studies'),
-      ('Dec 2025', 'Data Collection', 'Survey administration, user testing, and feedback gathering'),
-      ('Jan - Feb 2026', 'Development', 'Architecture design and prototype development'),
-      ('Mar 2026', 'Testing & Refinement', 'Iterative testing, debugging, and performance optimization'),
-      ('Apr 2026', 'Thesis Writing', 'Documentation of research findings, methodologies, and conclusions'),
-      ('May 2026', 'Final Submission & Defense', 'Submission of thesis paper and defense presentation'),
-      ('Jun 2026 – Present', 'Pilot & Refinement', 'Continued pilot deployment with security hardening and interface refinements based on feedback'),
+  Widget _buildTeamSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final team = [
+      ('Charles Adrian Cabil', 'Lead Researcher & Developer'),
+      ('Mark Lee Duyag', 'Co-Researcher'),
+      ('Ignacio Maurice Vergara', 'Co-Researcher'),
+      ('Engr. Darwin Espera', 'Thesis Adviser'),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.calendar_month, size: 28, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Project Timeline',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Column(
-                children: timelineItems.asMap().entries.map((entry) {
-                  final isLast = entry.key == timelineItems.length - 1;
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 120,
-                          child: Text(
-                            entry.value.$1,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Container(
-                            width: 24,
-                            height: 2,
-                            color: const Color(0xFF2563EB),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                entry.value.$2,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                entry.value.$3,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.groups_outlined, size: 22, color: colorScheme.primary),
+                const SizedBox(width: 10),
+                Text(
+                  'Research Team',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 2.4,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              children: team.map((m) => _buildTeamMember(context, m.$1, m.$2)).toList(),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildAcknowledgmentsSection(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Acknowledgments',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'The research team would like to express our deepest gratitude to the following individuals and organizations who made this project possible:',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildAcknowledgmentItem(context, 'Our thesis adviser, for invaluable guidance and unwavering support throughout this research journey'),
-                  _buildAcknowledgmentItem(context, 'The University of Cebu - Lapu-Lapu and Mandaue Campus administration for providing resources and facilities'),
-                  _buildAcknowledgmentItem(context, 'The College of Computer Engineering faculty for their expertise and constructive feedback'),
-                  _buildAcknowledgmentItem(context, 'Everyone who contributed feedback to the design and evaluation of this project'),
-                  _buildAcknowledgmentItem(context, 'Our families and friends for their constant encouragement and support'),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'This project is dedicated to advancing technological innovation in education and improving the campus experience for all members of the university community.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontStyle: FontStyle.italic,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
+  Widget _buildTeamMember(BuildContext context, String name, String role) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
       ),
-    );
-  }
-
-  Widget _buildAcknowledgmentItem(BuildContext context, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 6, right: 12),
-            child: Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: Color(0xFF2563EB),
-                shape: BoxShape.circle,
-              ),
-            ),
+          Icon(Icons.person_outline, size: 20, color: colorScheme.primary),
+          const SizedBox(height: 6),
+          Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface, height: 1.5),
-            ),
+          Text(
+            role,
+            style: TextStyle(fontSize: 10, color: colorScheme.onSurfaceVariant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timelineItems = [
+      ('Oct 2025', 'Conceptualization', 'Problem identification and proposal development'),
+      ('Nov 2025', 'Literature Review', 'Review of theoretical frameworks and related studies'),
+      ('Dec 2025', 'Data Collection', 'Surveys, user testing, and feedback gathering'),
+      ('Jan – Feb 2026', 'Development', 'Architecture design and prototype build'),
+      ('Mar 2026', 'Testing & Refinement', 'Iterative testing, debugging, and performance work'),
+      ('Apr 2026', 'Thesis Writing', 'Documentation of methodology and findings'),
+      ('May 2026', 'Defense', 'Thesis submission and defense'),
+      ('Jun 2026 – Present', 'Pilot', 'Ongoing pilot deployment and refinement'),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timeline_outlined, size: 22, color: colorScheme.primary),
+                const SizedBox(width: 10),
+                Text(
+                  'Timeline',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 4.2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 24,
+              children: timelineItems.map((item) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 110,
+                      child: Text(
+                        item.$1,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.$2,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          Text(
+                            item.$3,
+                            style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
