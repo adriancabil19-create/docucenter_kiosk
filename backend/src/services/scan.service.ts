@@ -686,32 +686,42 @@ export const photocopyDocument = async (
 
     logger.info('All ADF pages scanned', { copyId, pages: scanResult.pages.length });
 
-    const { printPdfFile } = await import('./print.service');
+    const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState } =
+      await import('./print.service');
 
-    // Print collated: one full set per copy
-    for (let copy = 1; copy <= (opts.copies ?? 1); copy++) {
-      for (let pi = 0; pi < scanResult.pages.length; pi++) {
-        const pdfPath = scanResult.pages[pi].replace('.jpg', `_${copyId}_c${copy}.pdf`);
+    // Configure the driver once for the whole job, not once per page — see
+    // prepareWindowsPrinterDriverState.
+    const driverState = prepareWindowsPrinterDriverState(opts.colorMode, opts.quality);
+    try {
+      // Print collated: one full set per copy
+      for (let copy = 1; copy <= (opts.copies ?? 1); copy++) {
+        for (let pi = 0; pi < scanResult.pages.length; pi++) {
+          const pdfPath = scanResult.pages[pi].replace('.jpg', `_${copyId}_c${copy}.pdf`);
 
-        const cv = await convertImageToPdf(scanResult.pages[pi], pdfPath, opts.paperSize);
-        if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+          const cv = await convertImageToPdf(scanResult.pages[pi], pdfPath, opts.paperSize);
+          if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
 
-        const pr = await printPdfFile(
-          pdfPath,
-          `${copyId}_p${pi + 1}_c${copy}`,
-          opts.paperSize,
-          opts.colorMode,
-          opts.quality,
-        );
+          const pr = await printPdfFile(
+            pdfPath,
+            `${copyId}_p${pi + 1}_c${copy}`,
+            opts.paperSize,
+            opts.colorMode,
+            opts.quality,
+            undefined,
+            driverState,
+          );
 
-        try {
-          fs.unlinkSync(pdfPath);
-        } catch {
-          /* best-effort */
+          try {
+            fs.unlinkSync(pdfPath);
+          } catch {
+            /* best-effort */
+          }
+
+          if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
         }
-
-        if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
       }
+    } finally {
+      restoreWindowsPrinterDriverState(driverState);
     }
 
     // Clean up session scan files
@@ -798,32 +808,45 @@ export const executePhotocopySession = async (options: {
   });
 
   try {
-    const { printPdfFile } = await import('./print.service');
+    const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState } =
+      await import('./print.service');
 
-    // Print collated: one full set of pages per copy.
-    for (let copy = 1; copy <= copies; copy++) {
-      for (let pi = 0; pi < pages.length; pi++) {
-        const pdfPath = pages[pi].replace('.jpg', `_${jobId}_c${copy}.pdf`);
+    // Color/quality are the SAME for every page and copy in this job, so
+    // configure the driver ONCE instead of once per page — see
+    // prepareWindowsPrinterDriverState for why that matters (each
+    // configuration step is a blocking PowerShell round-trip; doing it per
+    // page stalled the whole backend for seconds on multi-page/multi-copy jobs).
+    const driverState = prepareWindowsPrinterDriverState(colorMode, quality);
+    try {
+      // Print collated: one full set of pages per copy.
+      for (let copy = 1; copy <= copies; copy++) {
+        for (let pi = 0; pi < pages.length; pi++) {
+          const pdfPath = pages[pi].replace('.jpg', `_${jobId}_c${copy}.pdf`);
 
-        const cv = await convertImageToPdf(pages[pi], pdfPath, paperSize);
-        if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+          const cv = await convertImageToPdf(pages[pi], pdfPath, paperSize);
+          if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
 
-        const pr = await printPdfFile(
-          pdfPath,
-          `${jobId}_p${pi + 1}_c${copy}`,
-          paperSize,
-          colorMode,
-          quality,
-        );
+          const pr = await printPdfFile(
+            pdfPath,
+            `${jobId}_p${pi + 1}_c${copy}`,
+            paperSize,
+            colorMode,
+            quality,
+            undefined,
+            driverState,
+          );
 
-        try {
-          fs.unlinkSync(pdfPath);
-        } catch {
-          /* best-effort */
+          try {
+            fs.unlinkSync(pdfPath);
+          } catch {
+            /* best-effort */
+          }
+
+          if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
         }
-
-        if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
       }
+    } finally {
+      restoreWindowsPrinterDriverState(driverState);
     }
 
     // Clean up session scan files

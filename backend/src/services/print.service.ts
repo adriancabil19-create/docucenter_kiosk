@@ -656,6 +656,71 @@ const setWindowsPrinterQuality = (printerName: string, quality: string): string 
   return applyWindowsPrinterTicketXml(printerName, patched) ? current : null;
 };
 
+/** Driver color/quality state captured before a batch of pages, so it can be
+ * applied once per JOB instead of once per PAGE — see prepareWindowsPrinterDriverState. */
+export interface PrinterDriverJobState {
+  printerName: string | null;
+  originalColor: boolean | null;
+  originalTicketXml: string | null;
+}
+
+/**
+ * Apply color + quality driver settings ONCE for a whole batch of pages/
+ * copies, instead of letting printPdfFile do it on every single call.
+ *
+ * Each of getWindowsPrinterColor/setWindowsPrinterColor/
+ * getWindowsPrinterTicketXml/applyWindowsPrinterTicketXml spawns a fresh
+ * powershell.exe process synchronously (execSync) — cold PowerShell startup
+ * alone is commonly several hundred ms, and the ticket read/write handles a
+ * ~20KB XML file. Doing this before AND after every page of a multi-page,
+ * multi-copy photocopy job (the loop in executePhotocopySession) meant up to
+ * ~7 blocking shell-outs per page, all on Node's single thread — enough to
+ * stall every other request (including the kiosk's own status/assistance
+ * polling) for several seconds during a real print job. Callers that print
+ * more than one page per job should call this once, pass the result to every
+ * printPdfFile call via `driverState`, and call
+ * restoreWindowsPrinterDriverState once at the end instead.
+ */
+export const prepareWindowsPrinterDriverState = (
+  colorMode?: string,
+  quality?: string,
+): PrinterDriverJobState => {
+  if (os.platform() !== 'win32') return { printerName: null, originalColor: null, originalTicketXml: null };
+
+  const printerName = resolveWindowsPrinterName();
+
+  let originalColor: boolean | null = null;
+  if (printerName && colorMode) {
+    originalColor = getWindowsPrinterColor(printerName);
+    const wantColor = colorMode !== 'bw';
+    if (originalColor !== null && originalColor !== wantColor) {
+      setWindowsPrinterColor(printerName, wantColor);
+      logger.info('Printer color mode set', { printerName, wantColor });
+    }
+  }
+
+  let originalTicketXml: string | null = null;
+  if (printerName && quality) {
+    originalTicketXml = setWindowsPrinterQuality(printerName, quality);
+    if (originalTicketXml) {
+      logger.info('Printer quality set', { printerName, quality });
+    }
+  }
+
+  return { printerName, originalColor, originalTicketXml };
+};
+
+/** Restore whatever prepareWindowsPrinterDriverState changed. Call once, after the whole batch. */
+export const restoreWindowsPrinterDriverState = (state: PrinterDriverJobState): void => {
+  if (!state.printerName) return;
+  if (state.originalColor !== null) {
+    setWindowsPrinterColor(state.printerName, state.originalColor);
+  }
+  if (state.originalTicketXml) {
+    applyWindowsPrinterTicketXml(state.printerName, state.originalTicketXml);
+  }
+};
+
 export const printPdfFile = async (
   filePath: string,
   jobID: string,
@@ -663,6 +728,7 @@ export const printPdfFile = async (
   colorMode?: string,
   quality?: string,
   copies?: number,
+  driverState?: PrinterDriverJobState,
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
@@ -673,32 +739,40 @@ export const printPdfFile = async (
     );
     const hasSumatra = fs.existsSync(sumatraPath);
 
-    // Resolve the actual Windows printer name (auto-detects if configured name is wrong)
-    const printerName = resolveWindowsPrinterName();
+    // If the caller already prepared driver state for a whole batch (see
+    // prepareWindowsPrinterDriverState), reuse it and skip re-resolving /
+    // re-configuring the driver on every page. Otherwise, self-manage
+    // exactly as before for single-shot callers (printText, printFromStorage
+    // per single-file requests, image layout printing).
+    const managesOwnDriverState = !driverState;
+    const printerName = driverState ? driverState.printerName : resolveWindowsPrinterName();
     logger.info('Resolved printer name', { jobID, printerName });
 
-    // ── Set printer color mode at the Windows driver level ───────────────────
-    // Brother drivers maintain private DevMode data that overrides the standard
-    // dmColor field passed by the print application.  Setting the stored printer
-    // configuration (Set-PrintConfiguration) propagates into that private data,
-    // making it the most reliable way to enforce B&W or colour output.
     let originalColor: boolean | null = null;
-    if (printerName && colorMode) {
-      originalColor = getWindowsPrinterColor(printerName);
-      const wantColor = colorMode !== 'bw';
-      if (originalColor !== null && originalColor !== wantColor) {
-        setWindowsPrinterColor(printerName, wantColor);
-        logger.info('Printer color mode set', { jobID, printerName, wantColor });
-      }
-    }
-
-    // ── Set print quality at the driver level (see setWindowsPrinterQuality) ──
-    // SumatraPDF has no quality/resolution setting to pass here at all.
     let originalTicketXml: string | null = null;
-    if (printerName && quality) {
-      originalTicketXml = setWindowsPrinterQuality(printerName, quality);
-      if (originalTicketXml) {
-        logger.info('Printer quality set', { jobID, printerName, quality });
+    if (managesOwnDriverState) {
+      // ── Set printer color mode at the Windows driver level ─────────────────
+      // Brother drivers maintain private DevMode data that overrides the
+      // standard dmColor field passed by the print application. Setting the
+      // stored printer configuration (Set-PrintConfiguration) propagates
+      // into that private data, making it the most reliable way to enforce
+      // B&W or colour output.
+      if (printerName && colorMode) {
+        originalColor = getWindowsPrinterColor(printerName);
+        const wantColor = colorMode !== 'bw';
+        if (originalColor !== null && originalColor !== wantColor) {
+          setWindowsPrinterColor(printerName, wantColor);
+          logger.info('Printer color mode set', { jobID, printerName, wantColor });
+        }
+      }
+
+      // ── Set print quality at the driver level (see setWindowsPrinterQuality) ──
+      // SumatraPDF has no quality/resolution setting to pass here at all.
+      if (printerName && quality) {
+        originalTicketXml = setWindowsPrinterQuality(printerName, quality);
+        if (originalTicketXml) {
+          logger.info('Printer quality set', { jobID, printerName, quality });
+        }
       }
     }
 
@@ -714,12 +788,16 @@ export const printPdfFile = async (
       return parts.join(',');
     };
 
-    // Restore the printer's original color/quality settings after printing (or on failure).
+    // Restore the printer's original color/quality settings after printing
+    // (or on failure) — only when THIS call is the one that changed them.
+    // When a caller passed driverState, restoration is its responsibility
+    // (once, after its whole batch), not ours per-page.
     const restoreColor = () => {
-      if (originalColor !== null && printerName) {
+      if (!managesOwnDriverState || !printerName) return;
+      if (originalColor !== null) {
         setWindowsPrinterColor(printerName, originalColor);
       }
-      if (originalTicketXml && printerName) {
+      if (originalTicketXml) {
         applyWindowsPrinterTicketXml(printerName, originalTicketXml);
       }
     };
@@ -974,6 +1052,10 @@ export const printFilesFromStorage = async (
   const simulatedPaths: string[] = [];
   const jobID = `JOB-${Date.now()}`;
 
+  // Same color/quality for every file in this request — configure the
+  // driver once instead of once per file (see prepareWindowsPrinterDriverState).
+  const driverState = prepareWindowsPrinterDriverState(colorMode, quality);
+  try {
   for (const filename of filenames) {
     const filePath = path.join(uploadsDir, filename);
 
@@ -998,7 +1080,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await resizePdfToPaperSize(filePath, tempResizedPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies);
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('PDF print failed', { filename, error: result.error });
@@ -1020,7 +1102,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await convertImageToPdf(filePath, tempPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality, copies);
+          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality, copies, driverState);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('Image PDF print failed', { filename, error: result.error });
@@ -1049,7 +1131,7 @@ export const printFilesFromStorage = async (
         try {
           await convertDocumentToPdf(filePath, tempPdf);
           await resizePdfToPaperSize(tempPdf, tempResizedPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies);
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('Document PDF print failed', { filename, error: result.error });
@@ -1094,6 +1176,9 @@ export const printFilesFromStorage = async (
         error: String(fileErr),
       });
     }
+  }
+  } finally {
+    restoreWindowsPrinterDriverState(driverState);
   }
 
   if (processedCount === 0) {
