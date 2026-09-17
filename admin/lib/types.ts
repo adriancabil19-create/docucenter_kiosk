@@ -200,7 +200,7 @@ export interface TierPrice {
 }
 
 export interface PricingSettings {
-  print: { draft: TierPrice; standard: TierPrice };
+  print: { draft: TierPrice; standard: TierPrice; high: TierPrice };
   photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
   updated_at: string;
 }

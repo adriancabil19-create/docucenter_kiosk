@@ -141,7 +141,7 @@ PRINT JOB DETAILS
 -----------------
 Paper Size: $_paperSize
 Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Quality: ${_quality == 'draft' ? 'Draft' : 'Standard'}
+Quality: ${_quality == 'draft' ? 'Draft' : _quality == 'high' ? 'High' : 'Standard'}
 Copies: $_copies
 
 Files to Print: ${allDocs.length}
@@ -374,13 +374,15 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                           _buildDropdown(
                             Strings.t('printing.quality'),
                             _quality,
-                            ['draft', 'standard'],
+                            ['draft', 'standard', 'high'],
                             (val) => setState(() => _quality = val),
                             [
                               _qualityLabel('Draft',
                                   KioskRuntime.instance.pricing.printDraft),
                               _qualityLabel('Standard',
                                   KioskRuntime.instance.pricing.printStandard),
+                              _qualityLabel('High',
+                                  KioskRuntime.instance.pricing.printHigh),
                             ],
                           ),
                           const SizedBox(height: 16),

@@ -702,6 +702,8 @@ export const photocopyDocument = async (
           opts.paperSize,
           opts.colorMode,
           opts.quality,
+          undefined,
+          'photocopy',
         );
 
         try {
@@ -814,6 +816,8 @@ export const executePhotocopySession = async (options: {
           paperSize,
           colorMode,
           quality,
+          undefined,
+          'photocopy',
         );
 
         try {

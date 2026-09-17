@@ -13,6 +13,7 @@ const ROWS: {
 }[] = [
   { group: 'print', tier: 'draft', label: 'Print · Draft' },
   { group: 'print', tier: 'standard', label: 'Print · Standard' },
+  { group: 'print', tier: 'high', label: 'Print · High' },
   { group: 'photocopy', tier: 'draft', label: 'Photocopy · Draft' },
   { group: 'photocopy', tier: 'standard', label: 'Photocopy · Standard' },
   { group: 'photocopy', tier: 'high', label: 'Photocopy · High' },
@@ -75,6 +76,7 @@ export function PricingSettingsForm({ initial }: { initial: PricingSettings | nu
       print: {
         draft: { bw: num('print.draft.bw'), color: num('print.draft.color') },
         standard: { bw: num('print.standard.bw'), color: num('print.standard.color') },
+        high: { bw: num('print.high.bw'), color: num('print.high.color') },
       },
       photocopy: {
         draft: { bw: num('photocopy.draft.bw'), color: num('photocopy.draft.color') },

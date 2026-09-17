@@ -1411,17 +1411,21 @@ export interface TierPrice {
 }
 
 /**
- * The complete kiosk price list. `print` has two quality tiers, `photocopy`
- * three. Scanning is free and not represented here.
+ * The complete kiosk price list. Both `print` and `photocopy` have three
+ * quality tiers. Scanning is free and not represented here.
  */
 export interface PricingSettings {
-  print: { draft: TierPrice; standard: TierPrice };
+  print: { draft: TierPrice; standard: TierPrice; high: TierPrice };
   photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
   updated_at: string;
 }
 
 export type PricingInput = {
-  print?: { draft?: Partial<TierPrice>; standard?: Partial<TierPrice> };
+  print?: {
+    draft?: Partial<TierPrice>;
+    standard?: Partial<TierPrice>;
+    high?: Partial<TierPrice>;
+  };
   photocopy?: {
     draft?: Partial<TierPrice>;
     standard?: Partial<TierPrice>;
@@ -1431,7 +1435,7 @@ export type PricingInput = {
 
 /** Falls back to these when a field is missing or invalid. */
 const DEFAULT_PRICING: Omit<PricingSettings, 'updated_at'> = {
-  print: { draft: { bw: 1.5, color: 2 }, standard: { bw: 2, color: 3 } },
+  print: { draft: { bw: 1.5, color: 2 }, standard: { bw: 2, color: 3 }, high: { bw: 2.5, color: 4 } },
   photocopy: {
     draft: { bw: 1, color: 3 },
     standard: { bw: 2, color: 4 },
@@ -1455,6 +1459,7 @@ const normalizePricing = (raw: PricingInput | undefined): Omit<PricingSettings, 
   print: {
     draft: mergeTier(DEFAULT_PRICING.print.draft, raw?.print?.draft),
     standard: mergeTier(DEFAULT_PRICING.print.standard, raw?.print?.standard),
+    high: mergeTier(DEFAULT_PRICING.print.high, raw?.print?.high),
   },
   photocopy: {
     draft: mergeTier(DEFAULT_PRICING.photocopy.draft, raw?.photocopy?.draft),
@@ -1482,6 +1487,7 @@ export const updatePricingSettings = async (patch: PricingInput): Promise<Pricin
     print: {
       draft: { ...cur.print.draft, ...patch?.print?.draft },
       standard: { ...cur.print.standard, ...patch?.print?.standard },
+      high: { ...cur.print.high, ...patch?.print?.high },
     },
     photocopy: {
       draft: { ...cur.photocopy.draft, ...patch?.photocopy?.draft },

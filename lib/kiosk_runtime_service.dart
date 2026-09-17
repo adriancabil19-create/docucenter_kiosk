@@ -280,6 +280,7 @@ class PagePrice {
 class KioskPricing {
   final PagePrice printDraft;
   final PagePrice printStandard;
+  final PagePrice printHigh;
   final PagePrice copyDraft;
   final PagePrice copyStandard;
   final PagePrice copyHigh;
@@ -287,6 +288,7 @@ class KioskPricing {
   const KioskPricing({
     required this.printDraft,
     required this.printStandard,
+    required this.printHigh,
     required this.copyDraft,
     required this.copyStandard,
     required this.copyHigh,
@@ -297,14 +299,18 @@ class KioskPricing {
   static const KioskPricing defaults = KioskPricing(
     printDraft: PagePrice(1.5, 2),
     printStandard: PagePrice(2, 3),
+    printHigh: PagePrice(2.5, 4),
     copyDraft: PagePrice(1, 3),
     copyStandard: PagePrice(2, 4),
     copyHigh: PagePrice(3, 5),
   );
 
-  /// Per-page price for printing at a quality tier ('draft' | 'standard').
-  PagePrice printTier(String quality) =>
-      quality == 'draft' ? printDraft : printStandard;
+  /// Per-page price for printing at a quality tier ('draft'|'standard'|'high').
+  PagePrice printTier(String quality) => quality == 'high'
+      ? printHigh
+      : quality == 'draft'
+          ? printDraft
+          : printStandard;
 
   /// Per-page price for photocopying at a quality tier ('high'|'standard'|'draft').
   PagePrice copyTier(String quality) => quality == 'high'
@@ -321,6 +327,7 @@ class KioskPricing {
     return KioskPricing(
       printDraft: PagePrice.fromJson(m(p)?['draft'], defaults.printDraft),
       printStandard: PagePrice.fromJson(m(p)?['standard'], defaults.printStandard),
+      printHigh: PagePrice.fromJson(m(p)?['high'], defaults.printHigh),
       copyDraft: PagePrice.fromJson(m(c)?['draft'], defaults.copyDraft),
       copyStandard: PagePrice.fromJson(m(c)?['standard'], defaults.copyStandard),
       copyHigh: PagePrice.fromJson(m(c)?['high'], defaults.copyHigh),
@@ -330,6 +337,7 @@ class KioskPricing {
   /// Compact value key for cheap change detection.
   String get signature =>
       '${printDraft.bw}/${printDraft.color}|${printStandard.bw}/${printStandard.color}|'
+      '${printHigh.bw}/${printHigh.color}|'
       '${copyDraft.bw}/${copyDraft.color}|${copyStandard.bw}/${copyStandard.color}|'
       '${copyHigh.bw}/${copyHigh.color}';
 }
