@@ -90,6 +90,35 @@ function dwtRequest(
   });
 }
 
+/**
+ * Create a DWT scan job, with ONE bounded retry on failure.
+ *
+ * The WIA-bridge scanner device this app selects (see the scanner-selection
+ * comments below — the real TWAIN driver fails outright, so the WIA bridge
+ * is the only usable path) doesn't always release the physical scanner
+ * instantly when a previous job closes, especially after a longer
+ * multi-page ADF session. Immediately starting a new job in that window
+ * (e.g. tapping Scan Page right after Finish on a prior multi-page scan)
+ * can get "createJob failed (HTTP 403): Operation time out." even though
+ * the scanner is fine a moment later. One retry after a short pause covers
+ * that transient window without masking a genuine failure — if the retry
+ * also fails, the error is real and gets surfaced as-is.
+ */
+async function createScanJobWithRetry(
+  jobBody: object,
+  timeoutMs = 60000,
+): Promise<{ status: number; data: Buffer }> {
+  const first = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, timeoutMs);
+  if (first.status === 201) return first;
+
+  logger.warn('DWT createJob failed, retrying once after a short pause', {
+    status: first.status,
+    detail: first.data.toString('utf8').trim().slice(0, 200),
+  });
+  await new Promise((r) => setTimeout(r, 2000));
+  return dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, timeoutMs);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DWT self-healing helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,7 +280,7 @@ const scanWithDWT = async (
       },
     };
 
-    const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
+    const jobResp = await createScanJobWithRetry(jobBody, 60000);
     if (jobResp.status !== 201) {
       const detail = jobResp.data.toString('utf8').trim();
       logger.error('DWT createJob failed', {
@@ -441,7 +470,7 @@ const scanAllADFPagesUnlocked = async (
     },
   };
 
-  const jobResp = await dwtRequest('POST', '/DWTAPI/ScanJobs', jobBody, 60000);
+  const jobResp = await createScanJobWithRetry(jobBody, 60000);
   if (jobResp.status !== 201) {
     const detail = jobResp.data.toString('utf8').trim();
     return {
