@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { PaperTray } from '@/lib/types';
@@ -28,22 +28,35 @@ export function PaperTraysManager({ initialData }: Props) {
   const [formThreshold, setFormThreshold] = useState('');
   const [formCapacity, setFormCapacity] = useState('');
 
-  // Event-triggered only: the page load already fetches once server-side
-  // (see app/paper/page.tsx's initialData), and this button is the one
-  // explicit admin-triggered refresh — no interval polling the printer/DB
-  // in the background.
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  // This polls the admin console's OWN cloud-side copy for the dashboard
+  // display, on the same 30s cadence every other admin table already uses
+  // (transactions/print-jobs/payments/storage) — a cheap read-only refresh
+  // of a page the admin is actively viewing, not the thing the kiosk-side
+  // event-triggered fix (see kiosk_runtime_service.dart) was about. That fix
+  // targeted the KIOSK continuously polling its own printer/DB and racing
+  // its own decrements — a real backend was involved there. This is just a
+  // browser tab re-fetching a display value; it doesn't write anything and
+  // can't race with the kiosk, so removing it earlier (in the same pass as
+  // the kiosk fix) left this page the only admin table that never
+  // auto-updates — which is what made kiosk-side prints look like they
+  // "weren't decrementing" here even though the sync was landing fine.
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const res = await getPaperTrays();
+      const res = await getPaperTrays(silent ? 'admin_dashboard_poll' : 'admin_manual_refresh');
       setTrays(res.data);
-      addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
+      if (!silent) addToast({ title: 'Refreshed', description: 'Paper tray data updated.', color: 'success' });
     } catch (err) {
-      addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
+      if (!silent) addToast({ title: 'Refresh failed', description: (err as Error).message, color: 'danger' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => refresh(true), 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const startEdit = useCallback((tray: PaperTray) => {
     setEditingTray(tray.tray_name);

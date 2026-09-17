@@ -93,9 +93,8 @@ export const getKioskStatus = (): Promise<KioskStatusResponse> =>
 // ─── Paper Trays ──────────────────────────────────────────────────────────────
 
 // `reason` is forwarded to the backend purely so its [TRAY] logs show which
-// event triggered this fetch — this call only ever fires on page load
-// (server-side, see lib/backend.ts) or the explicit Refresh button, never a
-// timer.
+// event triggered this fetch: the explicit Refresh button ('admin_manual_refresh',
+// the default) or this component's own 30s dashboard poll ('admin_dashboard_poll').
 export const getPaperTrays = (reason = 'admin_manual_refresh'): Promise<PaperTraysResponse> =>
   apiFetch<PaperTraysResponse>(`/api/paper-tracker/paper-trays?reason=${encodeURIComponent(reason)}`);
 
