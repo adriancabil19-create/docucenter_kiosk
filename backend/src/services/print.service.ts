@@ -578,28 +578,22 @@ const setWindowsPrinterColor = (printerName: string, color: boolean): void => {
  * Brother's own UI is not reachable through the standard Windows print API
  * at all, so it can't be targeted here.
  *
- * Printing and photocopying intentionally use DIFFERENT option sets per
- * product decision: printing maps its tiers to the driver's own
- * Fast/Normal/Best equivalents (Draft/Normal/High); photocopying maps to
- * Normal/Graphic-Map/Photo as requested, with High substituted to
- * psk:Photographic (the closest reachable equivalent to "Photo") since
- * Graphic/Map itself can't be set. Note: psk:High and psk:Photographic are
- * both "photo-oriented" quality intents — on plain paper (this kiosk's only
- * stock) the driver's matching ink-density boost (brpsk:PageColorMode=Fine)
- * requires photo media and is refused, so output at these tiers can look
- * paler than Normal. That's a driver/media limitation, not something more
- * ticket tweaking fixes.
+ * Printing and photocopying share the SAME mapping (Draft/Normal/High).
+ * photocopying originally tried Normal/Graphic-Map/Photo (with Photographic
+ * standing in for the unreachable "Graphic/Map"), but psk:Photographic
+ * turned out to both look paler AND shift color versus psk:Normal on plain
+ * paper (this kiosk's only stock) — confirmed by a full structural diff of
+ * the printer's own ticket, which showed psk:Photographic changes nothing
+ * else color-related, meaning the shift happens inside the driver's opaque
+ * rendering pipeline, not something a different ticket value can fix.
+ * psk:High was verified (via the same real-printer testing used for
+ * everything above) to look genuinely correct in Printing Service, so
+ * photocopying now reuses it instead of chasing "Photo" any further.
  */
-const PRINT_QUALITY_TICKET_OPTION: Record<string, string> = {
+const QUALITY_TICKET_OPTION: Record<string, string> = {
   draft: 'psk:Draft',
   standard: 'psk:Normal',
   high: 'psk:High',
-};
-
-const PHOTOCOPY_QUALITY_TICKET_OPTION: Record<string, string> = {
-  draft: 'psk:Normal',
-  standard: 'psk:High', // stand-in for the unreachable "Graphic/Map" preset
-  high: 'psk:Photographic',
 };
 
 const getWindowsPrinterTicketXml = (printerName: string): string | null => {
@@ -644,13 +638,8 @@ const applyWindowsPrinterTicketXml = (printerName: string, ticketXml: string): b
  * value is unrecognized — in which case nothing was changed, matching the
  * previous no-op behaviour rather than risking a malformed ticket.
  */
-const setWindowsPrinterQuality = (
-  printerName: string,
-  quality: string,
-  jobKind: 'print' | 'photocopy',
-): string | null => {
-  const optionMap = jobKind === 'photocopy' ? PHOTOCOPY_QUALITY_TICKET_OPTION : PRINT_QUALITY_TICKET_OPTION;
-  const option = optionMap[quality];
+const setWindowsPrinterQuality = (printerName: string, quality: string): string | null => {
+  const option = QUALITY_TICKET_OPTION[quality];
   if (!option) return null;
 
   const current = getWindowsPrinterTicketXml(printerName);
@@ -674,7 +663,6 @@ export const printPdfFile = async (
   colorMode?: string,
   quality?: string,
   copies?: number,
-  jobKind: 'print' | 'photocopy' = 'print',
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
 
@@ -708,9 +696,9 @@ export const printPdfFile = async (
     // SumatraPDF has no quality/resolution setting to pass here at all.
     let originalTicketXml: string | null = null;
     if (printerName && quality) {
-      originalTicketXml = setWindowsPrinterQuality(printerName, quality, jobKind);
+      originalTicketXml = setWindowsPrinterQuality(printerName, quality);
       if (originalTicketXml) {
-        logger.info('Printer quality set', { jobID, printerName, quality, jobKind });
+        logger.info('Printer quality set', { jobID, printerName, quality });
       }
     }
 
