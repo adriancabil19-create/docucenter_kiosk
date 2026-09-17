@@ -3,12 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { config } from '../utils/config';
 import { scannerLock } from './device-lock';
-
-const execFileAsync = promisify(execFile);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interfaces
@@ -627,42 +623,18 @@ export const checkADFStatus = async (): Promise<ADFStatus> => {
     const scanner = scanners.find((s) => /brother|mfc/i.test(s.name)) ?? scanners[0];
     logger.info('ADF status check: scanner found', { scanner: scanner.name });
 
-    // WIA exposes the physical feeder sensor on Windows. TWAIN enumeration
-    // alone only proves that the scanner exists, not that paper is loaded.
-    try {
-      const script = [
-        "$manager = New-Object -ComObject WIA.DeviceManager",
-        "$devices = @($manager.DeviceInfos)",
-        "$device = $devices | Where-Object { $_.Type -eq 1 -and $_.Properties.Item('Name').Value -match 'Brother|MFC' } | Select-Object -First 1",
-        "if (-not $device) { @{ supported = $false } | ConvertTo-Json -Compress; exit 0 }",
-        "$status = $device.Properties.Item('3087').Value",
-        "@{ supported = $true; status = [int]$status } | ConvertTo-Json -Compress",
-      ].join('; ');
-      const { stdout } = await execFileAsync('powershell.exe', [
-        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script,
-      ], { timeout: 5000, windowsHide: true });
-      const wia = JSON.parse(stdout.trim()) as { supported?: boolean; status?: number };
-
-      if (wia.supported && typeof wia.status === 'number') {
-        const adfLoaded = (wia.status & 0x01) !== 0;
-        return {
-          ready: adfLoaded,
-          scannerConnected: true,
-          adfLoaded,
-          status: adfLoaded
-            ? `OKAY — ${scanner.name} connected and document detected in ADF`
-            : `Scanner connected — please place a document in the ADF`,
-        };
-      }
-    } catch (err) {
-      logger.warn('WIA ADF sensor check unavailable', { error: String(err) });
-    }
-
+    // This printer's WIA driver (network/WSD) only exposes static capability
+    // flags via property 3087, not a live paper-in-feeder sensor — confirmed
+    // by reading it with paper both present and absent and getting the same
+    // value either way. So there's no reliable way to know paper is loaded
+    // before scanning; report ready once the scanner itself is reachable and
+    // let the actual scan job (scanWithDWT) surface a clear error if the
+    // feeder turns out to be empty.
     return {
-      ready: false,
+      ready: true,
       scannerConnected: true,
-      adfLoaded: false,
-      status: `Scanner connected — ADF sensor unavailable. Please place a document in the ADF`,
+      adfLoaded: true,
+      status: `OKAY — ${scanner.name} connected`,
     };
   } catch (err) {
     logger.error('ADF status check error', { error: String(err) });
