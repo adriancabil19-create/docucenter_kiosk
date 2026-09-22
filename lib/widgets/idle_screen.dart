@@ -1,24 +1,11 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../strings.dart';
 import 'docucenter_logo.dart';
-
-class _ServiceItem {
-  const _ServiceItem(this.icon, this.labelKey);
-  final IconData icon;
-  final String labelKey;
-
-  String get label => Strings.t(labelKey);
-}
-
-const _services = [
-  _ServiceItem(Icons.print_rounded, 'idle.print'),
-  _ServiceItem(Icons.document_scanner_rounded, 'idle.scan'),
-  _ServiceItem(Icons.copy_all_rounded, 'idle.copy'),
-];
+import 'service_tutorial.dart';
+import 'service_tutorial_panel.dart';
 
 /// One softly floating background document — position, size and timing are
 /// fixed per instance (seeded) so the drift looks organic without being
@@ -91,21 +78,8 @@ class _IdleScreenState extends State<IdleScreen>
   late final List<_Paper> _papers =
       List.generate(4, (i) => _Paper(i * 101 + 7));
 
-  Timer? _serviceTimer;
-  int _serviceIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _serviceTimer = Timer.periodic(const Duration(milliseconds: 2600), (_) {
-      if (!mounted) return;
-      setState(() => _serviceIndex = (_serviceIndex + 1) % _services.length);
-    });
-  }
-
   @override
   void dispose() {
-    _serviceTimer?.cancel();
     _introCtrl.dispose();
     _pulseCtrl.dispose();
     _rippleCtrl.dispose();
@@ -115,7 +89,6 @@ class _IdleScreenState extends State<IdleScreen>
 
   @override
   Widget build(BuildContext context) {
-    final service = _services[_serviceIndex];
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onDismiss,
@@ -160,9 +133,9 @@ class _IdleScreenState extends State<IdleScreen>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _buildBrand(),
-                              const SizedBox(height: 28),
-                              _buildServiceShowcase(service),
-                              const SizedBox(height: 56),
+                              const SizedBox(height: 32),
+                              _buildHowItWorksShowcase(),
+                              const SizedBox(height: 48),
                               _buildTapPrompt(),
                             ],
                           ),
@@ -261,40 +234,65 @@ class _IdleScreenState extends State<IdleScreen>
     );
   }
 
-  Widget _buildServiceShowcase(_ServiceItem service) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
-      transitionBuilder: (child, anim) => FadeTransition(
-        opacity: anim,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.25),
-            end: Offset.zero,
-          ).animate(anim),
-          child: child,
-        ),
-      ),
+  /// "How Does This Work?" — three autoplaying panels (Printing, Scanning,
+  /// Photocopying), each stepping through its own 3-step flow on a timer.
+  /// Purely decorative here (taps still fall through to [widget.onDismiss]);
+  /// the tap-through version lives in HowItWorksPage.
+  Widget _buildHowItWorksShowcase() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1080),
       child: Column(
-        key: ValueKey(service.label),
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-            ),
-            child: Icon(service.icon, color: Colors.white, size: 44),
-          ),
-          const SizedBox(height: 12),
           Text(
-            service.label,
+            Strings.t('tutorial.heading'),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            Strings.t('tutorial.subheading'),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final panels = <Widget>[
+                for (var i = 0; i < kServiceTutorials.length; i++)
+                  ServiceTutorialPanel(
+                    key: ValueKey('idle-tutorial-${kServiceTutorials[i].id}'),
+                    tutorial: kServiceTutorials[i],
+                    autoPlay: true,
+                    compact: true,
+                    staggerDelay: Duration(milliseconds: i * 500),
+                  ),
+              ];
+              if (constraints.maxWidth < 760) {
+                return Column(
+                  children: [
+                    for (final p in panels) ...[p, const SizedBox(height: 12)],
+                  ],
+                );
+              }
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < panels.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 14),
+                      Expanded(child: panels[i]),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

@@ -276,68 +276,79 @@ class PagePrice {
   }
 }
 
-/// The kiosk price list, mirrored from the admin. Scanning is free and absent.
-class KioskPricing {
-  final PagePrice printDraft;
-  final PagePrice printStandard;
-  final PagePrice printHigh;
-  final PagePrice copyDraft;
-  final PagePrice copyStandard;
-  final PagePrice copyHigh;
+/// The three quality tiers, each priced per colour mode.
+class QualityTierPrices {
+  final PagePrice draft;
+  final PagePrice standard;
+  final PagePrice high;
 
-  const KioskPricing({
-    required this.printDraft,
-    required this.printStandard,
-    required this.printHigh,
-    required this.copyDraft,
-    required this.copyStandard,
-    required this.copyHigh,
-  });
+  const QualityTierPrices({required this.draft, required this.standard, required this.high});
+
+  /// Price for a quality tier ('draft'|'standard'|'high').
+  PagePrice tier(String quality) =>
+      quality == 'high' ? high : quality == 'draft' ? draft : standard;
+
+  factory QualityTierPrices.fromJson(dynamic j, QualityTierPrices fallback) {
+    if (j is! Map) return fallback;
+    return QualityTierPrices(
+      draft: PagePrice.fromJson(j['draft'], fallback.draft),
+      standard: PagePrice.fromJson(j['standard'], fallback.standard),
+      high: PagePrice.fromJson(j['high'], fallback.high),
+    );
+  }
+
+  String get signature =>
+      '${draft.bw}/${draft.color}|${standard.bw}/${standard.color}|${high.bw}/${high.color}';
+}
+
+/// Paper sizes the kiosk offers for printing — mirrors the picker in
+/// printing_page.dart and PAPER_SIZES in backend/src/database.ts.
+const List<String> kPrintPaperSizes = ['A4', 'Folio', 'Letter'];
+
+/// The kiosk price list, mirrored from the admin. Scanning is free and absent.
+///
+/// Printing is priced per paper size (each with its own three quality
+/// tiers); photocopying is not size-dependent and keeps one set of tiers.
+class KioskPricing {
+  final Map<String, QualityTierPrices> print;
+  final QualityTierPrices photocopy;
+
+  const KioskPricing({required this.print, required this.photocopy});
 
   /// Historical hard-coded rates — used until the first poll and as field
   /// fallbacks for anything the backend omits.
+  static const QualityTierPrices _defaultPrintTiers =
+      QualityTierPrices(draft: PagePrice(1.5, 2), standard: PagePrice(2, 3), high: PagePrice(2.5, 4));
+
   static const KioskPricing defaults = KioskPricing(
-    printDraft: PagePrice(1.5, 2),
-    printStandard: PagePrice(2, 3),
-    printHigh: PagePrice(2.5, 4),
-    copyDraft: PagePrice(1, 3),
-    copyStandard: PagePrice(2, 4),
-    copyHigh: PagePrice(3, 5),
+    print: {'A4': _defaultPrintTiers, 'Folio': _defaultPrintTiers, 'Letter': _defaultPrintTiers},
+    photocopy: QualityTierPrices(draft: PagePrice(1, 3), standard: PagePrice(2, 4), high: PagePrice(3, 5)),
   );
 
-  /// Per-page price for printing at a quality tier ('draft'|'standard'|'high').
-  PagePrice printTier(String quality) => quality == 'high'
-      ? printHigh
-      : quality == 'draft'
-          ? printDraft
-          : printStandard;
+  /// Per-page price for printing at a quality tier, for the given paper
+  /// size. Falls back to A4 pricing if the size is unrecognized.
+  PagePrice printTier(String quality, String paperSize) =>
+      (print[paperSize] ?? print['A4'] ?? _defaultPrintTiers).tier(quality);
 
   /// Per-page price for photocopying at a quality tier ('high'|'standard'|'draft').
-  PagePrice copyTier(String quality) => quality == 'high'
-      ? copyHigh
-      : quality == 'draft'
-          ? copyDraft
-          : copyStandard;
+  PagePrice copyTier(String quality) => photocopy.tier(quality);
 
   factory KioskPricing.fromJson(dynamic j) {
     if (j is! Map) return defaults;
     final p = j['print'];
     final c = j['photocopy'];
     Map? m(dynamic x) => x is Map ? x : null;
+    final printMap = <String, QualityTierPrices>{
+      for (final size in kPrintPaperSizes)
+        size: QualityTierPrices.fromJson(m(p)?[size], defaults.print[size]!),
+    };
     return KioskPricing(
-      printDraft: PagePrice.fromJson(m(p)?['draft'], defaults.printDraft),
-      printStandard: PagePrice.fromJson(m(p)?['standard'], defaults.printStandard),
-      printHigh: PagePrice.fromJson(m(p)?['high'], defaults.printHigh),
-      copyDraft: PagePrice.fromJson(m(c)?['draft'], defaults.copyDraft),
-      copyStandard: PagePrice.fromJson(m(c)?['standard'], defaults.copyStandard),
-      copyHigh: PagePrice.fromJson(m(c)?['high'], defaults.copyHigh),
+      print: printMap,
+      photocopy: QualityTierPrices.fromJson(m(c), defaults.photocopy),
     );
   }
 
   /// Compact value key for cheap change detection.
   String get signature =>
-      '${printDraft.bw}/${printDraft.color}|${printStandard.bw}/${printStandard.color}|'
-      '${printHigh.bw}/${printHigh.color}|'
-      '${copyDraft.bw}/${copyDraft.color}|${copyStandard.bw}/${copyStandard.color}|'
-      '${copyHigh.bw}/${copyHigh.color}';
+      '${kPrintPaperSizes.map((s) => print[s]?.signature).join('|')}|${photocopy.signature}';
 }

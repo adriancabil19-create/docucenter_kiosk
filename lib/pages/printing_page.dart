@@ -46,8 +46,9 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
 
   /// Per-page price for the current quality + colour, from the admin-configured
   /// price list (falls back to the built-in defaults before the first poll).
-  double get _costPerPage =>
-      KioskRuntime.instance.pricing.printTier(_quality).forMode(_colorMode);
+  double get _costPerPage => KioskRuntime.instance.pricing
+      .printTier(_quality, _paperSize)
+      .forMode(_colorMode);
 
   /// "1.50" but "2" — drop a redundant ".00".
   static String _peso(double v) {
@@ -378,11 +379,11 @@ Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
                             (val) => setState(() => _quality = val),
                             [
                               _qualityLabel('Draft',
-                                  KioskRuntime.instance.pricing.printDraft),
+                                  KioskRuntime.instance.pricing.printTier('draft', _paperSize)),
                               _qualityLabel('Standard',
-                                  KioskRuntime.instance.pricing.printStandard),
+                                  KioskRuntime.instance.pricing.printTier('standard', _paperSize)),
                               _qualityLabel('High',
-                                  KioskRuntime.instance.pricing.printHigh),
+                                  KioskRuntime.instance.pricing.printTier('high', _paperSize)),
                             ],
                           ),
                           const SizedBox(height: 16),

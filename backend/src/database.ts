@@ -1410,32 +1410,48 @@ export interface TierPrice {
   color: number;
 }
 
+/** The three quality tiers, each priced per colour mode. */
+export interface QualityTiers {
+  draft: TierPrice;
+  standard: TierPrice;
+  high: TierPrice;
+}
+
+/** Paper sizes the kiosk offers for printing — see printing_page.dart's picker. */
+export type PaperSize = 'A4' | 'Folio' | 'Letter';
+export const PAPER_SIZES: PaperSize[] = ['A4', 'Folio', 'Letter'];
+
 /**
- * The complete kiosk price list. Both `print` and `photocopy` have three
- * quality tiers. Scanning is free and not represented here.
+ * The complete kiosk price list. `print` is priced per paper size (each with
+ * its own three quality tiers); `photocopy` is not size-dependent and keeps
+ * a single set of quality tiers. Scanning is free and not represented here.
  */
 export interface PricingSettings {
-  print: { draft: TierPrice; standard: TierPrice; high: TierPrice };
-  photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
+  print: Record<PaperSize, QualityTiers>;
+  photocopy: QualityTiers;
   updated_at: string;
 }
 
+export type QualityTiersInput = {
+  draft?: Partial<TierPrice>;
+  standard?: Partial<TierPrice>;
+  high?: Partial<TierPrice>;
+};
+
 export type PricingInput = {
-  print?: {
-    draft?: Partial<TierPrice>;
-    standard?: Partial<TierPrice>;
-    high?: Partial<TierPrice>;
-  };
-  photocopy?: {
-    draft?: Partial<TierPrice>;
-    standard?: Partial<TierPrice>;
-    high?: Partial<TierPrice>;
-  };
+  print?: Partial<Record<PaperSize, QualityTiersInput>>;
+  photocopy?: QualityTiersInput;
 };
 
 /** Falls back to these when a field is missing or invalid. */
+const DEFAULT_PRINT_TIERS: QualityTiers = {
+  draft: { bw: 1.5, color: 2 },
+  standard: { bw: 2, color: 3 },
+  high: { bw: 2.5, color: 4 },
+};
+
 const DEFAULT_PRICING: Omit<PricingSettings, 'updated_at'> = {
-  print: { draft: { bw: 1.5, color: 2 }, standard: { bw: 2, color: 3 }, high: { bw: 2.5, color: 4 } },
+  print: { A4: DEFAULT_PRINT_TIERS, Folio: DEFAULT_PRINT_TIERS, Letter: DEFAULT_PRINT_TIERS },
   photocopy: {
     draft: { bw: 1, color: 3 },
     standard: { bw: 2, color: 4 },
@@ -1455,17 +1471,19 @@ const mergeTier = (base: TierPrice, over: Partial<TierPrice> | undefined): TierP
   color: money(over?.color, base.color),
 });
 
+const mergeQualityTiers = (base: QualityTiers, over: QualityTiersInput | undefined): QualityTiers => ({
+  draft: mergeTier(base.draft, over?.draft),
+  standard: mergeTier(base.standard, over?.standard),
+  high: mergeTier(base.high, over?.high),
+});
+
 const normalizePricing = (raw: PricingInput | undefined): Omit<PricingSettings, 'updated_at'> => ({
   print: {
-    draft: mergeTier(DEFAULT_PRICING.print.draft, raw?.print?.draft),
-    standard: mergeTier(DEFAULT_PRICING.print.standard, raw?.print?.standard),
-    high: mergeTier(DEFAULT_PRICING.print.high, raw?.print?.high),
+    A4: mergeQualityTiers(DEFAULT_PRICING.print.A4, raw?.print?.A4),
+    Folio: mergeQualityTiers(DEFAULT_PRICING.print.Folio, raw?.print?.Folio),
+    Letter: mergeQualityTiers(DEFAULT_PRICING.print.Letter, raw?.print?.Letter),
   },
-  photocopy: {
-    draft: mergeTier(DEFAULT_PRICING.photocopy.draft, raw?.photocopy?.draft),
-    standard: mergeTier(DEFAULT_PRICING.photocopy.standard, raw?.photocopy?.standard),
-    high: mergeTier(DEFAULT_PRICING.photocopy.high, raw?.photocopy?.high),
-  },
+  photocopy: mergeQualityTiers(DEFAULT_PRICING.photocopy, raw?.photocopy),
 });
 
 export const getPricingSettings = async (): Promise<PricingSettings> => {
@@ -1483,17 +1501,18 @@ export const getPricingSettings = async (): Promise<PricingSettings> => {
 /** Deep-merge `patch` onto the current prices, validate, and persist. */
 export const updatePricingSettings = async (patch: PricingInput): Promise<PricingSettings> => {
   const cur = await getPricingSettings();
+  const mergePatch = (base: QualityTiers, over: QualityTiersInput | undefined): QualityTiersInput => ({
+    draft: { ...base.draft, ...over?.draft },
+    standard: { ...base.standard, ...over?.standard },
+    high: { ...base.high, ...over?.high },
+  });
   const merged = normalizePricing({
     print: {
-      draft: { ...cur.print.draft, ...patch?.print?.draft },
-      standard: { ...cur.print.standard, ...patch?.print?.standard },
-      high: { ...cur.print.high, ...patch?.print?.high },
+      A4: mergePatch(cur.print.A4, patch?.print?.A4),
+      Folio: mergePatch(cur.print.Folio, patch?.print?.Folio),
+      Letter: mergePatch(cur.print.Letter, patch?.print?.Letter),
     },
-    photocopy: {
-      draft: { ...cur.photocopy.draft, ...patch?.photocopy?.draft },
-      standard: { ...cur.photocopy.standard, ...patch?.photocopy?.standard },
-      high: { ...cur.photocopy.high, ...patch?.photocopy?.high },
-    },
+    photocopy: mergePatch(cur.photocopy, patch?.photocopy),
   });
   await getDb().execute({
     sql: `INSERT INTO pricing_settings (id, data, updated_at)

@@ -59,8 +59,9 @@ class _ImagePrintSettingsInterfaceState extends State<ImagePrintSettingsInterfac
   late final TextEditingController _customWidthController;
   late final TextEditingController _customHeightController;
 
-  double get _costPerPage =>
-      KioskRuntime.instance.pricing.printTier(_quality).forMode(_colorMode);
+  double get _costPerPage => KioskRuntime.instance.pricing
+      .printTier(_quality, _paperSize)
+      .forMode(_colorMode);
 
   /// Automatic layout: pick a sensible grid from the image count so the
   /// user doesn't have to think about it (section 5 — Automatic default).

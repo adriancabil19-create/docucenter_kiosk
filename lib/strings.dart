@@ -14,6 +14,7 @@ class Strings {
     // Header
     'nav.home': {AppLanguage.en: 'Home', AppLanguage.fil: 'Home'},
     'nav.services': {AppLanguage.en: 'Services', AppLanguage.fil: 'Serbisyo'},
+    'nav.howItWorks': {AppLanguage.en: 'How It Works', AppLanguage.fil: 'Paano Gumagana'},
     'nav.about': {AppLanguage.en: 'About', AppLanguage.fil: 'Tungkol'},
     'nav.legal': {AppLanguage.en: 'Legal', AppLanguage.fil: 'Legal'},
     'header.settings': {AppLanguage.en: 'Settings', AppLanguage.fil: 'Mga Setting'},
@@ -90,6 +91,64 @@ class Strings {
     'services.backToServices': {AppLanguage.en: 'Back to Services', AppLanguage.fil: 'Bumalik sa Serbisyo'},
     'services.backToPrinting': {AppLanguage.en: 'Back to Printing', AppLanguage.fil: 'Bumalik sa Pag-print'},
     'services.backToImagePrint': {AppLanguage.en: 'Back to Image Print', AppLanguage.fil: 'Bumalik sa Pag-print ng Larawan'},
+
+    // How It Works — idle-screen showcase + interactive tutorial tab
+    'tutorial.heading': {AppLanguage.en: 'How Does This Work?', AppLanguage.fil: 'Paano Ito Gumagana?'},
+    'tutorial.subheading': {
+      AppLanguage.en: '3 simple steps to get started with each service',
+      AppLanguage.fil: '3 simpleng hakbang para makapagsimula sa bawat serbisyo',
+    },
+    'tutorial.stepLabel': {AppLanguage.en: 'Step', AppLanguage.fil: 'Hakbang'},
+    'tutorial.tryService': {AppLanguage.en: 'Try This Service', AppLanguage.fil: 'Subukan ang Serbisyong Ito'},
+    'tutorial.resetsIn': {AppLanguage.en: 'Next step in', AppLanguage.fil: 'Susunod na hakbang sa'},
+
+    'tutorial.printing.step1.title': {AppLanguage.en: 'Choose your file', AppLanguage.fil: 'Pumili ng file'},
+    'tutorial.printing.step1.desc': {
+      AppLanguage.en: 'Pick a document from Storage or plug in a USB drive.',
+      AppLanguage.fil: 'Pumili ng dokumento mula sa Storage o mag-plug ng USB drive.',
+    },
+    'tutorial.printing.step2.title': {AppLanguage.en: 'Set your options', AppLanguage.fil: 'I-set ang mga option'},
+    'tutorial.printing.step2.desc': {
+      AppLanguage.en: 'Pick paper size, color mode, quality, and number of copies.',
+      AppLanguage.fil: 'Pumili ng paper size, kulay, kalidad, at bilang ng kopya.',
+    },
+    'tutorial.printing.step3.title': {AppLanguage.en: 'Pay & print', AppLanguage.fil: 'Magbayad at i-print'},
+    'tutorial.printing.step3.desc': {
+      AppLanguage.en: 'Confirm the cost, pay cashless, and collect your printout.',
+      AppLanguage.fil: 'Kumpirmahin ang bayad, mag-cashless, at kunin ang iyong printout.',
+    },
+
+    'tutorial.scanning.step1.title': {AppLanguage.en: 'Load your document', AppLanguage.fil: 'Ilagay ang dokumento'},
+    'tutorial.scanning.step1.desc': {
+      AppLanguage.en: 'Place your paper document in the feeder or on the glass.',
+      AppLanguage.fil: 'Ilagay ang iyong papel sa feeder o sa salamin.',
+    },
+    'tutorial.scanning.step2.title': {AppLanguage.en: 'Scan your pages', AppLanguage.fil: 'I-scan ang mga pahina'},
+    'tutorial.scanning.step2.desc': {
+      AppLanguage.en: 'Tap Start Scanning and add more pages if you need to.',
+      AppLanguage.fil: 'Pindutin ang Start Scanning at magdagdag pa ng pahina kung kailangan.',
+    },
+    'tutorial.scanning.step3.title': {AppLanguage.en: 'Save your file', AppLanguage.fil: 'I-save ang file'},
+    'tutorial.scanning.step3.desc': {
+      AppLanguage.en: 'Save the scanned pages as a PDF to Storage — scanning is free.',
+      AppLanguage.fil: 'I-save ang na-scan bilang PDF sa Storage — libre ang pag-scan.',
+    },
+
+    'tutorial.photocopying.step1.title': {AppLanguage.en: 'Load your document', AppLanguage.fil: 'Ilagay ang dokumento'},
+    'tutorial.photocopying.step1.desc': {
+      AppLanguage.en: 'Place your paper document in the feeder or on the glass.',
+      AppLanguage.fil: 'Ilagay ang iyong papel sa feeder o sa salamin.',
+    },
+    'tutorial.photocopying.step2.title': {AppLanguage.en: 'Set your options', AppLanguage.fil: 'I-set ang mga option'},
+    'tutorial.photocopying.step2.desc': {
+      AppLanguage.en: 'Pick quality, color mode, and number of copies.',
+      AppLanguage.fil: 'Pumili ng kalidad, kulay, at bilang ng kopya.',
+    },
+    'tutorial.photocopying.step3.title': {AppLanguage.en: 'Pay & copy', AppLanguage.fil: 'Magbayad at kopyahin'},
+    'tutorial.photocopying.step3.desc': {
+      AppLanguage.en: 'Confirm the cost, pay cashless, and collect your copies.',
+      AppLanguage.fil: 'Kumpirmahin ang bayad, mag-cashless, at kunin ang iyong mga kopya.',
+    },
 
     // Settings panel
     'settings.title': {AppLanguage.en: 'Settings', AppLanguage.fil: 'Mga Setting'},

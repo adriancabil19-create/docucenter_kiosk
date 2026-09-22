@@ -15,6 +15,7 @@ import 'widgets/settings_panel.dart';
 import 'widgets/docucenter_logo.dart';
 import 'widgets/ask_for_assistance_button.dart';
 import 'pages/staff/staff_mode_shell.dart';
+import 'pages/how_it_works_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -232,12 +233,18 @@ class _MainAppState extends State<MainApp> {
                   ),
                   // Customer-facing "Ask for Assistance" (rule 12) — floats above
                   // whichever service screen is open. Hidden during the idle
-                  // standby screen and Staff Mode, both rendered after it here.
+                  // standby screen, Staff Mode, and maintenance mode (nothing
+                  // to assist with while the kiosk itself is down).
                   if (!_showIdleScreen && !_showStaffMode)
-                    const Positioned(
-                      right: 24,
-                      bottom: 24,
-                      child: AskForAssistanceButton(),
+                    AnimatedBuilder(
+                      animation: KioskRuntime.instance,
+                      builder: (context, _) => KioskRuntime.instance.maintenance
+                          ? const SizedBox.shrink()
+                          : const Positioned(
+                              right: 24,
+                              bottom: 24,
+                              child: AskForAssistanceButton(),
+                            ),
                     ),
                   if (_showIdleScreen)
                     Positioned.fill(
@@ -281,7 +288,7 @@ class _HeaderState extends State<Header> {
   int _logoTapCount = 0;
   Timer? _logoTapTimer;
 
-  static const List<String> _navIds = ['home', 'services', 'about', 'legal'];
+  static const List<String> _navIds = ['home', 'services', 'howItWorks', 'about', 'legal'];
 
   static String _navLabel(String id) => Strings.t('nav.$id');
 
@@ -700,6 +707,8 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey('services-${widget.servicesEntries}'),
           onNavigate: widget.onNavigate,
         );
+      case 'howItWorks':
+        return HowItWorksPage(onNavigate: widget.onNavigate);
       case 'about':
         return AboutPage(onNavigate: widget.onNavigate);
       case 'legal':

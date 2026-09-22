@@ -199,9 +199,20 @@ export interface TierPrice {
   color: number;
 }
 
+export interface QualityTiers {
+  draft: TierPrice;
+  standard: TierPrice;
+  high: TierPrice;
+}
+
+/** Paper sizes the kiosk offers for printing. */
+export type PaperSize = 'A4' | 'Folio' | 'Letter';
+export const PAPER_SIZES: PaperSize[] = ['A4', 'Folio', 'Letter'];
+
 export interface PricingSettings {
-  print: { draft: TierPrice; standard: TierPrice; high: TierPrice };
-  photocopy: { draft: TierPrice; standard: TierPrice; high: TierPrice };
+  /** Printing is priced per paper size; photocopying is not size-dependent. */
+  print: Record<PaperSize, QualityTiers>;
+  photocopy: QualityTiers;
   updated_at: string;
 }
 

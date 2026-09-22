@@ -2,33 +2,41 @@
 
 import { useMemo, useState } from 'react';
 import { Button, Input, addToast } from '@heroui/react';
-import type { PricingSettings } from '@/lib/types';
+import { PAPER_SIZES, type PaperSize, type PricingSettings } from '@/lib/types';
 import { updatePricingSettings } from '@/lib/api';
 
-/** Rows rendered in the form — each maps to one price field. */
-const ROWS: {
-  group: 'print' | 'photocopy';
-  tier: 'draft' | 'standard' | 'high';
-  label: string;
-}[] = [
-  { group: 'print', tier: 'draft', label: 'Print · Draft' },
-  { group: 'print', tier: 'standard', label: 'Print · Standard' },
-  { group: 'print', tier: 'high', label: 'Print · High' },
-  { group: 'photocopy', tier: 'draft', label: 'Photocopy · Draft' },
-  { group: 'photocopy', tier: 'standard', label: 'Photocopy · Standard' },
-  { group: 'photocopy', tier: 'high', label: 'Photocopy · High' },
+const TIERS = ['draft', 'standard', 'high'] as const;
+type Tier = (typeof TIERS)[number];
+
+/** Photocopy rows — unchanged, not size-dependent. */
+const PHOTOCOPY_ROWS: { tier: Tier; label: string }[] = [
+  { tier: 'draft', label: 'Photocopy · Draft' },
+  { tier: 'standard', label: 'Photocopy · Standard' },
+  { tier: 'high', label: 'Photocopy · High' },
 ];
 
-type Draft = Record<string, string>; // key: `${group}.${tier}.${bw|color}`
+/** Print rows — one group of three quality tiers per paper size. */
+const PRINT_ROWS: { size: PaperSize; tier: Tier; label: string }[] = PAPER_SIZES.flatMap((size) =>
+  TIERS.map((tier) => ({
+    size,
+    tier,
+    label: `Print · ${size} · ${tier[0].toUpperCase()}${tier.slice(1)}`,
+  })),
+);
+
+type Draft = Record<string, string>; // print: `print.${size}.${tier}.${bw|color}`; photocopy: `photocopy.${tier}.${bw|color}`
 
 function toDraft(p: PricingSettings): Draft {
   const d: Draft = {};
-  for (const { group, tier } of ROWS) {
-    const t = (p as unknown as Record<string, Record<string, { bw: number; color: number }>>)[group][
-      tier
-    ];
-    d[`${group}.${tier}.bw`] = String(t.bw);
-    d[`${group}.${tier}.color`] = String(t.color);
+  for (const { size, tier } of PRINT_ROWS) {
+    const t = p.print[size][tier];
+    d[`print.${size}.${tier}.bw`] = String(t.bw);
+    d[`print.${size}.${tier}.color`] = String(t.color);
+  }
+  for (const { tier } of PHOTOCOPY_ROWS) {
+    const t = p.photocopy[tier];
+    d[`photocopy.${tier}.bw`] = String(t.bw);
+    d[`photocopy.${tier}.color`] = String(t.color);
   }
   return d;
 }
@@ -59,9 +67,21 @@ export function PricingSettingsForm({ initial }: { initial: PricingSettings | nu
 
   const save = async () => {
     // Validate every field first.
-    for (const { group, tier, label } of ROWS) {
+    for (const { size, tier, label } of PRINT_ROWS) {
       for (const mode of ['bw', 'color'] as const) {
-        if (Number.isNaN(num(`${group}.${tier}.${mode}`))) {
+        if (Number.isNaN(num(`print.${size}.${tier}.${mode}`))) {
+          addToast({
+            title: 'Invalid price',
+            description: `${label} — ${mode === 'bw' ? 'B&W' : 'Colour'} must be 0 or more.`,
+            color: 'danger',
+          });
+          return;
+        }
+      }
+    }
+    for (const { tier, label } of PHOTOCOPY_ROWS) {
+      for (const mode of ['bw', 'color'] as const) {
+        if (Number.isNaN(num(`photocopy.${tier}.${mode}`))) {
           addToast({
             title: 'Invalid price',
             description: `${label} — ${mode === 'bw' ? 'B&W' : 'Colour'} must be 0 or more.`,
@@ -72,12 +92,14 @@ export function PricingSettingsForm({ initial }: { initial: PricingSettings | nu
       }
     }
 
+    const printForSize = (size: PaperSize) => ({
+      draft: { bw: num(`print.${size}.draft.bw`), color: num(`print.${size}.draft.color`) },
+      standard: { bw: num(`print.${size}.standard.bw`), color: num(`print.${size}.standard.color`) },
+      high: { bw: num(`print.${size}.high.bw`), color: num(`print.${size}.high.color`) },
+    });
+
     const patch = {
-      print: {
-        draft: { bw: num('print.draft.bw'), color: num('print.draft.color') },
-        standard: { bw: num('print.standard.bw'), color: num('print.standard.color') },
-        high: { bw: num('print.high.bw'), color: num('print.high.color') },
-      },
+      print: { A4: printForSize('A4'), Folio: printForSize('Folio'), Letter: printForSize('Letter') },
       photocopy: {
         draft: { bw: num('photocopy.draft.bw'), color: num('photocopy.draft.color') },
         standard: { bw: num('photocopy.standard.bw'), color: num('photocopy.standard.color') },
@@ -124,15 +146,15 @@ export function PricingSettingsForm({ initial }: { initial: PricingSettings | nu
             </tr>
           </thead>
           <tbody>
-            {ROWS.map(({ group, tier, label }) => (
-              <tr key={`${group}.${tier}`}>
+            {PRINT_ROWS.map(({ size, tier, label }) => (
+              <tr key={`print.${size}.${tier}`}>
                 <td className="pr-4 font-medium text-slate-700">{label}</td>
                 <td className="px-2">
                   <Input
                     type="number"
                     aria-label={`${label} black and white price`}
-                    value={draft[`${group}.${tier}.bw`] ?? ''}
-                    onValueChange={(v) => set(`${group}.${tier}.bw`, v)}
+                    value={draft[`print.${size}.${tier}.bw`] ?? ''}
+                    onValueChange={(v) => set(`print.${size}.${tier}.bw`, v)}
                     min={0}
                     step={0.25}
                     startContent={<span className="text-xs text-slate-400">₱</span>}
@@ -144,8 +166,39 @@ export function PricingSettingsForm({ initial }: { initial: PricingSettings | nu
                   <Input
                     type="number"
                     aria-label={`${label} colour price`}
-                    value={draft[`${group}.${tier}.color`] ?? ''}
-                    onValueChange={(v) => set(`${group}.${tier}.color`, v)}
+                    value={draft[`print.${size}.${tier}.color`] ?? ''}
+                    onValueChange={(v) => set(`print.${size}.${tier}.color`, v)}
+                    min={0}
+                    step={0.25}
+                    startContent={<span className="text-xs text-slate-400">₱</span>}
+                    size="sm"
+                    className="max-w-[9rem]"
+                  />
+                </td>
+              </tr>
+            ))}
+            {PHOTOCOPY_ROWS.map(({ tier, label }) => (
+              <tr key={`photocopy.${tier}`}>
+                <td className="pr-4 font-medium text-slate-700">{label}</td>
+                <td className="px-2">
+                  <Input
+                    type="number"
+                    aria-label={`${label} black and white price`}
+                    value={draft[`photocopy.${tier}.bw`] ?? ''}
+                    onValueChange={(v) => set(`photocopy.${tier}.bw`, v)}
+                    min={0}
+                    step={0.25}
+                    startContent={<span className="text-xs text-slate-400">₱</span>}
+                    size="sm"
+                    className="max-w-[9rem]"
+                  />
+                </td>
+                <td className="px-2">
+                  <Input
+                    type="number"
+                    aria-label={`${label} colour price`}
+                    value={draft[`photocopy.${tier}.color`] ?? ''}
+                    onValueChange={(v) => set(`photocopy.${tier}.color`, v)}
                     min={0}
                     step={0.25}
                     startContent={<span className="text-xs text-slate-400">₱</span>}
