@@ -182,7 +182,14 @@ class _ServiceTutorialPanelState extends State<ServiceTutorialPanel>
             child: Image.asset(
               step.imageAsset,
               key: ValueKey(step.imageAsset),
-              fit: BoxFit.cover,
+              // `contain`, not `cover` — this panel's box is a different
+              // shape on every layout (wide 3-up row on desktop, narrow
+              // single column on a phone-width window), and `cover` was
+              // cropping the sides off the screenshot, chopping words like
+              // "Scan Settings" down to just "Settings". `contain` always
+              // shows the whole screenshot, letterboxed if needed.
+              fit: BoxFit.contain,
+              alignment: Alignment.topCenter,
               width: double.infinity,
               height: double.infinity,
               errorBuilder: (context, error, stack) => Container(

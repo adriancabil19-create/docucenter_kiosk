@@ -11,6 +11,7 @@ import {
   clearActivityLogs,
 } from '../database';
 import { logger } from '../utils/logger';
+import { config } from '../utils/config';
 
 const router = Router();
 
@@ -120,7 +121,7 @@ router.delete('/logs', async (_req: Request, res: Response): Promise<void> => {
 router.get('/kiosk-status', async (_req: Request, res: Response): Promise<void> => {
   try {
     const stats = await getMonitoringStats();
-    const paperTrays = await getPaperTrays();
+    const paperTrays = await getPaperTrays(config.kioskId);
     const lowPaperTrays = paperTrays.filter((t) => t.current_count <= t.threshold);
 
     res.json({

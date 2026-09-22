@@ -128,13 +128,18 @@ router.post('/print-recovery', async (req: Request, res: Response): Promise<void
 router.post('/paper-tray', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!(await acceptEventOnce(req, res))) return;
-    const { tray_name, current_count, max_capacity } = req.body as {
+    const { kiosk_id, tray_name, current_count, max_capacity } = req.body as {
+      kiosk_id?: string;
       tray_name: string;
       current_count: number;
       max_capacity?: number;
     };
-    await updatePaperTray(tray_name, current_count, max_capacity);
-    logger.info('Sync: paper tray updated', { tray_name, current_count });
+    // Falls back to the shared default only for a kiosk running an older
+    // build that doesn't send kiosk_id yet — every current kiosk sends its
+    // own identity explicitly (see decrementPaperTray et al).
+    const kioskId = kiosk_id || 'DOCUCENTER-01';
+    await updatePaperTray(kioskId, tray_name, current_count, max_capacity);
+    logger.info('Sync: paper tray updated', { kioskId, tray_name, current_count });
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: failed to update paper tray', { error: String(err) });

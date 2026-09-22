@@ -335,7 +335,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         const sheetsUsed = totalPages * numCopies;
 
         const normalizedSize = (paperSize ?? 'A4').toUpperCase();
-        const allTrays = await PaperTrackerService.getTrays();
+        const allTrays = await PaperTrackerService.getTrays(config.kioskId);
         const withPaper = allTrays.filter((t) => t.current_count > 0);
 
         // Prefer a tray loaded with the matching paper size
@@ -349,7 +349,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
         const tray = sizeMatch ?? fallback;
         const trayName = tray?.tray_name ?? 'Tray 1';
 
-        await PaperTrackerService.usePaper(trayName, sheetsUsed);
+        await PaperTrackerService.usePaper(config.kioskId, trayName, sheetsUsed);
         // One activity-log entry per print job — this is the only paper event
         // worth persisting (routine tray edits no longer log).
         await insertLog(
@@ -561,14 +561,14 @@ router.post('/recover/:transactionId', async (req: Request, res: Response): Prom
       try {
         const sheetsUsed = (originalJob.page_count ?? 0) * originalJob.copies;
         const normalizedSize = originalJob.paper_size.toUpperCase();
-        const allTrays = await PaperTrackerService.getTrays();
+        const allTrays = await PaperTrackerService.getTrays(config.kioskId);
         const withPaper = allTrays.filter((t) => t.current_count > 0);
         const sizeMatch = withPaper
           .filter((t) => (t.paper_size ?? 'A4').toUpperCase() === normalizedSize)
           .sort((a, b) => b.current_count - a.current_count)[0];
         const fallback = withPaper.sort((a, b) => b.current_count - a.current_count)[0];
         const tray = sizeMatch ?? fallback;
-        if (tray) await PaperTrackerService.usePaper(tray.tray_name, sheetsUsed);
+        if (tray) await PaperTrackerService.usePaper(config.kioskId, tray.tray_name, sheetsUsed);
       } catch (paperError) {
         logger.warn('Failed to update paper tracking after recovery print', { error: String(paperError) });
       }

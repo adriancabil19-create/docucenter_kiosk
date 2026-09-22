@@ -11,86 +11,88 @@ import {
 import { logger } from '../utils/logger';
 
 export class PaperTrackerService {
-  static async getTrays(): Promise<PaperTrayRow[]> {
+  static async getTrays(kioskId: string): Promise<PaperTrayRow[]> {
     try {
-      return await getPaperTrays();
+      return await getPaperTrays(kioskId);
     } catch (error) {
-      logger.error('Failed to get paper trays', { error: String(error) });
+      logger.error('Failed to get paper trays', { kioskId, error: String(error) });
       return [];
     }
   }
 
-  static async setTrayCapacity(trayName: string, maxCapacity: number): Promise<boolean> {
+  static async setTrayCapacity(kioskId: string, trayName: string, maxCapacity: number): Promise<boolean> {
     try {
-      await updatePaperTray(trayName, maxCapacity, maxCapacity);
-      logger.info('Paper tray capacity updated', { trayName, maxCapacity });
+      await updatePaperTray(kioskId, trayName, maxCapacity, maxCapacity);
+      logger.info('Paper tray capacity updated', { kioskId, trayName, maxCapacity });
       return true;
     } catch (error) {
-      logger.error('Failed to set tray capacity', { trayName, maxCapacity, error: String(error) });
+      logger.error('Failed to set tray capacity', { kioskId, trayName, maxCapacity, error: String(error) });
       return false;
     }
   }
 
-  static async setCurrentCount(trayName: string, count: number): Promise<boolean> {
+  static async setCurrentCount(kioskId: string, trayName: string, count: number): Promise<boolean> {
     try {
-      await setPaperTrayCount(trayName, count);
-      logger.info('Paper tray count set', { trayName, count });
+      await setPaperTrayCount(kioskId, trayName, count);
+      logger.info('Paper tray count set', { kioskId, trayName, count });
       return true;
     } catch (error) {
-      logger.error('Failed to set tray count', { trayName, count, error: String(error) });
+      logger.error('Failed to set tray count', { kioskId, trayName, count, error: String(error) });
       return false;
     }
   }
 
-  static async refillTray(trayName: string, sheetsAdded: number): Promise<boolean> {
+  static async refillTray(kioskId: string, trayName: string, sheetsAdded: number): Promise<boolean> {
     try {
-      await incrementPaperTray(trayName, sheetsAdded);
-      logger.info('Paper tray refilled', { trayName, sheetsAdded });
+      await incrementPaperTray(kioskId, trayName, sheetsAdded);
+      logger.info('Paper tray refilled', { kioskId, trayName, sheetsAdded });
       return true;
     } catch (error) {
-      logger.error('Failed to refill tray', { trayName, sheetsAdded, error: String(error) });
+      logger.error('Failed to refill tray', { kioskId, trayName, sheetsAdded, error: String(error) });
       return false;
     }
   }
 
-  static async usePaper(trayName: string, sheets: number): Promise<boolean> {
+  static async usePaper(kioskId: string, trayName: string, sheets: number): Promise<boolean> {
     try {
-      await decrementPaperTray(trayName, sheets);
-      logger.debug('Paper used from tray', { trayName, sheets });
+      await decrementPaperTray(kioskId, trayName, sheets);
+      logger.debug('Paper used from tray', { kioskId, trayName, sheets });
       return true;
     } catch (error) {
-      logger.error('Failed to decrement paper count', { trayName, sheets, error: String(error) });
+      logger.error('Failed to decrement paper count', { kioskId, trayName, sheets, error: String(error) });
       return false;
     }
   }
 
-  static async getLowPaperAlerts(): Promise<Array<{ tray_name: string; current_count: number; threshold: number }>> {
+  static async getLowPaperAlerts(
+    kioskId: string,
+  ): Promise<Array<{ tray_name: string; current_count: number; threshold: number }>> {
     try {
-      return await getLowPaperAlerts();
+      return await getLowPaperAlerts(kioskId);
     } catch (error) {
-      logger.error('Failed to get low paper alerts', { error: String(error) });
+      logger.error('Failed to get low paper alerts', { kioskId, error: String(error) });
       return [];
     }
   }
 
-  static async setPaperSize(trayName: string, paperSize: string): Promise<boolean> {
+  static async setPaperSize(kioskId: string, trayName: string, paperSize: string): Promise<boolean> {
     try {
-      await updatePaperTrayPaperSize(trayName, paperSize);
-      logger.info('Paper tray paper size updated', { trayName, paperSize });
+      await updatePaperTrayPaperSize(kioskId, trayName, paperSize);
+      logger.info('Paper tray paper size updated', { kioskId, trayName, paperSize });
       return true;
     } catch (error) {
-      logger.error('Failed to set tray paper size', { trayName, paperSize, error: String(error) });
+      logger.error('Failed to set tray paper size', { kioskId, trayName, paperSize, error: String(error) });
       return false;
     }
   }
 
-  static async hasEnoughPaper(trayName: string, requiredSheets: number): Promise<boolean> {
+  static async hasEnoughPaper(kioskId: string, trayName: string, requiredSheets: number): Promise<boolean> {
     try {
-      const trays = await getPaperTrays();
+      const trays = await getPaperTrays(kioskId);
       const tray = trays.find((t) => t.tray_name === trayName);
       return tray ? tray.current_count >= requiredSheets : false;
     } catch (error) {
-      logger.error('Failed to check paper availability', { trayName, requiredSheets, error: String(error) });
+      logger.error('Failed to check paper availability', { kioskId, trayName, requiredSheets, error: String(error) });
       return false;
     }
   }

@@ -66,6 +66,7 @@ export interface StorageDocument {
 // ─── Paper Trays ─────────────────────────────────────────────────────────────
 
 export interface PaperTray {
+  kiosk_id: string;
   tray_name: string;
   current_count: number;
   max_capacity: number;

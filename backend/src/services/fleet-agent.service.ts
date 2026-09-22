@@ -292,7 +292,7 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
           result = 'ignored (missing params)';
           break;
         }
-        await applyPaperTrayFromCloud(params);
+        await applyPaperTrayFromCloud(KIOSK_ID, params);
         result = `paper tray "${params.tray_name}" synced from admin`;
         break;
       }

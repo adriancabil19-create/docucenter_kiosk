@@ -69,12 +69,17 @@ export const initSchema = async (): Promise<void> => {
       created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- One row per (kiosk, tray) — a fresh install gets this composite key
+    -- straight away; see the migration below for databases created before
+    -- kiosk_id existed here (every other fleet table already had it).
     CREATE TABLE IF NOT EXISTS paper_trays (
-      tray_name     TEXT    PRIMARY KEY,
+      kiosk_id      TEXT    NOT NULL DEFAULT 'DOCUCENTER-01',
+      tray_name     TEXT    NOT NULL,
       current_count INTEGER NOT NULL DEFAULT 0,
       max_capacity  INTEGER NOT NULL DEFAULT 0,
       threshold     INTEGER NOT NULL DEFAULT 20,
-      updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      PRIMARY KEY (kiosk_id, tray_name)
     );
 
     CREATE TABLE IF NOT EXISTS activity_logs (
@@ -299,6 +304,41 @@ export const initSchema = async (): Promise<void> => {
     }
   };
   await addColumn(`ALTER TABLE paper_trays ADD COLUMN paper_size TEXT DEFAULT 'A4'`);
+  // paper_trays pre-dates per-kiosk scoping — every physical kiosk shared one
+  // global row per tray_name, so two kiosks (or a kiosk plus a dev instance)
+  // syncing at once would race to overwrite the same row, which is exactly
+  // why the admin Paper Trays page could flip between different values on
+  // every refresh. A database created before kiosk_id existed here needs the
+  // table rebuilt with the new composite (kiosk_id, tray_name) primary key;
+  // its existing rows are assumed to belong to this backend's own identity.
+  const needsPaperTrayMigration = await db
+    .execute('SELECT kiosk_id FROM paper_trays LIMIT 1')
+    .then(() => false)
+    .catch(() => true);
+  if (needsPaperTrayMigration) {
+    logger.info('Migrating paper_trays to per-kiosk scoping', { kioskId: config.kioskId });
+    await db.execute('ALTER TABLE paper_trays RENAME TO paper_trays_pre_kiosk_scope');
+    await db.execute(`
+      CREATE TABLE paper_trays (
+        kiosk_id      TEXT    NOT NULL DEFAULT 'DOCUCENTER-01',
+        tray_name     TEXT    NOT NULL,
+        current_count INTEGER NOT NULL DEFAULT 0,
+        max_capacity  INTEGER NOT NULL DEFAULT 0,
+        threshold     INTEGER NOT NULL DEFAULT 20,
+        paper_size    TEXT    DEFAULT 'A4',
+        updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        PRIMARY KEY (kiosk_id, tray_name)
+      )
+    `);
+    await db.execute({
+      sql: `INSERT INTO paper_trays (kiosk_id, tray_name, current_count, max_capacity, threshold, paper_size, updated_at)
+            SELECT @kioskId, tray_name, current_count, max_capacity, threshold, paper_size, updated_at
+            FROM paper_trays_pre_kiosk_scope`,
+      args: { kioskId: config.kioskId },
+    });
+    await db.execute('DROP TABLE paper_trays_pre_kiosk_scope');
+    logger.info('paper_trays migration complete');
+  }
   // print_jobs enrichment — powers the analytics view
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN page_count INTEGER NOT NULL DEFAULT 0`);
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN color_mode TEXT NOT NULL DEFAULT 'bw'`);
@@ -346,17 +386,27 @@ export const initSchema = async (): Promise<void> => {
   );
   await db.execute(`INSERT OR IGNORE INTO pricing_settings (id, data) VALUES (1, '{}')`);
 
-  // Step 3: Seed + enforce static paper sizes
-  await db.executeMultiple(`
-    INSERT OR IGNORE INTO paper_trays (tray_name, current_count, max_capacity, threshold, paper_size) VALUES
-      ('MP Tray', 0, 0, 20, 'FOLIO'),
-      ('Tray 1',  0, 0, 20, 'A4'),
-      ('Tray 2',  0, 0, 20, 'LETTER');
-
-    UPDATE paper_trays SET paper_size = 'FOLIO'  WHERE tray_name = 'MP Tray';
-    UPDATE paper_trays SET paper_size = 'A4'     WHERE tray_name = 'Tray 1';
-    UPDATE paper_trays SET paper_size = 'LETTER' WHERE tray_name = 'Tray 2';
-  `);
+  // Step 3: Seed + enforce static paper sizes — scoped to this backend's own
+  // kiosk identity; each kiosk that boots seeds only its own three trays.
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO paper_trays (kiosk_id, tray_name, current_count, max_capacity, threshold, paper_size) VALUES
+      (@kioskId, 'MP Tray', 0, 0, 20, 'FOLIO'),
+      (@kioskId, 'Tray 1',  0, 0, 20, 'A4'),
+      (@kioskId, 'Tray 2',  0, 0, 20, 'LETTER')`,
+    args: { kioskId: config.kioskId },
+  });
+  await db.execute({
+    sql: `UPDATE paper_trays SET paper_size = 'FOLIO'  WHERE kiosk_id = @kioskId AND tray_name = 'MP Tray'`,
+    args: { kioskId: config.kioskId },
+  });
+  await db.execute({
+    sql: `UPDATE paper_trays SET paper_size = 'A4'     WHERE kiosk_id = @kioskId AND tray_name = 'Tray 1'`,
+    args: { kioskId: config.kioskId },
+  });
+  await db.execute({
+    sql: `UPDATE paper_trays SET paper_size = 'LETTER' WHERE kiosk_id = @kioskId AND tray_name = 'Tray 2'`,
+    args: { kioskId: config.kioskId },
+  });
 
   logger.info('Database schema initialized', {
     url: process.env.DATABASE_PATH || 'docucenter.db',
@@ -636,6 +686,7 @@ export const getRecentTransactions = async (
 // ─── Paper tray helpers ───────────────────────────────────────────────────────
 
 export interface PaperTrayRow {
+  kiosk_id: string;
   tray_name: string;
   current_count: number;
   max_capacity: number;
@@ -644,12 +695,15 @@ export interface PaperTrayRow {
   updated_at: string;
 }
 
-export const getPaperTrays = async (): Promise<PaperTrayRow[]> => {
-  const result = await getDb().execute(
-    `SELECT tray_name, current_count, max_capacity, threshold,
-            COALESCE(paper_size, 'A4') AS paper_size, updated_at
-     FROM paper_trays`,
-  );
+/** All trays belonging to one kiosk — every caller must say which kiosk. */
+export const getPaperTrays = async (kioskId: string): Promise<PaperTrayRow[]> => {
+  const result = await getDb().execute({
+    sql: `SELECT kiosk_id, tray_name, current_count, max_capacity, threshold,
+                 COALESCE(paper_size, 'A4') AS paper_size, updated_at
+          FROM paper_trays
+          WHERE kiosk_id = @kioskId`,
+    args: { kioskId },
+  });
   return toRows<PaperTrayRow>(result).map((t) => ({
     ...t,
     current_count: Number(t.current_count),
@@ -658,19 +712,25 @@ export const getPaperTrays = async (): Promise<PaperTrayRow[]> => {
   }));
 };
 
-export const updatePaperTrayPaperSize = async (trayName: string, paperSize: string): Promise<void> => {
+export const updatePaperTrayPaperSize = async (
+  kioskId: string,
+  trayName: string,
+  paperSize: string,
+): Promise<void> => {
   try {
     await getDb().execute({
-      sql: `UPDATE paper_trays SET paper_size = @paperSize, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE tray_name = @trayName`,
-      args: { trayName, paperSize: paperSize.toUpperCase() },
+      sql: `UPDATE paper_trays SET paper_size = @paperSize, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+      args: { kioskId, trayName, paperSize: paperSize.toUpperCase() },
     });
-    syncEvent('paper-tray', { tray_name: trayName, paper_size: paperSize.toUpperCase() });
+    syncEvent('paper-tray', { kiosk_id: kioskId, tray_name: trayName, paper_size: paperSize.toUpperCase() });
   } catch (err) {
-    logger.warn('Failed to update paper tray paper size', { trayName, paperSize, error: String(err) });
+    logger.warn('Failed to update paper tray paper size', { kioskId, trayName, paperSize, error: String(err) });
   }
 };
 
 export const updatePaperTray = async (
+  kioskId: string,
   trayName: string,
   currentCount: number,
   maxCapacity?: number,
@@ -681,16 +741,21 @@ export const updatePaperTray = async (
             SET current_count = @currentCount,
                 max_capacity  = COALESCE(@maxCapacity, max_capacity),
                 updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE tray_name = @trayName`,
-      args: { trayName, currentCount, maxCapacity: maxCapacity ?? null },
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+      args: { kioskId, trayName, currentCount, maxCapacity: maxCapacity ?? null },
     });
-    syncEvent('paper-tray', { tray_name: trayName, current_count: currentCount, max_capacity: maxCapacity });
+    syncEvent('paper-tray', {
+      kiosk_id: kioskId,
+      tray_name: trayName,
+      current_count: currentCount,
+      max_capacity: maxCapacity,
+    });
   } catch (err) {
-    logger.warn('Failed to update paper tray', { trayName, error: String(err) });
+    logger.warn('Failed to update paper tray', { kioskId, trayName, error: String(err) });
   }
 };
 
-export const decrementPaperTray = async (trayName: string, amount: number): Promise<void> => {
+export const decrementPaperTray = async (kioskId: string, trayName: string, amount: number): Promise<void> => {
   try {
     // RETURNING the post-update count so the kiosk can push its own real-world
     // consumption up to the cloud immediately — without this, the admin
@@ -699,16 +764,16 @@ export const decrementPaperTray = async (trayName: string, amount: number): Prom
       sql: `UPDATE paper_trays
             SET current_count = MAX(0, current_count - @amount),
                 updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE tray_name = @trayName
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName
             RETURNING current_count`,
-      args: { trayName, amount },
+      args: { kioskId, trayName, amount },
     });
     const newCount = firstRow<{ current_count: number }>(result)?.current_count;
     if (newCount !== undefined) {
-      syncEvent('paper-tray', { tray_name: trayName, current_count: Number(newCount) });
+      syncEvent('paper-tray', { kiosk_id: kioskId, tray_name: trayName, current_count: Number(newCount) });
     }
   } catch (err) {
-    logger.warn('Failed to decrement paper tray', { trayName, amount, error: String(err) });
+    logger.warn('Failed to decrement paper tray', { kioskId, trayName, amount, error: String(err) });
   }
 };
 
@@ -716,9 +781,11 @@ export const decrementPaperTray = async (trayName: string, amount: number): Prom
  * Apply one tray's admin-controlled fields (capacity/threshold/paper size and
  * the current count) as pushed down from the cloud via the heartbeat/command
  * downlink — the same channel pricing and storage settings already use.
- * Kiosk side only; never re-echoes back up (this IS the receiving end).
+ * Kiosk side only; never re-echoes back up (this IS the receiving end). The
+ * kiosk always applies a downlink command to itself, never another kiosk's
+ * row, so kioskId here is this backend's own identity, not tray.kiosk_id.
  */
-export const applyPaperTrayFromCloud = async (tray: PaperTrayRow): Promise<void> => {
+export const applyPaperTrayFromCloud = async (kioskId: string, tray: PaperTrayRow): Promise<void> => {
   try {
     // The command-poll downlink re-sends this snapshot every ~2s, racing
     // against the kiosk's own local decrements (which sync UP asynchronously
@@ -734,9 +801,10 @@ export const applyPaperTrayFromCloud = async (tray: PaperTrayRow): Promise<void>
                 threshold     = @threshold,
                 paper_size    = @paperSize,
                 updated_at    = @updatedAt
-            WHERE tray_name = @trayName
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName
               AND (updated_at IS NULL OR updated_at < @updatedAt)`,
       args: {
+        kioskId,
         trayName: tray.tray_name,
         currentCount: tray.current_count,
         maxCapacity: tray.max_capacity,
@@ -746,14 +814,17 @@ export const applyPaperTrayFromCloud = async (tray: PaperTrayRow): Promise<void>
       },
     });
   } catch (err) {
-    logger.warn('Failed to apply paper tray from cloud', { tray: tray.tray_name, error: String(err) });
+    logger.warn('Failed to apply paper tray from cloud', { kioskId, tray: tray.tray_name, error: String(err) });
   }
 };
 
-export const getLowPaperAlerts = async (): Promise<Array<{ tray_name: string; current_count: number; threshold: number }>> => {
-  const result = await getDb().execute(
-    `SELECT tray_name, current_count, threshold FROM paper_trays WHERE current_count <= threshold`,
-  );
+export const getLowPaperAlerts = async (
+  kioskId: string,
+): Promise<Array<{ tray_name: string; current_count: number; threshold: number }>> => {
+  const result = await getDb().execute({
+    sql: `SELECT tray_name, current_count, threshold FROM paper_trays WHERE kiosk_id = @kioskId AND current_count <= threshold`,
+    args: { kioskId },
+  });
   return toRows<{ tray_name: string; current_count: number; threshold: number }>(result).map((t) => ({
     ...t,
     current_count: Number(t.current_count),
@@ -761,14 +832,19 @@ export const getLowPaperAlerts = async (): Promise<Array<{ tray_name: string; cu
   }));
 };
 
-export const updatePaperTrayThreshold = async (trayName: string, threshold: number): Promise<void> => {
+export const updatePaperTrayThreshold = async (
+  kioskId: string,
+  trayName: string,
+  threshold: number,
+): Promise<void> => {
   try {
     await getDb().execute({
-      sql: `UPDATE paper_trays SET threshold = @threshold, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE tray_name = @trayName`,
-      args: { trayName, threshold },
+      sql: `UPDATE paper_trays SET threshold = @threshold, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+      args: { kioskId, trayName, threshold },
     });
   } catch (err) {
-    logger.warn('Failed to update paper tray threshold', { trayName, error: String(err) });
+    logger.warn('Failed to update paper tray threshold', { kioskId, trayName, error: String(err) });
   }
 };
 
@@ -901,19 +977,28 @@ export const cancelStalePendingTransactions = async (olderThanMinutes: number): 
 
 // ─── Paper count helpers ──────────────────────────────────────────────────────
 
-export const setPaperTrayCount = async (trayName: string, currentCount: number): Promise<void> => {
+export const setPaperTrayCount = async (
+  kioskId: string,
+  trayName: string,
+  currentCount: number,
+): Promise<void> => {
   try {
     await getDb().execute({
-      sql: `UPDATE paper_trays SET current_count = @currentCount, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE tray_name = @trayName`,
-      args: { trayName, currentCount },
+      sql: `UPDATE paper_trays SET current_count = @currentCount, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+      args: { kioskId, trayName, currentCount },
     });
-    syncEvent('paper-tray', { tray_name: trayName, current_count: currentCount });
+    syncEvent('paper-tray', { kiosk_id: kioskId, tray_name: trayName, current_count: currentCount });
   } catch (err) {
-    logger.warn('Failed to set paper tray count', { trayName, currentCount, error: String(err) });
+    logger.warn('Failed to set paper tray count', { kioskId, trayName, currentCount, error: String(err) });
   }
 };
 
-export const incrementPaperTray = async (trayName: string, sheetsAdded: number): Promise<void> => {
+export const incrementPaperTray = async (
+  kioskId: string,
+  trayName: string,
+  sheetsAdded: number,
+): Promise<void> => {
   try {
     await getDb().execute({
       sql: `UPDATE paper_trays
@@ -926,11 +1011,11 @@ export const incrementPaperTray = async (trayName: string, sheetsAdded: number):
                   ELSE max_capacity
                 END,
                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE tray_name = @trayName`,
-      args: { trayName, sheetsAdded },
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+      args: { kioskId, trayName, sheetsAdded },
     });
   } catch (err) {
-    logger.warn('Failed to increment paper tray', { trayName, sheetsAdded, error: String(err) });
+    logger.warn('Failed to increment paper tray', { kioskId, trayName, sheetsAdded, error: String(err) });
   }
 };
 
