@@ -157,12 +157,13 @@ class _ServiceTutorialPanelState extends State<ServiceTutorialPanel>
     );
   }
 
-  /// A real screenshot of the service's actual kiosk screen, inside a
-  /// bezel that pans & zooms ("Ken Burns" style) to [step.focusAlignment]
-  /// on every step change — one captured image, three guided close-ups.
+  /// A real, tightly-cropped screenshot of this step's actual kiosk screen
+  /// (its own [TutorialStep.imageAsset]) — crossfades to the next step's
+  /// image rather than panning across one shared screenshot, since each
+  /// step now has its own dedicated capture (Documents card, Settings
+  /// card, the real payment screen, ...).
   Widget _buildMockScreen(TutorialStep step, bool compact) {
-    final height = compact ? 96.0 : 150.0;
-    const zoom = 1.7;
+    final height = compact ? 150.0 : 280.0;
     return Container(
       height: height,
       width: double.infinity,
@@ -172,64 +173,60 @@ class _ServiceTutorialPanelState extends State<ServiceTutorialPanel>
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: LayoutBuilder(
-        builder: (context, constraints) => Stack(
-          fit: StackFit.expand,
-          children: [
-            AnimatedAlign(
-              duration: const Duration(milliseconds: 900),
-              curve: Curves.easeInOutCubic,
-              alignment: step.focusAlignment,
-              child: SizedBox(
-                width: constraints.maxWidth * zoom,
-                height: constraints.maxHeight * zoom,
-                child: Image.asset(
-                  widget.tutorial.imageAsset,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stack) => Container(
-                    color: widget.tutorial.color.withValues(alpha: 0.08),
-                    alignment: Alignment.center,
-                    child: Icon(step.icon, size: compact ? 40 : 56, color: widget.tutorial.color),
-                  ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+            child: Image.asset(
+              step.imageAsset,
+              key: ValueKey(step.imageAsset),
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stack) => Container(
+                color: widget.tutorial.color.withValues(alpha: 0.08),
+                alignment: Alignment.center,
+                child: Icon(step.icon, size: compact ? 40 : 56, color: widget.tutorial.color),
+              ),
+            ),
+          ),
+          // Darken the top-left corner a touch so the step badge stays
+          // legible over whatever part of the screenshot is in view.
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x66000000), Colors.transparent],
+                  stops: [0, 0.55],
                 ),
               ),
             ),
-            // Darken the top-left corner a touch so the step badge stays legible
-            // over whatever part of the screenshot is currently in view.
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0x66000000), Colors.transparent],
-                    stops: [0, 0.55],
-                  ),
+          ),
+          Positioned(
+            left: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: widget.tutorial.color,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${Strings.t('tutorial.stepLabel')} ${_index + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.4,
                 ),
               ),
             ),
-            Positioned(
-              left: 8,
-              top: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: widget.tutorial.color,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${Strings.t('tutorial.stepLabel')} ${_index + 1}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

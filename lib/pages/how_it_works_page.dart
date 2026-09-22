@@ -20,7 +20,7 @@ class HowItWorksPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: const BoxConstraints(maxWidth: 1250),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

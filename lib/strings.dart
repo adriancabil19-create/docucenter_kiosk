@@ -123,15 +123,15 @@ class Strings {
       AppLanguage.en: 'Place your paper document in the feeder or on the glass.',
       AppLanguage.fil: 'Ilagay ang iyong papel sa feeder o sa salamin.',
     },
-    'tutorial.scanning.step2.title': {AppLanguage.en: 'Scan your pages', AppLanguage.fil: 'I-scan ang mga pahina'},
+    'tutorial.scanning.step2.title': {AppLanguage.en: 'Choose your settings', AppLanguage.fil: 'Pumili ng setting'},
     'tutorial.scanning.step2.desc': {
-      AppLanguage.en: 'Tap Start Scanning and add more pages if you need to.',
-      AppLanguage.fil: 'Pindutin ang Start Scanning at magdagdag pa ng pahina kung kailangan.',
+      AppLanguage.en: 'Pick color mode and resolution — paper size is detected automatically.',
+      AppLanguage.fil: 'Pumili ng color mode at resolution — awtomatikong nade-detect ang paper size.',
     },
-    'tutorial.scanning.step3.title': {AppLanguage.en: 'Save your file', AppLanguage.fil: 'I-save ang file'},
+    'tutorial.scanning.step3.title': {AppLanguage.en: 'Start scanning', AppLanguage.fil: 'Simulan ang pag-scan'},
     'tutorial.scanning.step3.desc': {
-      AppLanguage.en: 'Save the scanned pages as a PDF to Storage — scanning is free.',
-      AppLanguage.fil: 'I-save ang na-scan bilang PDF sa Storage — libre ang pag-scan.',
+      AppLanguage.en: 'Tap Start Scanning — pages save to Storage as a PDF, free of charge.',
+      AppLanguage.fil: 'Pindutin ang Start Scanning — mase-save bilang PDF sa Storage, libre.',
     },
 
     'tutorial.photocopying.step1.title': {AppLanguage.en: 'Load your document', AppLanguage.fil: 'Ilagay ang dokumento'},

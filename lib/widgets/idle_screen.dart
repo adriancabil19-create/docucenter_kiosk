@@ -240,7 +240,7 @@ class _IdleScreenState extends State<IdleScreen>
   /// the tap-through version lives in HowItWorksPage.
   Widget _buildHowItWorksShowcase() {
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 1080),
+      constraints: const BoxConstraints(maxWidth: 1150),
       child: Column(
         children: [
           Text(
