@@ -323,12 +323,16 @@ const applyReply = async (reply: DownlinkReply): Promise<void> => {
 
   const pricing = reply.settings?.pricing;
   if (pricing) {
-    const current = await getPricingSettings();
-    if (pricingSignature(current) !== pricingSignature(pricing)) {
-      await updatePricingSettings(pricing);
+    // updatePricingSettings is itself a no-op when nothing changed (e.g. the
+    // cloud reply is on a stale/mismatched shape that merges to the same
+    // values), so just diff its result rather than the raw signatures —
+    // that pre-check used to fire on every heartbeat and re-log/re-write.
+    const before = pricingSignature(await getPricingSettings());
+    const applied = await updatePricingSettings(pricing);
+    if (pricingSignature(applied) !== before) {
       logger.info('Fleet agent: pricing applied', {
-        print: pricing.print,
-        photocopy: pricing.photocopy,
+        print: applied.print,
+        photocopy: applied.photocopy,
       });
     }
   }

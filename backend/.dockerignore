@@ -1,0 +1,29 @@
+# The Dockerfile only ever COPYs package*.json, tsconfig.json, and src/ —
+# everything else here just slows down the build-context upload for no
+# benefit. Keep this in sync with what the Dockerfile actually COPYs.
+
+node_modules/
+dist/
+.git/
+.env
+.env.*
+*.tsbuildinfo
+
+# Local dev/runtime data — not part of the image
+docucenter.db
+uploads/
+examples/
+
+# Local-only tooling, docs, large binaries — never used by the build
+ngrok.exe
+ngrok.zip
+Brother MFC-J2730DW Printer
+*.md
+
+# IDE / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+coverage/

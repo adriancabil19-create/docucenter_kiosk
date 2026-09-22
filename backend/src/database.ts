@@ -1514,6 +1514,13 @@ export const updatePricingSettings = async (patch: PricingInput): Promise<Pricin
     },
     photocopy: mergePatch(cur.photocopy, patch?.photocopy),
   });
+  // No-op if nothing actually changed — callers like the fleet-agent sync
+  // re-apply the cloud's price list on every heartbeat, and without this
+  // guard a stale/mismatched shape on the other end would rewrite the row
+  // (and bump updated_at) continuously instead of only on a real change.
+  if (pricingSignature(cur) === pricingSignature(merged)) {
+    return cur;
+  }
   await getDb().execute({
     sql: `INSERT INTO pricing_settings (id, data, updated_at)
           VALUES (1, @data, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
