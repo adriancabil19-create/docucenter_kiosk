@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
 FROM node:20-slim AS builder
 
@@ -11,10 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package*.json ./
-# Cache npm's download cache across builds (keyed by this stage) — same
-# `npm ci` result either way, just skips re-downloading unchanged packages
-# when package*.json changes and this layer can't be reused as-is.
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src/ ./src/
