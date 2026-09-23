@@ -3033,27 +3033,44 @@ const mapRecoveryAction = (r: Record<string, unknown>): PrintRecoveryActionRow =
 
 /**
  * Transactions eligible for Staff Print Recovery: any paid (SUCCESS)
- * transaction whose most recent paid print job failed, and that has no
- * un-reauthorized successful recovery already on record — no time limit, a
- * failed paid print stays recoverable indefinitely until it's fixed. Returns
- * the transaction alongside the failed job it would reprint.
+ * transaction with a paid print job in the last [sinceDays] days, that has
+ * no un-reauthorized successful recovery already on record.
+ *
+ * Deliberately NOT filtered to `j.status = 'failed'` — that only covers a
+ * *software-detected* failure (driver/spool error), which is the rare case.
+ * The actual reason this page exists is the opposite scenario: the OS
+ * reports the job as submitted/done, but the printer physically jammed, ran
+ * out of paper mid-job, or produced garbage output — the software has no
+ * way to know that happened, so a paid job's status alone can't gate
+ * eligibility. Staff learn about the failure from the customer, then find
+ * and pick the transaction here; the confirmation dialog (not this list) is
+ * what has to make the original job details unambiguous. Bounded to recent
+ * days so this list doesn't grow to every successful print ever made —
+ * unlike the old failed-only version, "successful and needs no action" is
+ * now the overwhelming majority of what would otherwise be listed here.
  */
 export interface RecoverableTransaction {
   transaction: TransactionRow;
   printJob: PrintJobRow;
 }
 
-export const getRecoverableTransactions = async (): Promise<RecoverableTransaction[]> => {
-  const result = await getDb().execute(
-    `SELECT t.*, j.id AS job_id FROM transactions t
+export const getRecoverableTransactions = async (
+  sinceDays = 7,
+): Promise<RecoverableTransaction[]> => {
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z');
+  const result = await getDb().execute({
+    sql: `SELECT t.*, j.id AS job_id FROM transactions t
      JOIN print_jobs j ON j.transaction_id = t.id
-     WHERE t.status = 'SUCCESS' AND j.status = 'failed' AND j.billing_type = 'paid'
+     WHERE t.status = 'SUCCESS' AND j.billing_type = 'paid' AND t.created_at >= @since
        AND NOT EXISTS (
          SELECT 1 FROM print_recovery_actions a
          WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
        )
      ORDER BY t.created_at DESC`,
-  );
+    args: { since },
+  });
   const rows = toRows<Record<string, unknown>>(result);
   const out: RecoverableTransaction[] = [];
   for (const r of rows) {
@@ -3089,6 +3106,8 @@ export interface TransactionDetail {
   copies: number | null;
   page_count: number | null;
   color_mode: string | null;
+  duplex: boolean | null;
+  unit_price: number | null;
   print_status: string | null;
   /** Every recovery reprint ever attempted on this transaction, newest first. */
   recoveries: PrintRecoveryActionRow[];
@@ -3119,7 +3138,7 @@ export const getTransactionsDetailed = async (
   const result = await getDb().execute({
     sql: `SELECT t.id, t.reference_number, t.amount, t.status, t.service_type, t.created_at, t.completed_at,
                  j.filenames, j.paper_size, j.copies AS job_copies, j.page_count, j.color_mode,
-                 j.status AS job_status
+                 j.duplex, j.unit_price, j.status AS job_status
           FROM transactions t
           LEFT JOIN print_jobs j ON j.transaction_id = t.id AND j.billing_type != 'recovery'
           ${where}
@@ -3155,6 +3174,8 @@ export const getTransactionsDetailed = async (
     copies: r.job_copies == null ? null : Number(r.job_copies),
     page_count: r.page_count == null ? null : Number(r.page_count),
     color_mode: (r.color_mode as string) ?? null,
+    duplex: r.duplex == null ? null : Number(r.duplex) === 1,
+    unit_price: r.unit_price == null ? null : Number(r.unit_price),
     print_status: (r.job_status as string) ?? null,
     recoveries: recoveriesByTxn.get(String(r.id)) ?? [],
   }));

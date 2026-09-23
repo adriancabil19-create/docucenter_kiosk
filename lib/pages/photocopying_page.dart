@@ -158,10 +158,6 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
 
   // ── Phase 2: Print from stored session after payment succeeds ─────────────
 
-  // transactionId is accepted for signature compatibility with pendingJob but
-  // not yet used — photocopy jobs don't have a durable stored-file record to
-  // link it to (Staff Print Recovery currently covers Printing/Image-Print
-  // only; see the recovery route's docs for why).
   Future<void> _executePhotocopyJob([String? transactionId]) async {
     final response = await http
         .post(
@@ -174,6 +170,8 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
             'colorMode': _colorMode,
             'quality': _quality,
             'duplex': _printDuplex && isDuplexPrintCapable(_paperSize),
+            if (transactionId != null) 'transactionId': transactionId,
+            'unitPrice': _costPerPage,
           }),
         )
         .timeout(const Duration(minutes: 10));

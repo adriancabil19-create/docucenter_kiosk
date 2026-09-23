@@ -335,6 +335,8 @@ class RecoverablePrintJob {
   final int copies;
   final int pageCount;
   final String serviceType;
+  final String colorMode;
+  final bool duplex;
 
   const RecoverablePrintJob({
     required this.id,
@@ -343,7 +345,14 @@ class RecoverablePrintJob {
     required this.copies,
     required this.pageCount,
     required this.serviceType,
+    required this.colorMode,
+    required this.duplex,
   });
+
+  /// Photocopy jobs have no stored source file — the scanned pages are
+  /// deleted right after printing — so they can't be auto-reprinted the way
+  /// Printing/Image-Print jobs can. See routes/print.ts's /recover handler.
+  bool get needsRescan => serviceType == 'photocopying';
 
   factory RecoverablePrintJob.fromJson(Map<String, dynamic> j) => RecoverablePrintJob(
         id: j['id'] as String? ?? '',
@@ -352,6 +361,8 @@ class RecoverablePrintJob {
         copies: (j['copies'] as num?)?.toInt() ?? 1,
         pageCount: (j['page_count'] as num?)?.toInt() ?? 0,
         serviceType: j['service_type'] as String? ?? 'printing',
+        colorMode: j['color_mode'] as String? ?? 'bw',
+        duplex: j['duplex'] == true,
       );
 }
 

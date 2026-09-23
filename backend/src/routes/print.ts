@@ -458,11 +458,13 @@ router.get('/printers', async (_req: Request, res: Response) => {
 });
 
 // ─── Staff Print Recovery ─────────────────────────────────────────────────────
-// Customer already paid, printing failed, staff reprints without asking the
-// customer to pay again. Deliberately narrow: only a paid transaction's own
-// most-recently-failed print job is reprintable, only within the configured
-// window, and only once per transaction unless an Admin reauthorizes it (see
-// database.ts's getRecoverableTransactions/reauthorizeRecovery).
+// Customer already paid but the physical print didn't come out — jam, out of
+// ink, wrong output, whatever the software may or may not have noticed —
+// staff reprints without asking the customer to pay again. Deliberately
+// narrow: only a transaction with a paid print job is reprintable, only
+// within the configured recency window, and only once per transaction
+// unless an Admin reauthorizes it (see database.ts's
+// getRecoverableTransactions/reauthorizeRecovery).
 
 const VALID_RECOVERY_REASONS: PrintRecoveryReason[] = [
   'paper_jam',
@@ -524,6 +526,23 @@ router.post('/recover/:transactionId', async (req: Request, res: Response): Prom
       return;
     }
     const originalJob = match.printJob;
+
+    // Photocopy jobs have no stored source file to reprint from — the
+    // scanned pages are temp files deleted right after printing (there's no
+    // uploaded document the way Printing/Image-Print has). Reprinting one
+    // needs the customer's originals fed through the ADF again, which this
+    // one-shot "reprint from storage" endpoint can't do. Fail clearly here
+    // instead of letting printFilesFromStorage silently find nothing for
+    // the placeholder filename and report a confusing generic failure.
+    if (originalJob.service_type === 'photocopying') {
+      res.status(409).json({
+        success: false,
+        error:
+          'Photocopy jobs cannot be auto-reprinted — the scanned pages are not kept on file. ' +
+          'Ask the customer to bring their original documents back to the ADF and re-scan.',
+      });
+      return;
+    }
 
     const action = await createRecoveryAction({
       transactionId,

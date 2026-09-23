@@ -929,7 +929,7 @@ export const executePhotocopySession = async (options: {
   colorMode: string;
   quality: string;
   duplex?: boolean;
-}): Promise<{ success: boolean; jobId?: string; error?: string }> => {
+}): Promise<{ success: boolean; jobId?: string; pageCount?: number; error?: string }> => {
   const { sessionId, copies, paperSize, colorMode, quality, duplex } = options;
   const jobId = `COPY-${Date.now()}`;
 
@@ -1059,7 +1059,7 @@ export const executePhotocopySession = async (options: {
     }
 
     logger.info('Photocopy session executed', { jobId, pages: pages.length, copies });
-    return { success: true, jobId };
+    return { success: true, jobId, pageCount: pages.length };
   } catch (error) {
     logger.error('executePhotocopySession error', { jobId, error: (error as Error).message });
     return { success: false, error: (error as Error).message };

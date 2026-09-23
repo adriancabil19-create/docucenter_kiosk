@@ -5,6 +5,7 @@ import { Button } from '@heroui/react';
 import type { Analytics, DateRange } from '@/lib/types';
 import { getAnalytics } from '@/lib/api';
 import { usePoll } from '@/lib/use-poll';
+import { presetRange } from '@/lib/date-range';
 import { StatCard } from '@/components/stat-card';
 
 const peso = (n: number) =>
@@ -14,14 +15,15 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type RangeKey = 'today' | '7d' | '30d' | 'all';
 
+// Shares presetRange with every other history view (HistoryToolbar) instead
+// of building its own range — this used to hand-roll `.toISOString()`
+// bounds that included milliseconds, which silently dropped the most
+// recent rows from every range (see presetRange's own comment for why).
 function rangeFor(key: RangeKey): DateRange | undefined {
   if (key === 'all') return undefined;
-  const now = new Date();
-  const from = new Date(now);
-  if (key === 'today') from.setHours(0, 0, 0, 0);
-  if (key === '7d') from.setDate(now.getDate() - 6);
-  if (key === '30d') from.setDate(now.getDate() - 29);
-  return { from: from.toISOString(), to: now.toISOString() };
+  if (key === 'today') return presetRange(1);
+  if (key === '7d') return presetRange(7);
+  return presetRange(30);
 }
 
 /**
@@ -74,7 +76,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function AnalyticsPanel({ initial }: { initial: Analytics | null }) {
-  const [rangeKey, setRangeKey] = useState<RangeKey>('30d');
+  const [rangeKey, setRangeKey] = useState<RangeKey>('today');
   const fetcher = useMemo(() => () => getAnalytics(rangeFor(rangeKey)).then((r) => r.analytics), [rangeKey]);
   const { data, error, loading, refresh, updatedAt } = usePoll<Analytics>(fetcher, 45000, initial);
 

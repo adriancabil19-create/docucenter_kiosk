@@ -47,6 +47,29 @@ class _StaffPrintRecoveryPageState extends State<StaffPrintRecoveryPage> {
   }
 
   Future<void> _startRecovery(RecoverableTransaction item) async {
+    if (item.printJob.needsRescan) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.document_scanner_outlined, color: StaffColors.warning),
+          title: const Text('Needs a re-scan'),
+          content: const Text(
+            'Photocopy jobs are not kept on file — the scanned pages are deleted right after '
+            'printing. To recover this job, ask the customer to bring their original documents '
+            'back to the ADF, then use the Photocopying service again with the same settings. '
+            'This does not require another payment; note the reason under Print Recovery once done.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final picked = await showModalBottomSheet<(String, String?)>(
       context: context,
       isScrollControlled: true,
@@ -134,12 +157,24 @@ class _RecoveryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final job = item.printJob;
+    final needsRescan = job.needsRescan;
+    final docLabel = job.filenames.isEmpty
+        ? '—'
+        : job.filenames.length == 1
+            ? job.filenames.first
+            : '${job.filenames.first} +${job.filenames.length - 1} more';
+
     return StaffCard(
       padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const StaffIconBadge(icon: Icons.restart_alt_rounded, color: StaffColors.warning, size: 40),
+          StaffIconBadge(
+            icon: needsRescan ? Icons.document_scanner_outlined : Icons.restart_alt_rounded,
+            color: StaffColors.warning,
+            size: 40,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -148,7 +183,16 @@ class _RecoveryCard extends StatelessWidget {
                 Text(item.referenceNumber, style: const TextStyle(fontWeight: FontWeight.w800, color: StaffColors.textPrimary)),
                 const SizedBox(height: 4),
                 Text(
-                  '₱${item.amount.toStringAsFixed(2)} · ${item.printJob.pageCount}p × ${item.printJob.copies} · ${item.printJob.serviceType}',
+                  docLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: StaffColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '₱${item.amount.toStringAsFixed(2)} · ${job.pageCount}p × ${job.copies} · '
+                  '${job.paperSize} · ${job.colorMode == 'color' ? 'Color' : 'B&W'}'
+                  '${job.duplex ? ' · Duplex' : ''} · ${job.serviceType}',
                   style: const TextStyle(color: StaffColors.textSecondary, fontSize: 13),
                 ),
                 Text(item.createdAt, style: const TextStyle(color: StaffColors.textMuted, fontSize: 11)),
@@ -164,12 +208,15 @@ class _RecoveryCard extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Icon(Icons.print_rounded, size: 18),
+                        : Icon(needsRescan ? Icons.document_scanner_outlined : Icons.print_rounded, size: 18),
                     style: FilledButton.styleFrom(
                       backgroundColor: StaffColors.warning,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    label: Text(busy ? 'Working…' : 'Recover Print', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    label: Text(
+                      busy ? 'Working…' : (needsRescan ? 'Needs Re-scan' : 'Recover Print'),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ),
               ],
@@ -214,10 +261,29 @@ class _ReasonSheetState extends State<_ReasonSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Why did printing fail?', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text('Confirm original job', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Text(widget.item.referenceNumber, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 12),
+          _OriginalJobSummary(item: widget.item),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: StaffColors.success.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: StaffColors.success.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              'This customer has already paid ₱${widget.item.amount.toStringAsFixed(2)} for this '
+              'transaction. Reprinting will NOT charge them again.',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: StaffColors.textPrimary),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Why did printing fail?', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
           for (final entry in _reasons.entries)
             RadioListTile<String>(
               contentPadding: EdgeInsets.zero,
@@ -250,6 +316,57 @@ class _ReasonSheetState extends State<_ReasonSheet> {
               child: const Text('Confirm Recovery Print', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The complete original job configuration, shown before staff confirms a
+/// recovery reprint — document, pages, copies, paper size, color mode,
+/// duplex, and total pages, so what's about to be reprinted is unambiguous.
+class _OriginalJobSummary extends StatelessWidget {
+  const _OriginalJobSummary({required this.item});
+  final RecoverableTransaction item;
+
+  @override
+  Widget build(BuildContext context) {
+    final job = item.printJob;
+    final docLabel = job.filenames.isEmpty ? '—' : job.filenames.join(', ');
+    final totalPages = job.pageCount * job.copies;
+
+    Widget row(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 96,
+                child: Text(label, style: TextStyle(fontSize: 12.5, color: Colors.grey[600])),
+              ),
+              Expanded(
+                child: Text(value, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row('Document', docLabel),
+          row('Pages', '${job.pageCount} page(s) × ${job.copies} = $totalPages page(s)'),
+          row('Paper', job.paperSize),
+          row('Color', job.colorMode == 'color' ? 'Color' : 'Black & White'),
+          row('Duplex', job.duplex ? 'Yes (2-sided)' : 'No (1-sided)'),
+          row('Amount Paid', '₱${item.amount.toStringAsFixed(2)}'),
         ],
       ),
     );

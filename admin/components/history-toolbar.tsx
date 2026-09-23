@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { DateRangePicker, Input, Select, SelectItem, Button } from '@heroui/react';
 import { CalendarDate } from '@internationalized/date';
 import type { DateRange } from '@/lib/api';
+import { presetRange } from '@/lib/date-range';
 
 type CalRange = { start: CalendarDate; end: CalendarDate } | null;
 
@@ -31,18 +32,6 @@ function valueToRange(v: CalRange): DateRange {
     from: `${s.year}-${pad(s.month)}-${pad(s.day)}T00:00:00Z`,
     to: `${e.year}-${pad(e.month)}-${pad(e.day)}T23:59:59Z`,
   };
-}
-
-/** Last `days` calendar days, ending today. */
-export function presetRange(days: number): DateRange {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - (days - 1));
-  const iso = (d: Date, endOfDay: boolean) =>
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${
-      endOfDay ? '23:59:59' : '00:00:00'
-    }Z`;
-  return { from: iso(start, false), to: iso(end, true) };
 }
 
 // Solid white field surfaces so the controls read clearly on the glass panel.

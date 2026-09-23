@@ -1,16 +1,17 @@
 import { getAnalytics } from '@/lib/backend';
 import type { Analytics } from '@/lib/types';
 import { AnalyticsPanel } from '@/components/analytics-panel';
+import { presetRange } from '@/lib/date-range';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AnalyticsPage() {
   let analytics: Analytics | null = null;
   try {
-    const now = new Date();
-    const from = new Date(now);
-    from.setDate(now.getDate() - 29);
-    const res = await getAnalytics({ from: from.toISOString(), to: now.toISOString() });
+    // Matches AnalyticsPanel's default range ('today') so the first paint
+    // doesn't flash 30-day numbers under a "Today" button that's already
+    // showing as selected.
+    const res = await getAnalytics(presetRange(1));
     analytics = res.analytics;
   } catch {
     // Backend unavailable at SSR time.

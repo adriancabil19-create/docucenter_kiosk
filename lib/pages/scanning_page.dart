@@ -11,7 +11,6 @@ import 'package:pdf/widgets.dart' as pw;
 import '../storage_service.dart';
 import '../config.dart';
 import '../scanner_status.dart';
-import '../widgets/duplex_toggle.dart';
 
 class ScanningInterface extends StatefulWidget {
   final List<StorageDocument> savedDocuments;

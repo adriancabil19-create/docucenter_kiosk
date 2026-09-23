@@ -127,6 +127,7 @@ export function PaymentsTable({ initialData }: Props) {
       return (
         tx.reference_number.toLowerCase().includes(q) ||
         (tx.service_type ?? '').toLowerCase().includes(q) ||
+        tx.document_names.some((n) => n.toLowerCase().includes(q)) ||
         String(tx.amount).includes(q)
       );
     });
@@ -153,7 +154,7 @@ export function PaymentsTable({ initialData }: Props) {
       <HistoryToolbar
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Reference, service…"
+        searchPlaceholder="Reference, service, document…"
         range={range}
         onRangeChange={setRange}
         statusOptions={STATUS_OPTIONS}
@@ -171,34 +172,49 @@ export function PaymentsTable({ initialData }: Props) {
           <TableColumn>Amount</TableColumn>
           <TableColumn>Status</TableColumn>
           <TableColumn>Service</TableColumn>
+          <TableColumn>Document</TableColumn>
           <TableColumn>Created</TableColumn>
           <TableColumn>Completed</TableColumn>
           <TableColumn>Action</TableColumn>
         </TableHeader>
         <TableBody emptyContent="No transactions match these filters.">
-          {filtered.map((tx) => (
-            <TableRow key={tx.id}>
-              <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
-              <TableCell className="font-semibold">₱{tx.amount.toFixed(2)}</TableCell>
-              <TableCell>
-                <StatusChip status={tx.status} />
-              </TableCell>
-              <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
-              <TableCell className="text-xs text-slate-400">{fmt(tx.created_at)}</TableCell>
-              <TableCell className="text-xs text-slate-400">{fmt(tx.completed_at)}</TableCell>
-              <TableCell>
-                {canCancel(tx.status) ? (
-                  <Button size="sm" color="danger" variant="flat" onPress={() => openCancel(tx)}>
-                    Cancel
-                  </Button>
-                ) : (
-                  <Chip size="sm" variant="flat" color="default" className="text-xs">
-                    —
-                  </Chip>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
+          {filtered.map((tx) => {
+            const docsLabel =
+              tx.document_names.length === 0
+                ? '—'
+                : tx.document_names.length === 1
+                  ? tx.document_names[0]
+                  : `${tx.document_names[0]} +${tx.document_names.length - 1} more`;
+            return (
+              <TableRow key={tx.id}>
+                <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
+                <TableCell className="font-semibold">₱{tx.amount.toFixed(2)}</TableCell>
+                <TableCell>
+                  <StatusChip status={tx.status} />
+                </TableCell>
+                <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
+                <TableCell
+                  className="max-w-[200px] truncate text-xs text-slate-600"
+                  title={tx.document_names.join(', ')}
+                >
+                  {docsLabel}
+                </TableCell>
+                <TableCell className="text-xs text-slate-400">{fmt(tx.created_at)}</TableCell>
+                <TableCell className="text-xs text-slate-400">{fmt(tx.completed_at)}</TableCell>
+                <TableCell>
+                  {canCancel(tx.status) ? (
+                    <Button size="sm" color="danger" variant="flat" onPress={() => openCancel(tx)}>
+                      Cancel
+                    </Button>
+                  ) : (
+                    <Chip size="sm" variant="flat" color="default" className="text-xs">
+                      —
+                    </Chip>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
 

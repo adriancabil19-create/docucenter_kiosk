@@ -8,6 +8,7 @@ import {
   executePhotocopySession,
 } from '../services/scan.service';
 import { logger } from '../utils/logger';
+import { insertPrintJob } from '../database';
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -238,6 +239,8 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       colorMode = 'bw',
       quality = 'standard',
       duplex = false,
+      transactionId,
+      unitPrice,
     } = req.body;
 
     if (!sessionId) {
@@ -255,6 +258,30 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       quality,
       duplex: !!duplex,
     });
+
+    // Log to SQLite regardless of outcome — this row is what makes a
+    // photocopy job show up in Staff Print Recovery at all. Previously
+    // photocopy jobs never created a print_jobs row, so they were invisible
+    // to recovery no matter what physically happened at the printer.
+    try {
+      await insertPrintJob({
+        id: result.jobId ?? `COPY-${Date.now()}`,
+        transaction_id: typeof transactionId === 'string' && transactionId ? transactionId : undefined,
+        filenames: [`Photocopy (${result.pageCount ?? 0} scanned page${result.pageCount === 1 ? '' : 's'})`],
+        paper_size: paperSize,
+        copies: Number(copies),
+        status: result.success ? 'submitted' : 'failed',
+        simulated: false,
+        page_count: result.pageCount ?? 0,
+        color_mode: colorMode === 'color' ? 'color' : 'bw',
+        duplex: !!duplex,
+        unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
+        service_type: 'photocopying',
+        billing_type: 'paid',
+      });
+    } catch (logErr) {
+      logger.warn('Failed to log photocopy print job', { error: String(logErr) });
+    }
 
     if (!result.success) {
       res.status(500).json({ success: false, error: result.error });

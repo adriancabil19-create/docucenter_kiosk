@@ -8,7 +8,6 @@ import {
   TableBody,
   TableRow,
   TableCell,
-  Button,
   Chip,
   addToast,
 } from '@heroui/react';
@@ -19,6 +18,7 @@ import { StatusChip } from './status-chip';
 import { StatCard } from './stat-card';
 import { glassTableClassNames } from './table-styles';
 import { HistoryToolbar } from './history-toolbar';
+import { TransactionDetailModal } from './transaction-detail-modal';
 
 interface Props {
   initialData: Transaction[];
@@ -34,7 +34,7 @@ const STATUS_OPTIONS = [
   { key: 'CANCELLED', label: 'Cancelled' },
 ];
 
-const REASON_LABEL: Record<string, string> = {
+export const REASON_LABEL: Record<string, string> = {
   paper_jam: '🔧 Paper Jam',
   printer_error: '🖨️ Printer Error',
   incorrect_output: '📄 Incorrect Output',
@@ -43,17 +43,17 @@ const REASON_LABEL: Record<string, string> = {
   other: '⚠️ Other',
 };
 
-const RESULT_COLOR: Record<PrintRecoveryResult, 'success' | 'danger' | 'warning'> = {
+export const RESULT_COLOR: Record<PrintRecoveryResult, 'success' | 'danger' | 'warning'> = {
   success: 'success',
   failed: 'danger',
   pending: 'warning',
 };
 
-function formatDate(iso: string) {
+export function formatDate(iso: string) {
   return new Date(iso).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function formatAmount(amount: number) {
+export function formatAmount(amount: number) {
   return `₱${amount.toFixed(2)}`;
 }
 
@@ -67,7 +67,10 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
   const [range, setRange] = useState<DateRange>({});
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Looked up from `rows` rather than held as its own copy, so reauthorizing
+  // (which calls refresh()) is reflected in the open modal automatically.
+  const selected = rows.find((t) => t.id === selectedId) ?? null;
 
   const refresh = useCallback(
     async (silent = false) => {
@@ -126,15 +129,6 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
     });
   }, [rows, search, status]);
 
-  const toggleExpanded = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const reauthorize = async (action: PrintRecoveryAction) => {
     try {
       const res = await reauthorizeRecovery(action.transaction_id, currentAdmin);
@@ -187,9 +181,7 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
             <TableColumn> </TableColumn>
           </TableHeader>
           <TableBody emptyContent="No transactions match these filters.">
-            {filtered.flatMap((tx) => {
-              const isOpen = expanded.has(tx.id);
-              const hasDetail = tx.document_names.length > 0 || tx.recoveries.length > 0;
+            {filtered.map((tx) => {
               const docsLabel =
                 tx.document_names.length === 0
                   ? '—'
@@ -197,12 +189,8 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
                     ? tx.document_names[0]
                     : `${tx.document_names[0]} +${tx.document_names.length - 1} more`;
 
-              const mainRow = (
-                <TableRow
-                  key={tx.id}
-                  className={hasDetail ? 'cursor-pointer' : ''}
-                  onClick={() => hasDetail && toggleExpanded(tx.id)}
-                >
+              return (
+                <TableRow key={tx.id} className="cursor-pointer" onClick={() => setSelectedId(tx.id)}>
                   <TableCell className="max-w-[100px] truncate font-mono text-xs">{tx.id}</TableCell>
                   <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
                   <TableCell className="font-semibold">{formatAmount(tx.amount)}</TableCell>
@@ -224,93 +212,20 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
                   </TableCell>
                   <TableCell className="text-xs">{formatDate(tx.created_at)}</TableCell>
                   <TableCell>
-                    {hasDetail && (
-                      <span className="text-xs text-accent-strong">{isOpen ? 'Hide ▲' : 'Details ▼'}</span>
-                    )}
+                    <span className="text-xs text-accent-strong">Details →</span>
                   </TableCell>
                 </TableRow>
               );
-
-              if (!isOpen || !hasDetail) return [mainRow];
-
-              const detailRow = (
-                <TableRow key={`${tx.id}-detail`}>
-                  <TableCell colSpan={9}>
-                    <div className="space-y-4 rounded-lg bg-slate-900/[0.03] p-4">
-                      {tx.document_names.length > 0 && (
-                        <div>
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Documents
-                          </p>
-                          <ul className="list-inside list-disc text-sm text-slate-700">
-                            {tx.document_names.map((name, i) => (
-                              <li key={i}>{name}</li>
-                            ))}
-                          </ul>
-                          <p className="mt-2 text-xs text-slate-500">
-                            {[
-                              tx.paper_size && `Paper: ${tx.paper_size}`,
-                              tx.copies != null && `Copies: ${tx.copies}`,
-                              tx.page_count != null && `Pages: ${tx.page_count}`,
-                              tx.color_mode && `Color: ${tx.color_mode}`,
-                              tx.print_status && `Print status: ${tx.print_status}`,
-                              tx.completed_at && `Completed: ${formatDate(tx.completed_at)}`,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </p>
-                        </div>
-                      )}
-
-                      {tx.recoveries.length > 0 && (
-                        <div>
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Recovery history
-                          </p>
-                          <div className="space-y-2">
-                            {tx.recoveries.map((a) => (
-                              <div
-                                key={a.id}
-                                className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/60 px-3 py-2 text-sm"
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Chip size="sm" variant="flat" color={RESULT_COLOR[a.result]} className="capitalize">
-                                    {a.result}
-                                  </Chip>
-                                  <span className="font-medium text-slate-700">{a.staff_name}</span>
-                                  <span title={a.reason_note ?? undefined} className="text-slate-500">
-                                    {REASON_LABEL[a.reason] ?? a.reason}
-                                  </span>
-                                  <span className="text-slate-400">
-                                    {a.pages} × {a.copies}
-                                  </span>
-                                  <span className="text-xs text-slate-400">{formatDate(a.created_at)}</span>
-                                </div>
-                                {a.result === 'success' && !a.reauthorized_at && (
-                                  <Button size="sm" variant="flat" onPress={() => reauthorize(a)}>
-                                    Reauthorize
-                                  </Button>
-                                )}
-                                {a.reauthorized_at && (
-                                  <span className="text-xs text-slate-400">
-                                    Reauthorized {formatDate(a.reauthorized_at)}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-
-              return [mainRow, detailRow];
             })}
           </TableBody>
         </Table>
       </div>
+
+      <TransactionDetailModal
+        transaction={selected}
+        onClose={() => setSelectedId(null)}
+        onReauthorize={reauthorize}
+      />
     </div>
   );
 }

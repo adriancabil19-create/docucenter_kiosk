@@ -30,6 +30,8 @@ export interface Transaction {
   copies: number | null;
   page_count: number | null;
   color_mode: string | null;
+  duplex: boolean | null;
+  unit_price: number | null;
   print_status: string | null;
   /** Every recovery reprint ever attempted on this transaction, newest first. */
   recoveries: PrintRecoveryAction[];
