@@ -65,11 +65,14 @@ let deviceProbeValue: DeviceState = 'OFFLINE';
  * device (e.g. during a print job), so a never-touched queue reports Idle /
  * No Error by default regardless of whether anything real is attached. That
  * combination alone previously reported ONLINE for a printer that was never
- * plugged in. This is a network printer (LAN), so for any printer whose port
- * is a TCP/IP port we also probe the device's actual IP on port 9100 (raw
- * JetDirect printing — virtually all network printers/MFPs, including this
- * Brother, listen there) and require that to actually respond; only a
- * driver-only local/USB port falls back to the driver-flag check alone.
+ * plugged in. For a printer registered on a classic `Win32_TCPIPPrinterPort`
+ * we also probe its actual IP on port 9100 (raw JetDirect — most network
+ * printers listen there) and require that to actually respond, which closes
+ * the gap for that port type. This Brother is discovered over WSD instead,
+ * which doesn't expose a `Win32_TCPIPPrinterPort`/IP the same way, so it
+ * still falls back to the driver-flag check alone — the reachability check
+ * genuinely doesn't reach this specific unit yet, so a WSD printer can still
+ * read ONLINE from stale driver flags after being unplugged.
  *
  * On a non-Windows host, or a transient PowerShell failure, the last known
  * value is kept (starts OFFLINE) rather than flapping.
@@ -85,12 +88,19 @@ const probeDeviceState = (): DeviceState => {
     // One line per printer: "Name|WorkOffline|PrinterStatus|DetectedErrorState|HostAddress|Reachable".
     // HostAddress/Reachable are only populated for a TCP/IP port — an actual
     // socket probe to port 9100, not just a driver flag. Single quotes only
-    // inside the -Command string so it survives cmd.exe.
+    // inside the -Command string so it survives cmd.exe — a literal double
+    // quote in here (e.g. a -Filter string) prematurely closes the outer
+    // -Command "..." wrapper and silently breaks the whole probe, which is
+    // exactly what made this read OFFLINE for an actually-online printer.
+    // Ports are fetched once and matched with -eq instead of a per-printer
+    // -Filter string, which sidesteps that trap entirely (and is one WMI
+    // call instead of N).
     const out = execSync(
       'powershell -NoProfile -Command "' +
+        '$ports = Get-CimInstance -ClassName Win32_TCPIPPrinterPort; ' +
         'Get-CimInstance -ClassName Win32_Printer | ForEach-Object { ' +
         '$p = $_; $ip = \'\'; $reachable = \'\'; ' +
-        '$port = Get-CimInstance -ClassName Win32_TCPIPPrinterPort -Filter "Name=\'$($p.PortName)\'" -ErrorAction SilentlyContinue; ' +
+        '$port = $ports | Where-Object { $_.Name -eq $p.PortName } | Select-Object -First 1; ' +
         'if ($port -and $port.HostAddress) { ' +
         '$ip = $port.HostAddress; ' +
         'try { $reachable = [bool](Test-NetConnection -ComputerName $ip -Port 9100 -WarningAction SilentlyContinue -InformationLevel Quiet) } catch { $reachable = $false } ' +
