@@ -3,6 +3,7 @@ import '../config.dart';
 import '../storage_service.dart';
 import '../kiosk_runtime_service.dart';
 import '../print_service.dart';
+import '../receipt_format.dart';
 import 'payment_page.dart';
 
 /// Grid shape (columns x rows) for each supported images-per-page preset.
@@ -140,22 +141,22 @@ class _ImagePrintSettingsInterfaceState extends State<ImagePrintSettingsInterfac
       return;
     }
 
-    final printDetails = '''
-IMAGE PRINT JOB DETAILS
-------------------------
-Paper Size: $_paperSize
-Layout: ${perPage == 1 ? '1 Picture / Page' : '$perPage Pictures / Page'}
-Image Size: ${_imageSizeChoice == 'auto' ? 'Automatic' : _imageSizeChoice}
-Orientation: ${_orientationChoice[0].toUpperCase()}${_orientationChoice.substring(1)}
-Copies: $_copies
-
-Images: ${docs.length}
-${docs.map((doc) => '- ${doc.originalName}').join('\n')}
-
-Cost Breakdown:
-Printed Pages: $totalPages
-Cost per Page: PHP ${_costPerPage.toStringAsFixed(2)}
-Total Cost: PHP ${cost.toStringAsFixed(2)}''';
+    final printDetails = [
+      'IMAGE PRINT JOB',
+      kReceiptSubDivider,
+      receiptRow('Paper Size', _paperSize),
+      receiptRow('Layout', perPage == 1 ? '1 Picture / Page' : '$perPage Pictures / Page'),
+      receiptRow('Image Size', _imageSizeChoice == 'auto' ? 'Automatic' : _imageSizeChoice),
+      receiptRow('Orientation',
+          '${_orientationChoice[0].toUpperCase()}${_orientationChoice.substring(1)}'),
+      receiptRow('Copies', '$_copies'),
+      '',
+      receiptRow('Images', '${docs.length}'),
+      ...docs.map((doc) => doc.originalName),
+      '',
+      receiptRow('Printed Pages', '$totalPages'),
+      receiptRow('Cost per Page', 'PHP ${_costPerPage.toStringAsFixed(2)}'),
+    ].join('\n');
 
     PAYMONGOPaymentPageState.pendingAmount = cost;
     PAYMONGOPaymentPageState.printContent = printDetails;

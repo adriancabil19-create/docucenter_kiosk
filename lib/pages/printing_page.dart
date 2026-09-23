@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../storage_service.dart';
 import '../kiosk_runtime_service.dart';
 import '../paper_tracker_service.dart';
+import '../receipt_format.dart';
 import '../strings.dart';
 import '../widgets/print_preview_dialog.dart';
 import 'payment_page.dart';
@@ -137,21 +138,21 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
         ? (_calculateCost() / (totalPages * _copies))
         : 0.0;
 
-    final printDetails = '''
-PRINT JOB DETAILS
------------------
-Paper Size: $_paperSize
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Quality: ${_quality == 'draft' ? 'Draft' : _quality == 'high' ? 'High' : 'Standard'}
-Copies: $_copies
-
-Files to Print: ${allDocs.length}
-${allDocs.map((doc) => '- ${doc.originalName} (${doc.pages} pages)').join('\n')}
-
-Cost Breakdown:
-Total Pages: $totalPages
-Cost per Page: PHP ${costPerPage.toStringAsFixed(2)}
-Total Cost: PHP ${_calculateCost().toStringAsFixed(2)}''';
+    final printDetails = [
+      'PRINT JOB',
+      kReceiptSubDivider,
+      receiptRow('Paper Size', _paperSize),
+      receiptRow('Color Mode', _colorMode == 'color' ? 'Color' : 'Black & White'),
+      receiptRow('Quality',
+          _quality == 'draft' ? 'Draft' : _quality == 'high' ? 'High' : 'Standard'),
+      receiptRow('Copies', '$_copies'),
+      '',
+      receiptRow('Files', '${allDocs.length}'),
+      ...allDocs.map((doc) => '${doc.originalName} (${doc.pages}p)'),
+      '',
+      receiptRow('Cost per Page', 'PHP ${costPerPage.toStringAsFixed(2)}'),
+      receiptRow('Total Pages', '$totalPages'),
+    ].join('\n');
 
     // Expand filenames by copies count so the backend prints each file N times
     final baseFilenames = allDocs.map((d) => d.name).toList();

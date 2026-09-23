@@ -14,6 +14,9 @@ interface PrintOptions {
   paperSize?: string; // 'A4' | 'Folio' | 'Letter'
   colorMode?: string; // 'bw' | 'color'
   quality?: string; // 'draft' | 'standard' | 'high'
+  /** Text alignment for `printText`-rendered PDFs. Receipts are centered on
+   * the page; plain documents stay left-aligned. */
+  align?: 'left' | 'center';
 }
 
 export interface PrintResult {
@@ -452,7 +455,12 @@ const isSafePath = (filePath: string, baseDir: string): boolean => {
  * Uses Courier (monospace) so receipt columns align correctly.
  * Returns the path of the created PDF file.
  */
-const renderTextToPdf = (text: string, outputPath: string, paperSize: string): Promise<void> => {
+const renderTextToPdf = (
+  text: string,
+  outputPath: string,
+  paperSize: string,
+  align: 'left' | 'center' = 'left',
+): Promise<void> => {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -464,7 +472,7 @@ const renderTextToPdf = (text: string, outputPath: string, paperSize: string): P
       const stream = fs.createWriteStream(outputPath);
       doc.pipe(stream);
 
-      doc.font('Courier').fontSize(9).text(text, { lineGap: 1, paragraphGap: 0 });
+      doc.font('Courier').fontSize(9).text(text, { lineGap: 1, paragraphGap: 0, align });
 
       doc.end();
 
@@ -915,6 +923,7 @@ export const printText = async (
   const paperSize = options?.paperSize ?? 'A4';
   const colorMode = options?.colorMode;
   const quality = options?.quality;
+  const align = options?.align ?? 'left';
   logger.info('Print text request', {
     jobID,
     contentLength: text.length,
@@ -927,7 +936,7 @@ export const printText = async (
 
   try {
     // 1. Render text → PDF
-    await renderTextToPdf(text, tempPdf, paperSize);
+    await renderTextToPdf(text, tempPdf, paperSize, align);
     logger.info('Text rendered to PDF', { jobID, tempPdf });
 
     // 2. Print the PDF
@@ -982,7 +991,7 @@ export const printReceipt = async (
   paperSize?: string,
 ): Promise<PrintResult> => {
   logger.info('Printing receipt', { contentLength: receiptContent.length, paperSize });
-  return printText(receiptContent, { paperSize: paperSize ?? 'A4' });
+  return printText(receiptContent, { paperSize: paperSize ?? 'A4', align: 'center' });
 };
 
 /**

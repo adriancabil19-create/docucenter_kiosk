@@ -52,9 +52,11 @@ class PaperTrackerService {
   /// that verify polling is event-triggered, not continuous.
   static Future<List<PaperTray>> getTrays({String reason = 'unspecified'}) async {
     try {
-      final response = await http.get(Uri.parse(
-        '$_baseUrl/api/paper-tracker/paper-trays?reason=${Uri.encodeQueryComponent(reason)}',
-      ));
+      final response = await http
+          .get(Uri.parse(
+            '$_baseUrl/api/paper-tracker/paper-trays?reason=${Uri.encodeQueryComponent(reason)}',
+          ))
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -83,11 +85,13 @@ class PaperTrackerService {
   /// response and to the unrelated `/api/sync/paper-tray` endpoint.
   static Future<bool> setTrayCapacity(String trayName, int maxCapacity) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/$trayName'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'maxCapacity': maxCapacity}),
-      );
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/$trayName'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'maxCapacity': maxCapacity}),
+          )
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -104,7 +108,9 @@ class PaperTrackerService {
   /// Get low paper alerts for admin
   static Future<List<Map<String, dynamic>>> getLowPaperAlerts() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/alerts'));
+      final response = await http
+          .get(Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/alerts'))
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -123,11 +129,13 @@ class PaperTrackerService {
   /// Decrement paper count (to be called when printing)
   static Future<bool> usePaper(String trayName, int sheets) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/$trayName/use'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'sheets': sheets}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/paper-tracker/paper-trays/$trayName/use'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'sheets': sheets}),
+          )
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

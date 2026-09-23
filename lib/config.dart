@@ -1,5 +1,5 @@
 /// Flutter App Configuration
-/// 
+///
 /// This file contains configuration settings for the Flutter application,
 /// including backend API endpoints, timeouts, and other settings.
 library;
@@ -119,7 +119,7 @@ class PaymentConfig {
 // =============================================================================
 
 class UiConfig {
-  /// Show development/testing tools
+  /// Show development/testing tools (payment bypass, etc.)
   /// Set to false in production builds
   static const bool showDevelopmentTools = false;
 

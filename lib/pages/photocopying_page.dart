@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../scanner_status.dart';
 import '../kiosk_runtime_service.dart';
+import '../receipt_format.dart';
 import 'payment_page.dart';
 
 class PhotocopyingInterface extends StatefulWidget {
@@ -212,48 +213,21 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
     PAYMONGOPaymentPageState.paperSize = _paperSize;
     PAYMONGOPaymentPageState.colorMode = _colorMode;
     PAYMONGOPaymentPageState.quality = _quality;
-    PAYMONGOPaymentPageState.printContent = '''PHOTOCOPYING JOB
------------------
-Pages Scanned: $_pageCount
-Copies: $_copies
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Paper Size: $_paperSize
-Copy Quality: $_qualityLabel
-Total Cost: PHP ${_totalCost.toStringAsFixed(2)}''';
-    PAYMONGOPaymentPageState.pendingReceiptContent = _buildReceipt();
+    PAYMONGOPaymentPageState.printContent = [
+      'PHOTOCOPYING JOB',
+      kReceiptSubDivider,
+      receiptRow('Pages Scanned', '$_pageCount'),
+      receiptRow('Copies', '$_copies'),
+      receiptRow('Color Mode', _colorMode == 'color' ? 'Color' : 'Black & White'),
+      receiptRow('Paper Size', _paperSize),
+      receiptRow('Copy Quality', _qualityLabel),
+      '',
+      receiptRow('Cost per Page', 'PHP ${_costPerPage.toStringAsFixed(2)}'),
+      receiptRow('Total Pages', '${_pageCount * _copies}'),
+    ].join('\n');
+    PAYMONGOPaymentPageState.pendingReceiptContent = '';
     PAYMONGOPaymentPageState.pendingJob = _executePhotocopyJob;
     widget.onNavigate('payment');
-  }
-
-  // ── Receipt ───────────────────────────────────────────────────────────────
-
-  String _buildReceipt() {
-    return '''
-========================================
-         PHOTOCOPYING RECEIPT
-   ${DateTime.now().toString().split('.')[0]}
-========================================
-
-Service: Photocopying
-Pages Scanned: $_pageCount
-Copies: $_copies
-Paper Size: $_paperSize
-Color Mode: ${_colorMode == 'color' ? 'Color' : 'Black & White'}
-Copy Quality: $_qualityLabel
-
-----------------------------------------
-Cost per Page: PHP ${_costPerPage.toStringAsFixed(2)}
-Total Pages Printed: ${_pageCount * _copies}
-Total Cost: PHP ${_totalCost.toStringAsFixed(2)}
-
-----------------------------------------
-Date: ${DateTime.now().toString().split('.')[0]}
-Status: [COPY JOB SUBMITTED]
-Documents are being printed.
-
-----------------------------------------
-Thank you for using our service!
-''';
   }
 
   // ── UI state machine: settings → scanning → confirm ───────────────────────

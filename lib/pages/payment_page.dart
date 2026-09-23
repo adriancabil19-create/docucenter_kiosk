@@ -9,6 +9,7 @@ import '../payment_service.dart';
 import '../config.dart';
 import '../print_service.dart';
 import '../kiosk_runtime_service.dart';
+import '../receipt_format.dart';
 
 // ============================================================================
 // PAYMONGO Payment Page — top-level page shown when user navigates to 'payment'
@@ -374,58 +375,72 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                           mainAxisSize: MainAxisSize.max,
                           children: [
                             Expanded(
-                              child: SingleChildScrollView(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: Border.all(color: Colors.grey[300]!),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.04),
-                                        blurRadius: 24,
-                                        offset: const Offset(0, 12),
+                              child: Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: Colors.grey[300]!),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.04),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 12),
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(28),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 72,
+                                      height: 5,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2563EB),
+                                        borderRadius: BorderRadius.circular(4),
                                       ),
-                                    ],
-                                  ),
-                                  padding: const EdgeInsets.all(28),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        width: 72,
-                                        height: 5,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF2563EB),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 18),
-                                      Text(
-                                        'Receipt',
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: const Color(0xFF0F172A),
-                                            ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Digital proof of payment',
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: Colors.grey[600],
-                                              letterSpacing: 0.2,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 28),
-                                      Container(
+                                    ),
+                                    const SizedBox(height: 18),
+                                    Text(
+                                      'Receipt',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Digital proof of payment',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: Colors.grey[600],
+                                            letterSpacing: 0.2,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    // Fills the remaining card height and picks the
+                                    // largest font size that fits it — job details
+                                    // (esp. photocopying) can be long enough to
+                                    // overflow a fixed size, and this screen must
+                                    // never scroll. receiptFontSize() picks a
+                                    // font size sized to the real content so it
+                                    // doesn't look stranded in empty space, and
+                                    // the FittedBox is a safety net: on a very
+                                    // short viewport (or if the size estimate is
+                                    // slightly off — Courier's real glyph width
+                                    // isn't known ahead of layout) it shrinks
+                                    // further rather than ever letting the text
+                                    // overflow into the footer/countdown below.
+                                    Expanded(
+                                      child: Container(
                                         width: double.infinity,
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 24, horizontal: 20),
@@ -436,32 +451,43 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                             color: const Color(0xFF2563EB).withValues(alpha: 0.12),
                                           ),
                                         ),
-                                        child: Text(
-                                          _receiptDisplayText,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            fontFamily: 'Courier',
-                                            fontSize: 14,
-                                            height: 1.65,
-                                            letterSpacing: 0.4,
-                                            color: Color(0xFF0F172A),
+                                        child: LayoutBuilder(
+                                          builder: (context, constraints) => Center(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                _receiptDisplayText,
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  fontFamily: 'Courier',
+                                                  fontSize: receiptFontSize(
+                                                    _receiptDisplayText,
+                                                    constraints.maxWidth,
+                                                    constraints.maxHeight,
+                                                  ),
+                                                  height: 1.65,
+                                                  letterSpacing: 0.4,
+                                                  color: const Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(height: 28),
-                                      Text(
-                                        'Tap anywhere to return to the home screen.',
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: Colors.grey[600],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    Text(
+                                      'Tap anywhere to return to the home screen.',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Colors.grey[600],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -749,28 +775,27 @@ class _PaymentInterfaceState extends State<PaymentInterface> {
   }
 
   String _buildReceiptDisplayText() {
-    final paymentReceipt = '''
-========================================
-         PAYMENT RECEIPT
-   ${DateTime.now().toString().split('.')[0]}
-========================================
-
-Transaction ID: ${_transaction?.transactionId ?? 'N/A'}
-Reference #: ${_transaction?.referenceNumber ?? 'N/A'}
-
-Amount: PHP ${widget.amount.toStringAsFixed(2)}
-Status: [PAID]
-
-----------------------------------------
-${PAYMONGOPaymentPageState.printContent.isNotEmpty ? PAYMONGOPaymentPageState.printContent : 'Standard Receipt'}
-''';
-
-    final pending = PAYMONGOPaymentPageState.pendingReceiptContent;
-    return pending.isNotEmpty
-        ? '''$paymentReceipt
-----------------------------------------
-$pending'''
-        : paymentReceipt;
+    final jobDetails = PAYMONGOPaymentPageState.printContent;
+    final lines = <String>[
+      kReceiptDivider,
+      centerReceiptLine('DOCUCENTER KIOSK'),
+      centerReceiptLine('Official Payment Receipt'),
+      kReceiptDivider,
+      '',
+      receiptRow('Date', formatReceiptDate(DateTime.now())),
+      receiptRow('Transaction ID', _transaction?.transactionId ?? 'N/A'),
+      receiptRow('Reference No.', _transaction?.referenceNumber ?? 'N/A'),
+      kReceiptSubDivider,
+      jobDetails.isNotEmpty ? jobDetails : 'Standard Receipt',
+      kReceiptSubDivider,
+      receiptRow('Amount Paid', 'PHP ${widget.amount.toStringAsFixed(2)}'),
+      receiptRow('Status', 'PAID'),
+      kReceiptDivider,
+      '',
+      centerReceiptLine('Thank you for choosing DocuCenter!'),
+      centerReceiptLine('Please keep this receipt for your records.'),
+    ];
+    return lines.join('\n');
   }
 
   void _handlePaymentFailure(String reason) {
@@ -861,22 +886,22 @@ $pending'''
       await _paymentService.simulatePaymentFailure(_transaction!.transactionId);
       if (!mounted) return;
       try {
-        final cancelReceipt = '''
-========================================
-         PAYMENT CANCELLED
-   ${DateTime.now().toString().split('.')[0]}
-========================================
-
-Transaction ID: ${_transaction!.transactionId}
-Reference #: ${_transaction!.referenceNumber}
-
-Status: [FAILED / CANCELLED]
-Reason: Simulated failure
-
-----------------------------------------
-No files will be printed.
-Date: ${DateTime.now().toString().split('.')[0]}
-''';
+        final cancelReceipt = <String>[
+          kReceiptDivider,
+          centerReceiptLine('DOCUCENTER KIOSK'),
+          centerReceiptLine('Payment Cancelled'),
+          kReceiptDivider,
+          '',
+          receiptRow('Date', formatReceiptDate(DateTime.now())),
+          receiptRow('Transaction ID', _transaction!.transactionId),
+          receiptRow('Reference No.', _transaction!.referenceNumber),
+          kReceiptSubDivider,
+          receiptRow('Status', 'CANCELLED'),
+          receiptRow('Reason', 'Simulated failure'),
+          kReceiptDivider,
+          '',
+          centerReceiptLine('No files were printed.'),
+        ].join('\n');
         final printed = await PrintService.printReceipt(cancelReceipt);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

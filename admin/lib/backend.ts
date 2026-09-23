@@ -54,6 +54,14 @@ function withRange(path: string, limit: number, range?: DateRange): string {
   return `${path}?${params.toString()}`;
 }
 
+/** Every backend call gives up after this long rather than hanging the page
+ * that's awaiting it. Server components here `await` these calls directly
+ * (no client-side loading state to fall back to), so an unbounded fetch
+ * means a stalled backend request blocks the whole page render — this is
+ * what turned isolated backend slowness into multi-second p99 admin page
+ * loads. */
+const BACKEND_TIMEOUT_MS = 10_000;
+
 /** Low-level fetch to the backend. Exported for the proxy route handler. */
 export async function backendFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${BACKEND_URL}${path}`, {
@@ -64,6 +72,7 @@ export async function backendFetch(path: string, init?: RequestInit): Promise<Re
       ...init?.headers,
     },
     cache: 'no-store',
+    signal: init?.signal ?? AbortSignal.timeout(BACKEND_TIMEOUT_MS),
   });
 }
 
