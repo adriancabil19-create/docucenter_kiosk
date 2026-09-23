@@ -43,23 +43,27 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
-  // Traces only the dependencies actually reachable from the built app into
-  // .next/standalone, instead of shipping the full ~300-400MB node_modules
-  // in the deployed image. Railway's Railpack builder detects this and
-  // copies public/ + .next/static into the standalone output for you —
-  // this is what actually shrinks the image (and therefore the Docker
-  // export / upload step), not the npm-install-time tweaks alone.
-  output: 'standalone',
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
   // No webpack()/turbopack config needed: the `@/*` alias every import in
   // this app uses is already resolved from tsconfig.json's `paths` — both
-  // Next's webpack and Turbopack builds pick that up natively. A custom
-  // `webpack(config)` block that only duplicated this alias used to force
-  // `next build` onto the slower webpack bundler (Turbopack refuses to run
-  // silently past an unmigrated webpack config); removing it lets `next
-  // build` use Turbopack, which is the default in Next.js 16.
+  // bundlers pick that up natively. This used to duplicate that alias in a
+  // `webpack(config)` block for no reason.
+  //
+  // The build script still forces `next build --webpack` (see
+  // package.json) — Turbopack was tried and hits a real
+  // `createContext is not a function` crash from @heroui/react +
+  // framer-motion, not a config issue. Don't re-attempt without confirming
+  // that's fixed upstream first.
+  //
+  // `output: 'standalone'` was also tried (2026-09-24) to shrink the
+  // Railway deploy image, but the deployed container failed its healthcheck
+  // (crashed or never bound to the port — never got runtime logs to
+  // confirm which). Reverted. Retry only with Railway's actual deploy/
+  // runtime logs in hand, not just a local test — a local `node
+  // .next/standalone/server.js` run served pages fine, so whatever broke it
+  // was Railway-environment-specific.
 };
 
 export default nextConfig;
