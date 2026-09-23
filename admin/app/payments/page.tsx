@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getTransactions } from '@/lib/backend';
 import type { Transaction } from '@/lib/types';
 import { PaymentsTable } from '@/components/payments-table';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PaymentsPage() {
+async function PaymentsContent() {
   let transactions: Transaction[] = [];
   try {
     const res = await getTransactions(200);
@@ -12,7 +14,14 @@ export default async function PaymentsPage() {
   } catch {
     // Server unavailable at build/SSR time
   }
+  return (
+    <div className="glass p-5">
+      <PaymentsTable initialData={transactions} />
+    </div>
+  );
+}
 
+export default function PaymentsPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -22,9 +31,9 @@ export default async function PaymentsPage() {
         </p>
       </div>
 
-      <div className="glass p-5">
-        <PaymentsTable initialData={transactions} />
-      </div>
+      <Suspense fallback={<SectionSkeleton />}>
+        <PaymentsContent />
+      </Suspense>
     </div>
   );
 }

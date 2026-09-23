@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getKiosks } from '@/lib/backend';
 import type { Kiosk } from '@/lib/types';
 import { KioskFleetPanel } from '@/components/kiosk-fleet-panel';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function KiosksPage() {
+async function KiosksContent() {
   let kiosks: Kiosk[] = [];
   try {
     const res = await getKiosks();
@@ -12,7 +14,10 @@ export default async function KiosksPage() {
   } catch {
     // Backend unavailable at SSR time — the client panel will retry.
   }
+  return <KioskFleetPanel initial={kiosks} />;
+}
 
+export default function KiosksPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -23,7 +28,9 @@ export default async function KiosksPage() {
         </p>
       </div>
 
-      <KioskFleetPanel initial={kiosks} />
+      <Suspense fallback={<SectionSkeleton />}>
+        <KiosksContent />
+      </Suspense>
     </div>
   );
 }

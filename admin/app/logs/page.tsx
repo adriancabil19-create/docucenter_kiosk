@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getLogs } from '@/lib/backend';
 import type { ActivityLog } from '@/lib/types';
 import { ActivityLogTable } from '@/components/activity-log-table';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LogsPage() {
+async function LogsContent() {
   let logs: ActivityLog[] = [];
   try {
     const res = await getLogs(200);
@@ -12,7 +14,14 @@ export default async function LogsPage() {
   } catch {
     // Server unavailable at build/SSR time
   }
+  return (
+    <div className="glass p-5">
+      <ActivityLogTable initialData={logs} />
+    </div>
+  );
+}
 
+export default function LogsPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -22,9 +31,9 @@ export default async function LogsPage() {
         </p>
       </div>
 
-      <div className="glass p-5">
-        <ActivityLogTable initialData={logs} />
-      </div>
+      <Suspense fallback={<SectionSkeleton />}>
+        <LogsContent />
+      </Suspense>
     </div>
   );
 }

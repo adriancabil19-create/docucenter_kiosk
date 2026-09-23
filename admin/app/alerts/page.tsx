@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getIncidents } from '@/lib/backend';
 import type { Incident } from '@/lib/types';
 import { IncidentsPanel } from '@/components/incidents-panel';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AlertsPage() {
+async function AlertsContent() {
   let incidents: Incident[] = [];
   try {
     const res = await getIncidents('open', 150);
@@ -12,7 +14,10 @@ export default async function AlertsPage() {
   } catch {
     // Backend unavailable at SSR time.
   }
+  return <IncidentsPanel initial={incidents} />;
+}
 
+export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -23,7 +28,9 @@ export default async function AlertsPage() {
         </p>
       </div>
 
-      <IncidentsPanel initial={incidents} />
+      <Suspense fallback={<SectionSkeleton />}>
+        <AlertsContent />
+      </Suspense>
     </div>
   );
 }

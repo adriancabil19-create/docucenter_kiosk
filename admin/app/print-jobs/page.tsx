@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getPrintJobs } from '@/lib/backend';
 import type { PrintJob } from '@/lib/types';
 import { PrintJobsTable } from '@/components/print-jobs-table';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PrintJobsPage() {
+async function PrintJobsContent() {
   let jobs: PrintJob[] = [];
   try {
     const res = await getPrintJobs(100);
@@ -12,7 +14,14 @@ export default async function PrintJobsPage() {
   } catch {
     // Server unavailable at build/SSR time — the client can still refresh
   }
+  return (
+    <div className="glass p-5">
+      <PrintJobsTable initialData={jobs} />
+    </div>
+  );
+}
 
+export default function PrintJobsPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -22,9 +31,9 @@ export default async function PrintJobsPage() {
         </p>
       </div>
 
-      <div className="glass p-5">
-        <PrintJobsTable initialData={jobs} />
-      </div>
+      <Suspense fallback={<SectionSkeleton />}>
+        <PrintJobsContent />
+      </Suspense>
     </div>
   );
 }

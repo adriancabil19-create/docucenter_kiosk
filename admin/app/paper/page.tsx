@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { getPaperTrays } from '@/lib/backend';
 import type { PaperTray } from '@/lib/types';
 import { PaperTraysManager } from '@/components/paper-trays-manager';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PaperPage() {
+async function PaperContent() {
   let trays: PaperTray[] = [];
   try {
     const res = await getPaperTrays();
@@ -12,7 +14,10 @@ export default async function PaperPage() {
   } catch {
     // Server unavailable at build/SSR time
   }
+  return <PaperTraysManager initialData={trays} />;
+}
 
+export default function PaperPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -23,7 +28,9 @@ export default async function PaperPage() {
         </p>
       </div>
 
-      <PaperTraysManager initialData={trays} />
+      <Suspense fallback={<SectionSkeleton />}>
+        <PaperContent />
+      </Suspense>
     </div>
   );
 }

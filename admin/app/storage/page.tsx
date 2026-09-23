@@ -1,24 +1,42 @@
+import { Suspense } from 'react';
 import { getStorageSettings, getStorageDocuments } from '@/lib/backend';
 import type { StorageSettings, StorageDocMeta } from '@/lib/types';
 import { StorageSettingsForm } from '@/components/storage-settings-form';
 import { StorageMetaTable } from '@/components/storage-meta-table';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function StoragePage() {
+// Two independent boundaries, not one sequential try/catch pair — settings
+// and documents used to be awaited back to back, so the (usually larger)
+// documents fetch delayed the settings form for no reason. Splitting them
+// lets both requests fire in parallel.
+
+async function StorageSettingsContent() {
   let settings: StorageSettings | null = null;
-  let documents: StorageDocMeta[] = [];
   try {
     settings = (await getStorageSettings()).settings;
   } catch {
     // Backend unavailable at SSR time.
   }
+  return <StorageSettingsForm initial={settings} />;
+}
+
+async function StorageDocumentsContent() {
+  let documents: StorageDocMeta[] = [];
   try {
     documents = (await getStorageDocuments(500)).documents;
   } catch {
     // No metadata yet.
   }
+  return (
+    <div className="glass p-5">
+      <StorageMetaTable initial={documents} />
+    </div>
+  );
+}
 
+export default function StoragePage() {
   return (
     <div className="space-y-6">
       <div>
@@ -30,11 +48,13 @@ export default async function StoragePage() {
         </p>
       </div>
 
-      <StorageSettingsForm initial={settings} />
+      <Suspense fallback={<SectionSkeleton />}>
+        <StorageSettingsContent />
+      </Suspense>
 
-      <div className="glass p-5">
-        <StorageMetaTable initial={documents} />
-      </div>
+      <Suspense fallback={<SectionSkeleton />}>
+        <StorageDocumentsContent />
+      </Suspense>
     </div>
   );
 }

@@ -1,11 +1,13 @@
+import { Suspense } from 'react';
 import { getAnalytics } from '@/lib/backend';
 import type { Analytics } from '@/lib/types';
 import { AnalyticsPanel } from '@/components/analytics-panel';
 import { presetRange } from '@/lib/date-range';
+import { SectionSkeleton } from '@/components/section-skeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AnalyticsPage() {
+async function AnalyticsContent() {
   let analytics: Analytics | null = null;
   try {
     // Matches AnalyticsPanel's default range ('today') so the first paint
@@ -16,7 +18,10 @@ export default async function AnalyticsPage() {
   } catch {
     // Backend unavailable at SSR time.
   }
+  return <AnalyticsPanel initial={analytics} />;
+}
 
+export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div>
@@ -26,7 +31,9 @@ export default async function AnalyticsPage() {
         </p>
       </div>
 
-      <AnalyticsPanel initial={analytics} />
+      <Suspense fallback={<SectionSkeleton />}>
+        <AnalyticsContent />
+      </Suspense>
     </div>
   );
 }
