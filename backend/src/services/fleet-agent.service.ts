@@ -30,6 +30,7 @@ import {
   insertLog,
   listStaffRoster,
   upsertStaffFromRoster,
+  pruneStaffNotInRoster,
   applyPinResetDecision,
   applyAssistanceStatusFromCommand,
   applyPaperTrayFromCloud,
@@ -378,6 +379,7 @@ const applyReply = async (reply: DownlinkReply): Promise<void> => {
   const staff = reply.settings?.staff;
   if (staff) {
     for (const row of staff) await upsertStaffFromRoster(row);
+    await pruneStaffNotInRoster(staff.map((row) => row.id));
   }
 
   for (const cmd of reply.commands ?? []) {

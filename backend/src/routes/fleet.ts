@@ -12,6 +12,7 @@ import { logger } from '../utils/logger';
 import {
   getKiosks,
   getKioskById,
+  deleteKiosk,
   getRecentCommands,
   enqueueCommand,
   setKioskFlags,
@@ -110,6 +111,34 @@ router.get('/kiosks/:id', async (req: Request, res: Response): Promise<void> => 
     });
   } catch (err) {
     logger.error('Fleet: get kiosk failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+/**
+ * Forget a kiosk's roster row — for a decommissioned device or a stale
+ * duplicate left behind by a KIOSK_ID rename. Refuses to delete a kiosk
+ * that's currently online so a live device can't be removed out from under
+ * itself; it'll just reappear on its next heartbeat anyway.
+ */
+router.delete('/kiosks/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const kiosk = await getKioskById(req.params.id);
+    if (!kiosk) {
+      res.status(404).json({ success: false, error: 'Kiosk not found' });
+      return;
+    }
+    if (isOnline(kiosk.last_seen)) {
+      res.status(409).json({ success: false, error: 'Kiosk is online — cannot remove' });
+      return;
+    }
+    await deleteKiosk(kiosk.kiosk_id);
+    await insertLog('info', 'system', `Kiosk ${kiosk.kiosk_id} removed from fleet roster`, {
+      kioskId: kiosk.kiosk_id,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Fleet: delete kiosk failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

@@ -164,6 +164,11 @@ export const getKiosks = (): Promise<KiosksResponse> =>
 export const getKiosk = (id: string): Promise<KioskDetailResponse> =>
   apiFetch<KioskDetailResponse>(`/api/fleet/kiosks/${encodeURIComponent(id)}`);
 
+export const deleteKiosk = (id: string): Promise<{ success: boolean }> =>
+  apiFetch<{ success: boolean }>(`/api/fleet/kiosks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
 export const sendKioskCommand = (
   id: string,
   command: KioskCommandName,

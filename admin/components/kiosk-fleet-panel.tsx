@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Button, addToast } from '@heroui/react';
 import type { Kiosk, KioskCommandName } from '@/lib/types';
-import { getKiosks, sendKioskCommand } from '@/lib/api';
+import { deleteKiosk, getKiosks, sendKioskCommand } from '@/lib/api';
 import { usePoll } from '@/lib/use-poll';
 
 const dot = (status: Kiosk['status']) =>
@@ -90,6 +90,42 @@ function CmdButton({
       onPress={handle}
     >
       {armed ? (confirmLabel ?? `Confirm ${label}?`) : label}
+    </Button>
+  );
+}
+
+function ForgetButton({ kiosk, onDone }: { kiosk: Kiosk; onDone: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handle = async () => {
+    if (!armed) {
+      setArmed(true);
+      timer.current = setTimeout(() => setArmed(false), 4000);
+      return;
+    }
+    if (timer.current) clearTimeout(timer.current);
+    setArmed(false);
+    setBusy(true);
+    try {
+      await deleteKiosk(kiosk.kiosk_id);
+      addToast({
+        title: 'Kiosk removed',
+        description: `${kiosk.kiosk_id} removed from the fleet list.`,
+        color: 'success',
+      });
+      onDone();
+    } catch (err) {
+      addToast({ title: 'Remove failed', description: (err as Error).message, color: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button size="sm" variant="flat" color={armed ? 'danger' : 'default'} isLoading={busy} onPress={handle}>
+      {armed ? 'Confirm — forget this kiosk?' : 'Forget kiosk'}
     </Button>
   );
 }
@@ -183,6 +219,7 @@ function KioskCard({ kiosk, onDone }: { kiosk: Kiosk; onDone: () => void }) {
           busy={busy}
           onRun={run}
         />
+        {kiosk.status === 'OFFLINE' && <ForgetButton kiosk={kiosk} onDone={onDone} />}
       </div>
 
       <p className="mt-2 text-xs text-slate-400">

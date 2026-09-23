@@ -1111,6 +1111,21 @@ export const getKioskById = async (kioskId: string): Promise<KioskRow | null> =>
   return row ? mapKiosk(row) : null;
 };
 
+/**
+ * Forget a kiosk's fleet-registry row — for a decommissioned device or a
+ * stale duplicate left behind by a KIOSK_ID change (the row stops getting
+ * heartbeats but nothing ever removed it). Does not touch that kiosk_id's
+ * data in other tables (paper_trays, incidents, etc.) — this only clears the
+ * "Kiosks" list entry.
+ */
+export const deleteKiosk = async (kioskId: string): Promise<boolean> => {
+  const result = await getDb().execute({
+    sql: `DELETE FROM kiosks WHERE kiosk_id = @kioskId`,
+    args: { kioskId },
+  });
+  return (result.rowsAffected ?? 0) > 0;
+};
+
 /** Ensure a kiosk row exists (used by this instance for its own id at startup). */
 export const ensureKiosk = async (kioskId: string, label?: string): Promise<void> => {
   await getDb().execute({
@@ -2155,6 +2170,34 @@ export const upsertStaffFromRoster = async (row: StaffRow): Promise<void> => {
       created_at: row.created_at,
       last_login_at: row.last_login_at,
     },
+  });
+};
+
+/**
+ * Delete local staff rows that are no longer in the cloud roster. Roster sync
+ * (see upsertStaffFromRoster) only ever inserts/updates — nothing removed a
+ * row the cloud no longer has, so an account deleted (or a cloud DB reset)
+ * kept working on the kiosk forever since PIN login checks the local table
+ * directly. Called after every roster upsert pass with the full set of ids
+ * the cloud just sent; anything else gets deleted. An empty roster deletes
+ * everything, which is correct — it only runs after a successful fetch, so
+ * "empty" means the cloud genuinely has zero staff accounts right now, not a
+ * network failure (a failed fetch never reaches this code at all).
+ */
+export const pruneStaffNotInRoster = async (keepIds: string[]): Promise<void> => {
+  if (keepIds.length === 0) {
+    await getDb().execute(`DELETE FROM staff`);
+    return;
+  }
+  const args: Record<string, string> = {};
+  const placeholders = keepIds.map((id, i) => {
+    const key = `id${i}`;
+    args[key] = id;
+    return `@${key}`;
+  });
+  await getDb().execute({
+    sql: `DELETE FROM staff WHERE id NOT IN (${placeholders.join(', ')})`,
+    args,
   });
 };
 
