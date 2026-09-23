@@ -15,13 +15,6 @@ interface ScanOptions {
   dpi?: number;
   paperSize?: string;
   outputFormat?: 'pdf' | 'jpg' | 'png';
-  /** Scan both sides of each sheet via the ADF's duplex unit. Unlike duplex
-   * printing, this has no paper-size restriction — the scanner (unlike the
-   * printer) has no known long-paper duplex limitation. Depends on the
-   * physical scanner having a duplex-capable ADF; if it doesn't, DWT should
-   * surface a capability error rather than silently scanning one-sided —
-   * not yet confirmed against the real hardware. */
-  duplex?: boolean;
 }
 
 interface ScanResult {
@@ -36,8 +29,8 @@ interface CopyOptions {
   colorMode?: 'color' | 'bw';
   paperSize?: string;
   quality?: string;
-  /** Both scan (both sides of each sheet) and print (both sides of each
-   * output sheet) two-sided, like a real photocopier's duplex button. */
+  /** Print both sides of each output sheet. The scanner has no duplex ADF
+   * unit, so this only ever affects printing, not the scan itself. */
   duplex?: boolean;
 }
 
@@ -287,7 +280,6 @@ const scanWithDWT = async (
         XferCount: 1,
         IfFeederEnabled: true,
         IfAutoFeed: true,
-        IfDuplexEnabled: !!options.duplex,
       },
     };
 
@@ -530,7 +522,6 @@ const scanAllADFPagesUnlocked = async (
       XferCount: -1, // scan every page until ADF is empty
       IfFeederEnabled: true,
       IfAutoFeed: true,
-      IfDuplexEnabled: !!options.duplex,
     },
   };
 
@@ -618,7 +609,6 @@ export const scanAllPages = async (
     colorMode: options.colorMode ?? 'color',
     dpi: options.dpi ?? 300,
     outputFormat: 'jpg',
-    duplex: options.duplex,
   });
 
   if (!result.success) {
@@ -768,12 +758,12 @@ export const photocopyDocument = async (
   try {
     const dpi = opts.quality === 'high' ? 600 : opts.quality === 'draft' ? 150 : 300;
 
-    // Scan every page in the ADF in one job
+    // Scan every page in the ADF in one job — simplex only, the scanner has
+    // no duplex ADF unit (opts.duplex below only controls printing).
     const scanResult = await scanAllADFPages({
       colorMode: opts.colorMode,
       dpi,
       outputFormat: 'jpg',
-      duplex: opts.duplex,
     });
 
     if (!scanResult.success) {
@@ -895,10 +885,6 @@ export const photocopyDocument = async (
 export const createPhotocopySession = async (options: {
   colorMode?: 'color' | 'bw';
   quality?: string;
-  /** Scan both sides of each original — independent of whether the PRINT
-   * side duplexes (see executePhotocopySession's own `duplex`), since the
-   * scanner has no long-paper restriction the printer has. */
-  duplex?: boolean;
 }): Promise<{ success: boolean; sessionId?: string; pageCount?: number; error?: string }> => {
   const dpi = options.quality === 'high' ? 600 : options.quality === 'draft' ? 150 : 300;
 
@@ -906,7 +892,6 @@ export const createPhotocopySession = async (options: {
     colorMode: options.colorMode ?? 'color',
     dpi,
     outputFormat: 'jpg',
-    duplex: options.duplex,
   });
 
   if (!result.success) {

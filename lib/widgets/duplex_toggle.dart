@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
-/// A labeled checkbox for two-sided ("duplex") scanning/printing, with an
-/// info icon that explains what duplex means on tap. This is a touchscreen
-/// kiosk, not a mouse-driven desktop app, so the tooltip is tap-triggered
-/// (Flutter's default long-press is easy to miss on a public kiosk) rather
-/// than hover-only.
+/// A labeled checkbox for two-sided ("duplex") printing, with an info icon
+/// that explains what duplex means on tap. This is a touchscreen kiosk, not
+/// a mouse-driven desktop app, so the tooltip is tap-triggered (Flutter's
+/// default long-press is easy to miss on a public kiosk) rather than
+/// hover-only.
+///
+/// Printing only — the scanner has no duplex ADF unit, so duplex SCANNING
+/// isn't offered anywhere in the kiosk.
 class DuplexToggle extends StatelessWidget {
   final String label;
   final String explanation;
@@ -77,9 +80,9 @@ class DuplexToggle extends StatelessWidget {
 
 /// The standard duplex explanation, shared so every toggle reads the same way.
 const String kDuplexExplanation =
-    'Duplex prints or scans both sides of the paper — page 1 on the front, '
-    'page 2 on the back, and so on. It uses fewer physical sheets for '
-    'multi-page documents.';
+    'Duplex prints both sides of the paper — page 1 on the front, page 2 on '
+    'the back, and so on. It uses fewer physical sheets for multi-page '
+    'documents.';
 
 /// Shown next to a duplex PRINT toggle when the selected paper size can't
 /// be duplexed. Kept as one shared string so the wording matches everywhere.
@@ -90,8 +93,8 @@ const String kDuplexPrintUnsupportedReason =
 /// Paper sizes the printer's duplex unit can physically handle — mirrors
 /// `isDuplexCapablePaperSize` in backend/src/services/print.service.ts.
 /// Folio ("long" bond paper) jams the duplexer on the real printer, so
-/// duplex PRINTING (not scanning — the scanner has no such limit) is only
-/// ever offered for A4/Letter ("short"). Case-insensitive.
+/// duplex printing is only ever offered for A4/Letter ("short").
+/// Case-insensitive.
 bool isDuplexPrintCapable(String paperSize) {
   final size = paperSize.toLowerCase();
   return size == 'a4' || size == 'letter';

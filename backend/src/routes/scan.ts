@@ -81,10 +81,10 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.post('/all', async (req: Request, res: Response) => {
   try {
-    const { colorMode = 'color', dpi = 300, duplex = false } = req.body;
-    logger.info('Scan all ADF pages request', { colorMode, dpi, duplex });
+    const { colorMode = 'color', dpi = 300 } = req.body;
+    logger.info('Scan all ADF pages request', { colorMode, dpi });
 
-    const result = await scanAllPages({ colorMode, dpi: Number(dpi), duplex: !!duplex });
+    const result = await scanAllPages({ colorMode, dpi: Number(dpi) });
 
     if (!result.success) {
       res.status(500).json({ success: false, error: result.error });
@@ -178,10 +178,10 @@ router.post('/photocopy', async (req: Request, res: Response) => {
 
 router.post('/photocopy-prepare', async (req: Request, res: Response) => {
   try {
-    const { colorMode = 'color', quality = 'standard', duplex = false } = req.body;
-    logger.info('Photocopy prepare request', { colorMode, quality, duplex });
+    const { colorMode = 'color', quality = 'standard' } = req.body;
+    logger.info('Photocopy prepare request', { colorMode, quality });
 
-    const result = await createPhotocopySession({ colorMode, quality, duplex: !!duplex });
+    const result = await createPhotocopySession({ colorMode, quality });
 
     if (!result.success) {
       res.status(500).json({ success: false, error: result.error });

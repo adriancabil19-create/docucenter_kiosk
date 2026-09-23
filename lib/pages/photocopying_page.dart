@@ -28,9 +28,6 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   String _colorMode = 'color';
   String _paperSize = 'A4';
   String _quality = 'standard';
-  // Scan both sides of each original — no paper-size restriction (the
-  // scanner has none of the printer's long-paper duplex limitation).
-  bool _scanDuplex = false;
   // Print both sides of each output sheet — only offered for A4/Letter
   // (see isDuplexPrintCapable); auto-cleared if the paper size changes to
   // Folio ("long"), which jams the printer's duplexer.
@@ -119,7 +116,6 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
             body: jsonEncode({
               'colorMode': _colorMode,
               'quality': _quality,
-              'duplex': _scanDuplex,
             }),
           )
           .timeout(const Duration(minutes: 7));
@@ -233,8 +229,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
       receiptRow('Color Mode', _colorMode == 'color' ? 'Color' : 'Black & White'),
       receiptRow('Paper Size', _paperSize),
       receiptRow('Copy Quality', _qualityLabel),
-      receiptRow('Scan Duplex', _scanDuplex ? 'Yes' : 'No'),
-      receiptRow('Print Duplex',
+      receiptRow('Duplex',
           (_printDuplex && isDuplexPrintCapable(_paperSize)) ? 'Yes' : 'No'),
       '',
       receiptRow('Cost per Page', 'PHP ${_costPerPage.toStringAsFixed(2)}'),
@@ -447,14 +442,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
                               (val) => setState(() => _colorMode = val),
                               const ['Color', 'B&W'],
                             ),
-                            const SizedBox(height: 8),
-                            DuplexToggle(
-                              label: 'Scan both sides of originals',
-                              explanation: kDuplexExplanation,
-                              value: _scanDuplex,
-                              onChanged: (v) => setState(() => _scanDuplex = v),
-                            ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
                             _buildDropdown(
                               'Paper Size',
                               _paperSize,
@@ -689,9 +677,8 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
                   _summaryChip(Icons.star, _qualityLabel),
                   _summaryChip(Icons.copy,
                       '$_copies cop${_copies == 1 ? 'y' : 'ies'}'),
-                  if (_scanDuplex) _summaryChip(Icons.flip, 'Duplex scan'),
                   if (_printDuplex && isDuplexPrintCapable(_paperSize))
-                    _summaryChip(Icons.flip_camera_android, 'Duplex print'),
+                    _summaryChip(Icons.flip_camera_android, 'Duplex'),
                 ],
               ),
             ),

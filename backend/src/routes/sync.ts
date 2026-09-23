@@ -12,7 +12,7 @@ import {
   insertTransaction,
   insertPrintJob,
   updateTransactionStatus,
-  updatePaperTray,
+  applyPaperTrayFromKioskSync,
   insertLog,
   recordHeartbeat,
   insertIncident,
@@ -128,17 +128,21 @@ router.post('/print-recovery', async (req: Request, res: Response): Promise<void
 router.post('/paper-tray', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!(await acceptEventOnce(req, res))) return;
-    const { kiosk_id, tray_name, current_count, max_capacity } = req.body as {
+    const { kiosk_id, tray_name, current_count, max_capacity, updated_at } = req.body as {
       kiosk_id?: string;
       tray_name: string;
       current_count: number;
       max_capacity?: number;
+      updated_at?: string;
     };
     // Falls back to the shared default only for a kiosk running an older
     // build that doesn't send kiosk_id yet — every current kiosk sends its
     // own identity explicitly (see decrementPaperTray et al).
     const kioskId = kiosk_id || 'DOCUCENTER-01';
-    await updatePaperTray(kioskId, tray_name, current_count, max_capacity);
+    // Guarded apply, not a raw overwrite — outbox events for the same tray
+    // are retried independently and can arrive out of order (see
+    // applyPaperTrayFromKioskSync's own comment for why).
+    await applyPaperTrayFromKioskSync(kioskId, tray_name, current_count, max_capacity, updated_at);
     logger.info('Sync: paper tray updated', { kioskId, tray_name, current_count });
     res.json({ success: true });
   } catch (err) {

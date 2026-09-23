@@ -736,19 +736,27 @@ export const updatePaperTray = async (
   maxCapacity?: number,
 ): Promise<void> => {
   try {
-    await getDb().execute({
+    const result = await getDb().execute({
       sql: `UPDATE paper_trays
             SET current_count = @currentCount,
                 max_capacity  = COALESCE(@maxCapacity, max_capacity),
                 updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName
+            RETURNING updated_at`,
       args: { kioskId, trayName, currentCount, maxCapacity: maxCapacity ?? null },
     });
+    const updatedAt = firstRow<{ updated_at: string }>(result)?.updated_at;
+    // This fires both when called locally on the kiosk (a staff capacity
+    // edit, which then syncs up — see applyPaperTrayFromKioskSync for why
+    // updated_at rides along) and when called directly on the cloud
+    // instance (an admin edit via the web console); syncEvent() is a no-op
+    // there since the cloud has no further SYNC_URL to push to.
     syncEvent('paper-tray', {
       kiosk_id: kioskId,
       tray_name: trayName,
       current_count: currentCount,
       max_capacity: maxCapacity,
+      updated_at: updatedAt,
     });
   } catch (err) {
     logger.warn('Failed to update paper tray', { kioskId, trayName, error: String(err) });
@@ -757,20 +765,28 @@ export const updatePaperTray = async (
 
 export const decrementPaperTray = async (kioskId: string, trayName: string, amount: number): Promise<void> => {
   try {
-    // RETURNING the post-update count so the kiosk can push its own real-world
-    // consumption up to the cloud immediately — without this, the admin
-    // console's paper levels (and the next cloud→kiosk downlink) go stale.
+    // RETURNING the post-update count (and its own updated_at) so the kiosk
+    // can push its own real-world consumption up to the cloud immediately —
+    // without this, the admin console's paper levels (and the next
+    // cloud→kiosk downlink) go stale. updated_at rides along in the sync
+    // payload so the cloud receiver can tell an out-of-order retry from the
+    // real latest value — see applyPaperTrayFromKioskSync.
     const result = await getDb().execute({
       sql: `UPDATE paper_trays
             SET current_count = MAX(0, current_count - @amount),
                 updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
             WHERE kiosk_id = @kioskId AND tray_name = @trayName
-            RETURNING current_count`,
+            RETURNING current_count, updated_at`,
       args: { kioskId, trayName, amount },
     });
-    const newCount = firstRow<{ current_count: number }>(result)?.current_count;
-    if (newCount !== undefined) {
-      syncEvent('paper-tray', { kiosk_id: kioskId, tray_name: trayName, current_count: Number(newCount) });
+    const row = firstRow<{ current_count: number; updated_at: string }>(result);
+    if (row) {
+      syncEvent('paper-tray', {
+        kiosk_id: kioskId,
+        tray_name: trayName,
+        current_count: Number(row.current_count),
+        updated_at: row.updated_at,
+      });
     }
   } catch (err) {
     logger.warn('Failed to decrement paper tray', { kioskId, trayName, amount, error: String(err) });
@@ -815,6 +831,65 @@ export const applyPaperTrayFromCloud = async (kioskId: string, tray: PaperTrayRo
     });
   } catch (err) {
     logger.warn('Failed to apply paper tray from cloud', { kioskId, tray: tray.tray_name, error: String(err) });
+  }
+};
+
+/**
+ * Apply a paper-tray UP-sync from a kiosk (routes/sync.ts's /paper-tray
+ * receiver, cloud side) — the mirror-image guard of applyPaperTrayFromCloud
+ * above, for the opposite direction.
+ *
+ * Each decrement/set on the kiosk queues its own independent sync_outbox
+ * row, retried independently with its own backoff on failure (see
+ * sync.service.ts's flushSyncOutbox). That means two events for the SAME
+ * tray can reach the cloud out of order: an earlier decrement that timed
+ * out on its first attempt can retry successfully *after* a later decrement
+ * has already landed, and an unguarded UPDATE would let that stale retry
+ * silently stomp the fresher count. That was the whole story behind the
+ * admin's Paper Trays page reading a different number on every refresh —
+ * nothing was actually wrong with the physical count, the cloud copy was
+ * just replaying events out of order. Only apply when the incoming
+ * updated_at is actually newer than what's already stored, exactly like
+ * the downlink side already does.
+ */
+export const applyPaperTrayFromKioskSync = async (
+  kioskId: string,
+  trayName: string,
+  currentCount: number,
+  maxCapacity: number | undefined,
+  sourceUpdatedAt: string | undefined,
+): Promise<void> => {
+  try {
+    if (sourceUpdatedAt) {
+      await getDb().execute({
+        sql: `UPDATE paper_trays
+              SET current_count = @currentCount,
+                  max_capacity  = COALESCE(@maxCapacity, max_capacity),
+                  updated_at    = @updatedAt
+              WHERE kiosk_id = @kioskId AND tray_name = @trayName
+                AND (updated_at IS NULL OR updated_at < @updatedAt)`,
+        args: {
+          kioskId,
+          trayName,
+          currentCount,
+          maxCapacity: maxCapacity ?? null,
+          updatedAt: sourceUpdatedAt,
+        },
+      });
+    } else {
+      // Older kiosk build that hasn't started sending updated_at yet —
+      // apply unguarded rather than silently dropping the update.
+      await getDb().execute({
+        sql: `UPDATE paper_trays
+              SET current_count = @currentCount,
+                  max_capacity  = COALESCE(@maxCapacity, max_capacity),
+                  updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+              WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+        args: { kioskId, trayName, currentCount, maxCapacity: maxCapacity ?? null },
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to apply paper tray from kiosk sync', { kioskId, trayName, error: String(err) });
   }
 };
 
@@ -983,12 +1058,19 @@ export const setPaperTrayCount = async (
   currentCount: number,
 ): Promise<void> => {
   try {
-    await getDb().execute({
+    const result = await getDb().execute({
       sql: `UPDATE paper_trays SET current_count = @currentCount, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE kiosk_id = @kioskId AND tray_name = @trayName`,
+            WHERE kiosk_id = @kioskId AND tray_name = @trayName
+            RETURNING updated_at`,
       args: { kioskId, trayName, currentCount },
     });
-    syncEvent('paper-tray', { kiosk_id: kioskId, tray_name: trayName, current_count: currentCount });
+    const updatedAt = firstRow<{ updated_at: string }>(result)?.updated_at;
+    syncEvent('paper-tray', {
+      kiosk_id: kioskId,
+      tray_name: trayName,
+      current_count: currentCount,
+      updated_at: updatedAt,
+    });
   } catch (err) {
     logger.warn('Failed to set paper tray count', { kioskId, trayName, currentCount, error: String(err) });
   }

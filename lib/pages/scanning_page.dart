@@ -55,10 +55,6 @@ class _ScanningInterfaceState extends State<ScanningInterface>
   final String _paperSize = 'Auto';
   final String _outputFormat = 'PDF';
   final String _quality = 'standard';
-  // Scan both sides of each original via the ADF's duplex unit — no paper
-  // size restriction here (unlike duplex printing, which the printer's
-  // duplexer can't do on Folio/"long" paper).
-  bool _duplex = false;
 
   // Plays once when the scan-complete/preview screen appears — a simple
   // entrance fade + staggered thumbnail reveal, not a persistent animation.
@@ -292,14 +288,7 @@ class _ScanningInterfaceState extends State<ScanningInterface>
                               (val) => setState(() => _dpi = val),
                               const ['150 DPI', '200 DPI', '300 DPI', '600 DPI'],
                             ),
-                            const SizedBox(height: 8),
-                            DuplexToggle(
-                              label: 'Scan both sides',
-                              explanation: kDuplexExplanation,
-                              value: _duplex,
-                              onChanged: (v) => setState(() => _duplex = v),
-                            ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
                             const Text('Paper Size',
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                             const SizedBox(height: 4),
@@ -423,7 +412,6 @@ class _ScanningInterfaceState extends State<ScanningInterface>
         body: jsonEncode({
           'colorMode': _colorMode == 'bw' ? 'bw' : 'color',
           'dpi': int.tryParse(_dpi) ?? 300,
-          'duplex': _duplex,
         }),
       ).timeout(const Duration(seconds: 600));
 
@@ -947,7 +935,6 @@ class _ScanningInterfaceState extends State<ScanningInterface>
                     _summaryChip(Icons.article, _paperSize),
                     _summaryChip(Icons.file_present, _outputFormat),
                     _summaryChip(Icons.star, _quality == 'draft' ? 'Draft' : 'Standard'),
-                    if (_duplex) _summaryChip(Icons.flip, 'Duplex'),
                   ],
                 ),
               ),
