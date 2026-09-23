@@ -15,6 +15,13 @@ interface ScanOptions {
   dpi?: number;
   paperSize?: string;
   outputFormat?: 'pdf' | 'jpg' | 'png';
+  /** Scan both sides of each sheet via the ADF's duplex unit. Unlike duplex
+   * printing, this has no paper-size restriction — the scanner (unlike the
+   * printer) has no known long-paper duplex limitation. Depends on the
+   * physical scanner having a duplex-capable ADF; if it doesn't, DWT should
+   * surface a capability error rather than silently scanning one-sided —
+   * not yet confirmed against the real hardware. */
+  duplex?: boolean;
 }
 
 interface ScanResult {
@@ -29,6 +36,9 @@ interface CopyOptions {
   colorMode?: 'color' | 'bw';
   paperSize?: string;
   quality?: string;
+  /** Both scan (both sides of each sheet) and print (both sides of each
+   * output sheet) two-sided, like a real photocopier's duplex button. */
+  duplex?: boolean;
 }
 
 interface CopyResult {
@@ -277,6 +287,7 @@ const scanWithDWT = async (
         XferCount: 1,
         IfFeederEnabled: true,
         IfAutoFeed: true,
+        IfDuplexEnabled: !!options.duplex,
       },
     };
 
@@ -401,6 +412,58 @@ const convertImageToPdf = async (
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Convert one or two scanned images into a single PDF, for duplex printing.
+//
+// Photocopying otherwise prints every scanned page as its own single-page
+// PDF / print job (see the loops in executePhotocopySession and
+// photocopyDocument) — fine for simplex, but hardware duplex needs page N
+// and N+1 to arrive as pages 1-2 of the SAME print job so the printer's
+// duplexer flips the physical sheet between them instead of ejecting it and
+// starting a fresh one. [frontImagePath] becomes page 1 (the sheet's front),
+// [backImagePath] becomes page 2 (its back) — pass null for a trailing odd
+// page that has no back side, which prints this as a normal 1-page
+// (simplex) job.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const convertImagePairToPdf = async (
+  frontImagePath: string,
+  backImagePath: string | null,
+  pdfPath: string,
+  targetPaperSize = 'A4',
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const PDFDocument = require('pdfkit');
+
+    const dims = PAPER_SIZES[targetPaperSize] ?? PAPER_SIZES['A4'];
+    const [paperW, paperH] = dims;
+
+    const doc = new PDFDocument({ size: [paperW, paperH], margin: 0, autoFirstPage: false });
+    const stream = fs.createWriteStream(pdfPath);
+    doc.pipe(stream);
+
+    const addImagePage = (imagePath: string) => {
+      doc.addPage({ size: [paperW, paperH], margin: 0 });
+      const imageBuffer = fs.readFileSync(imagePath);
+      doc.image(imageBuffer, 0, 0, { fit: [paperW, paperH], align: 'center', valign: 'center' });
+    };
+
+    addImagePage(frontImagePath);
+    if (backImagePath) addImagePage(backImagePath);
+
+    doc.end();
+
+    await new Promise<void>((resolve, reject) => {
+      stream.on('finish', () => resolve());
+      stream.on('error', reject);
+    });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Scan ALL pages from the ADF until it is empty.
 // Returns an ordered list of temp-file paths (one per page).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,6 +530,7 @@ const scanAllADFPagesUnlocked = async (
       XferCount: -1, // scan every page until ADF is empty
       IfFeederEnabled: true,
       IfAutoFeed: true,
+      IfDuplexEnabled: !!options.duplex,
     },
   };
 
@@ -554,6 +618,7 @@ export const scanAllPages = async (
     colorMode: options.colorMode ?? 'color',
     dpi: options.dpi ?? 300,
     outputFormat: 'jpg',
+    duplex: options.duplex,
   });
 
   if (!result.success) {
@@ -695,6 +760,7 @@ export const photocopyDocument = async (
     colorMode: options.colorMode ?? 'bw',
     paperSize: options.paperSize ?? 'A4',
     quality: options.quality ?? 'standard',
+    duplex: options.duplex ?? false,
   };
 
   logger.info('Photocopy request', { copyId, opts });
@@ -707,6 +773,7 @@ export const photocopyDocument = async (
       colorMode: opts.colorMode,
       dpi,
       outputFormat: 'jpg',
+      duplex: opts.duplex,
     });
 
     if (!scanResult.success) {
@@ -715,8 +782,15 @@ export const photocopyDocument = async (
 
     logger.info('All ADF pages scanned', { copyId, pages: scanResult.pages.length });
 
-    const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState } =
+    const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState, isDuplexCapablePaperSize } =
       await import('./print.service');
+    const wantDuplex = !!opts.duplex && isDuplexCapablePaperSize(opts.paperSize);
+    if (opts.duplex && !wantDuplex) {
+      logger.warn('Photocopy duplex requested on a paper size the printer cannot duplex — printing simplex', {
+        copyId,
+        paperSize: opts.paperSize,
+      });
+    }
 
     // Configure the driver once for the whole job, not once per page — see
     // prepareWindowsPrinterDriverState.
@@ -724,29 +798,68 @@ export const photocopyDocument = async (
     try {
       // Print collated: one full set per copy
       for (let copy = 1; copy <= (opts.copies ?? 1); copy++) {
-        for (let pi = 0; pi < scanResult.pages.length; pi++) {
-          const pdfPath = scanResult.pages[pi].replace('.jpg', `_${copyId}_c${copy}.pdf`);
+        if (wantDuplex) {
+          // Pair consecutive pages into one 2-page PDF per physical sheet —
+          // see the identical logic (and its comment) in
+          // executePhotocopySession.
+          for (let pi = 0; pi < scanResult.pages.length; pi += 2) {
+            const frontIndex = pi;
+            const backIndex = pi + 1 < scanResult.pages.length ? pi + 1 : null;
+            const pairLabel = backIndex !== null ? `${frontIndex + 1}-${backIndex + 1}` : `${frontIndex + 1}`;
+            const pdfPath = scanResult.pages[frontIndex].replace('.jpg', `_${copyId}_c${copy}_pair.pdf`);
 
-          const cv = await convertImageToPdf(scanResult.pages[pi], pdfPath, opts.paperSize);
-          if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+            const cv = await convertImagePairToPdf(
+              scanResult.pages[frontIndex],
+              backIndex !== null ? scanResult.pages[backIndex] : null,
+              pdfPath,
+              opts.paperSize,
+            );
+            if (!cv.success) throw new Error(`Pages ${pairLabel} PDF conversion: ${cv.error}`);
 
-          const pr = await printPdfFile(
-            pdfPath,
-            `${copyId}_p${pi + 1}_c${copy}`,
-            opts.paperSize,
-            opts.colorMode,
-            opts.quality,
-            undefined,
-            driverState,
-          );
+            const pr = await printPdfFile(
+              pdfPath,
+              `${copyId}_p${pairLabel}_c${copy}`,
+              opts.paperSize,
+              opts.colorMode,
+              opts.quality,
+              undefined,
+              driverState,
+              backIndex !== null,
+            );
 
-          try {
-            fs.unlinkSync(pdfPath);
-          } catch {
-            /* best-effort */
+            try {
+              fs.unlinkSync(pdfPath);
+            } catch {
+              /* best-effort */
+            }
+
+            if (!pr.success) throw new Error(`Print pages ${pairLabel} copy ${copy}: ${pr.error}`);
           }
+        } else {
+          for (let pi = 0; pi < scanResult.pages.length; pi++) {
+            const pdfPath = scanResult.pages[pi].replace('.jpg', `_${copyId}_c${copy}.pdf`);
 
-          if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
+            const cv = await convertImageToPdf(scanResult.pages[pi], pdfPath, opts.paperSize);
+            if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+
+            const pr = await printPdfFile(
+              pdfPath,
+              `${copyId}_p${pi + 1}_c${copy}`,
+              opts.paperSize,
+              opts.colorMode,
+              opts.quality,
+              undefined,
+              driverState,
+            );
+
+            try {
+              fs.unlinkSync(pdfPath);
+            } catch {
+              /* best-effort */
+            }
+
+            if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
+          }
         }
       }
     } finally {
@@ -782,6 +895,10 @@ export const photocopyDocument = async (
 export const createPhotocopySession = async (options: {
   colorMode?: 'color' | 'bw';
   quality?: string;
+  /** Scan both sides of each original — independent of whether the PRINT
+   * side duplexes (see executePhotocopySession's own `duplex`), since the
+   * scanner has no long-paper restriction the printer has. */
+  duplex?: boolean;
 }): Promise<{ success: boolean; sessionId?: string; pageCount?: number; error?: string }> => {
   const dpi = options.quality === 'high' ? 600 : options.quality === 'draft' ? 150 : 300;
 
@@ -789,6 +906,7 @@ export const createPhotocopySession = async (options: {
     colorMode: options.colorMode ?? 'color',
     dpi,
     outputFormat: 'jpg',
+    duplex: options.duplex,
   });
 
   if (!result.success) {
@@ -810,8 +928,9 @@ export const executePhotocopySession = async (options: {
   paperSize: string;
   colorMode: string;
   quality: string;
+  duplex?: boolean;
 }): Promise<{ success: boolean; jobId?: string; error?: string }> => {
-  const { sessionId, copies, paperSize, colorMode, quality } = options;
+  const { sessionId, copies, paperSize, colorMode, quality, duplex } = options;
   const jobId = `COPY-${Date.now()}`;
 
   // Collect session page paths  (SESSION-xxx_p0.jpg, _p1.jpg, …)
@@ -836,10 +955,20 @@ export const executePhotocopySession = async (options: {
     quality,
   });
 
-  try {
-    const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState } =
-      await import('./print.service');
+  // Folio ("long" paper) jams the printer's duplexer — same rule as regular
+  // printing (see isDuplexCapablePaperSize). Silently falls back to simplex
+  // rather than failing the job outright.
+  const { printPdfFile, prepareWindowsPrinterDriverState, restoreWindowsPrinterDriverState, isDuplexCapablePaperSize } =
+    await import('./print.service');
+  const wantDuplex = !!duplex && isDuplexCapablePaperSize(paperSize);
+  if (duplex && !wantDuplex) {
+    logger.warn('Photocopy duplex requested on a paper size the printer cannot duplex — printing simplex', {
+      jobId,
+      paperSize,
+    });
+  }
 
+  try {
     // Color/quality are the SAME for every page and copy in this job, so
     // configure the driver ONCE instead of once per page — see
     // prepareWindowsPrinterDriverState for why that matters (each
@@ -849,29 +978,71 @@ export const executePhotocopySession = async (options: {
     try {
       // Print collated: one full set of pages per copy.
       for (let copy = 1; copy <= copies; copy++) {
-        for (let pi = 0; pi < pages.length; pi++) {
-          const pdfPath = pages[pi].replace('.jpg', `_${jobId}_c${copy}.pdf`);
+        if (wantDuplex) {
+          // Pair consecutive pages (front, back) into ONE 2-page PDF so the
+          // printer's duplexer flips the same physical sheet between them —
+          // printing them as separate single-page jobs (the simplex path
+          // below) would put each on its own sheet regardless of any
+          // duplex flag. A trailing odd page has no back side and prints
+          // alone (simplex).
+          for (let pi = 0; pi < pages.length; pi += 2) {
+            const frontIndex = pi;
+            const backIndex = pi + 1 < pages.length ? pi + 1 : null;
+            const pairLabel = backIndex !== null ? `${frontIndex + 1}-${backIndex + 1}` : `${frontIndex + 1}`;
+            const pdfPath = pages[frontIndex].replace('.jpg', `_${jobId}_c${copy}_pair.pdf`);
 
-          const cv = await convertImageToPdf(pages[pi], pdfPath, paperSize);
-          if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+            const cv = await convertImagePairToPdf(
+              pages[frontIndex],
+              backIndex !== null ? pages[backIndex] : null,
+              pdfPath,
+              paperSize,
+            );
+            if (!cv.success) throw new Error(`Pages ${pairLabel} PDF conversion: ${cv.error}`);
 
-          const pr = await printPdfFile(
-            pdfPath,
-            `${jobId}_p${pi + 1}_c${copy}`,
-            paperSize,
-            colorMode,
-            quality,
-            undefined,
-            driverState,
-          );
+            const pr = await printPdfFile(
+              pdfPath,
+              `${jobId}_p${pairLabel}_c${copy}`,
+              paperSize,
+              colorMode,
+              quality,
+              undefined,
+              driverState,
+              backIndex !== null, // only a real pair gets duplex — a solo trailing page is simplex
+            );
 
-          try {
-            fs.unlinkSync(pdfPath);
-          } catch {
-            /* best-effort */
+            try {
+              fs.unlinkSync(pdfPath);
+            } catch {
+              /* best-effort */
+            }
+
+            if (!pr.success) throw new Error(`Print pages ${pairLabel} copy ${copy}: ${pr.error}`);
           }
+        } else {
+          for (let pi = 0; pi < pages.length; pi++) {
+            const pdfPath = pages[pi].replace('.jpg', `_${jobId}_c${copy}.pdf`);
 
-          if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
+            const cv = await convertImageToPdf(pages[pi], pdfPath, paperSize);
+            if (!cv.success) throw new Error(`Page ${pi + 1} PDF conversion: ${cv.error}`);
+
+            const pr = await printPdfFile(
+              pdfPath,
+              `${jobId}_p${pi + 1}_c${copy}`,
+              paperSize,
+              colorMode,
+              quality,
+              undefined,
+              driverState,
+            );
+
+            try {
+              fs.unlinkSync(pdfPath);
+            } catch {
+              /* best-effort */
+            }
+
+            if (!pr.success) throw new Error(`Print page ${pi + 1} copy ${copy}: ${pr.error}`);
+          }
         }
       }
     } finally {

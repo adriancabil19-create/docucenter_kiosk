@@ -13,6 +13,7 @@ class PrintingService {
     String paperSize = 'A4',
     String colorMode = 'bw',
     String quality = 'standard',
+    bool duplex = false,
     String? transactionId,
   }) async {
     try {
@@ -37,6 +38,7 @@ class PrintingService {
             paperSize: paperSize,
             colorMode: colorMode,
             quality: quality,
+            duplex: duplex,
             transactionId: transactionId,
           );
         }
@@ -56,6 +58,7 @@ class PrintingService {
     String paperSize = 'A4',
     String colorMode = 'bw',
     String quality = 'standard',
+    bool duplex = false,
     String? transactionId,
   }) async {
     try {
@@ -67,6 +70,7 @@ class PrintingService {
           'paperSize': paperSize,
           'colorMode': colorMode,
           'quality': quality,
+          'duplex': duplex,
           if (transactionId != null) 'transactionId': transactionId,
         }),
       );

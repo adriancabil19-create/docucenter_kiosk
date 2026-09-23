@@ -6,6 +6,7 @@ import '../config.dart';
 import '../scanner_status.dart';
 import '../kiosk_runtime_service.dart';
 import '../receipt_format.dart';
+import '../widgets/duplex_toggle.dart';
 import 'payment_page.dart';
 
 class PhotocopyingInterface extends StatefulWidget {
@@ -27,6 +28,13 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
   String _colorMode = 'color';
   String _paperSize = 'A4';
   String _quality = 'standard';
+  // Scan both sides of each original — no paper-size restriction (the
+  // scanner has none of the printer's long-paper duplex limitation).
+  bool _scanDuplex = false;
+  // Print both sides of each output sheet — only offered for A4/Letter
+  // (see isDuplexPrintCapable); auto-cleared if the paper size changes to
+  // Folio ("long"), which jams the printer's duplexer.
+  bool _printDuplex = false;
 
   // Pre-scan state
   bool _isPreScanning = false;
@@ -108,7 +116,11 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
           .post(
             Uri.parse('${BackendConfig.serverUrl}/api/scan/photocopy-prepare'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'colorMode': _colorMode, 'quality': _quality}),
+            body: jsonEncode({
+              'colorMode': _colorMode,
+              'quality': _quality,
+              'duplex': _scanDuplex,
+            }),
           )
           .timeout(const Duration(minutes: 7));
 
@@ -161,6 +173,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
             'paperSize': _paperSize,
             'colorMode': _colorMode,
             'quality': _quality,
+            'duplex': _printDuplex && isDuplexPrintCapable(_paperSize),
           }),
         )
         .timeout(const Duration(minutes: 10));
@@ -213,6 +226,7 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
     PAYMONGOPaymentPageState.paperSize = _paperSize;
     PAYMONGOPaymentPageState.colorMode = _colorMode;
     PAYMONGOPaymentPageState.quality = _quality;
+    PAYMONGOPaymentPageState.duplex = _printDuplex && isDuplexPrintCapable(_paperSize);
     PAYMONGOPaymentPageState.printContent = [
       'PHOTOCOPYING JOB',
       kReceiptSubDivider,
@@ -221,6 +235,9 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
       receiptRow('Color Mode', _colorMode == 'color' ? 'Color' : 'Black & White'),
       receiptRow('Paper Size', _paperSize),
       receiptRow('Copy Quality', _qualityLabel),
+      receiptRow('Scan Duplex', _scanDuplex ? 'Yes' : 'No'),
+      receiptRow('Print Duplex',
+          (_printDuplex && isDuplexPrintCapable(_paperSize)) ? 'Yes' : 'No'),
       '',
       receiptRow('Cost per Page', 'PHP ${_costPerPage.toStringAsFixed(2)}'),
       receiptRow('Total Pages', '${_pageCount * _copies}'),
@@ -432,19 +449,40 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
                               (val) => setState(() => _colorMode = val),
                               const ['Color', 'B&W'],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 8),
+                            DuplexToggle(
+                              label: 'Scan both sides of originals',
+                              explanation: kDuplexExplanation,
+                              value: _scanDuplex,
+                              onChanged: (v) => setState(() => _scanDuplex = v),
+                            ),
+                            const SizedBox(height: 8),
                             _buildDropdown(
                               'Paper Size',
                               _paperSize,
                               const ['A4', 'Letter', 'Folio'],
-                              (val) => setState(() => _paperSize = val),
+                              (val) => setState(() {
+                                _paperSize = val;
+                                // Folio ("long") can't be duplexed — the
+                                // printer's duplexer jams on it.
+                                if (!isDuplexPrintCapable(_paperSize)) _printDuplex = false;
+                              }),
                               const [
                                 'A4 (210 x 297 mm)',
                                 'Letter (216 x 279 mm)',
                                 'Folio (216 x 330 mm)',
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 8),
+                            DuplexToggle(
+                              label: 'Print on both sides',
+                              explanation: kDuplexExplanation,
+                              value: _printDuplex,
+                              enabled: isDuplexPrintCapable(_paperSize),
+                              disabledReason: kDuplexPrintUnsupportedReason,
+                              onChanged: (v) => setState(() => _printDuplex = v),
+                            ),
+                            const SizedBox(height: 8),
                             _buildDropdown(
                               'Copy Quality',
                               _quality,
@@ -653,6 +691,9 @@ class _PhotocopyingInterfaceState extends State<PhotocopyingInterface> {
                   _summaryChip(Icons.star, _qualityLabel),
                   _summaryChip(Icons.copy,
                       '$_copies cop${_copies == 1 ? 'y' : 'ies'}'),
+                  if (_scanDuplex) _summaryChip(Icons.flip, 'Duplex scan'),
+                  if (_printDuplex && isDuplexPrintCapable(_paperSize))
+                    _summaryChip(Icons.flip_camera_android, 'Duplex print'),
                 ],
               ),
             ),

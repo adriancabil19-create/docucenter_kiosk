@@ -8,6 +8,18 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PDFLibDocument } from 'pdf-lib';
 import sharp from 'sharp';
 
+/**
+ * Paper sizes the printer's duplex unit can physically handle. Folio ("long"
+ * bond paper) jams the duplexer — confirmed on the actual kiosk printer —
+ * so duplex is only ever offered for A4/Letter ("short"). Enforced here
+ * (not just hidden in the kiosk UI) so a stale client or a direct API call
+ * can't request duplex on Folio.
+ */
+const DUPLEX_CAPABLE_PAPER_SIZES = new Set(['a4', 'letter']);
+
+export const isDuplexCapablePaperSize = (paperSize?: string): boolean =>
+  !!paperSize && DUPLEX_CAPABLE_PAPER_SIZES.has(paperSize.toLowerCase());
+
 interface PrintOptions {
   type?: string;
   printerName?: string;
@@ -737,8 +749,21 @@ export const printPdfFile = async (
   quality?: string,
   copies?: number,
   driverState?: PrinterDriverJobState,
+  duplex?: boolean,
 ): Promise<{ success: boolean; method: string; error?: string }> => {
   const platform = os.platform();
+  // Silently downgrades to simplex rather than rejecting the job outright —
+  // by the time this runs, payment is already taken; refusing to print
+  // would strand the customer. The kiosk UI and the route handler both
+  // already gate this before the job is ever created (see
+  // isDuplexCapablePaperSize), so this only fires for a stale client.
+  const wantDuplex = !!duplex && isDuplexCapablePaperSize(paperSize);
+  if (duplex && !wantDuplex) {
+    logger.warn('Duplex requested on a paper size the printer cannot duplex — printing simplex', {
+      jobID,
+      paperSize,
+    });
+  }
 
   if (platform === 'win32') {
     const sumatraPath = path.resolve(
@@ -787,12 +812,17 @@ export const printPdfFile = async (
     // Build -print-settings — comma-separated, no spaces in values
     // SumatraPDF 3.x uses 'mono' for B&W (not 'color=no'). No quality/DPI
     // token exists here — that's handled above via PrintTicketXml instead.
+    // 'duplex' (vs 'duplexshort'/'duplexlong') is documented by pdf-to-printer
+    // (see node_modules/pdf-to-printer/README.md, the `side` option) as a
+    // distinct valid value — deliberately not forcing a specific flip edge
+    // since that hasn't been verified against the real printer.
     const buildSettings = (): string => {
       const parts: string[] = ['fitPage']; // always scale content to fill the paper
       if (paperSize) parts.push(`paper=${paperSize.toLowerCase()}`);
       if (colorMode === 'bw') parts.push('mono');
       else if (colorMode === 'color') parts.push('color');
       if (copies && copies > 1) parts.push(`copies=${copies}`);
+      parts.push(wantDuplex ? 'duplex' : 'simplex');
       return parts.join(',');
     };
 
@@ -1051,6 +1081,7 @@ export const printFilesFromStorage = async (
   colorMode?: string,
   quality?: string,
   copies?: number,
+  duplex?: boolean,
 ): Promise<PrintResult> => {
   if (!fs.existsSync(uploadsDir)) {
     logger.warn('Uploads directory does not exist', { uploadsDir });
@@ -1089,7 +1120,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await resizePdfToPaperSize(filePath, tempResizedPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState);
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState, duplex);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('PDF print failed', { filename, error: result.error });
@@ -1111,7 +1142,7 @@ export const printFilesFromStorage = async (
         );
         try {
           await convertImageToPdf(filePath, tempPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality, copies, driverState);
+          const result = await printPdfFile(tempPdf, jobID, paperSize, colorMode, quality, copies, driverState, duplex);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('Image PDF print failed', { filename, error: result.error });
@@ -1140,7 +1171,7 @@ export const printFilesFromStorage = async (
         try {
           await convertDocumentToPdf(filePath, tempPdf);
           await resizePdfToPaperSize(tempPdf, tempResizedPdf, paperSize || 'A4');
-          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState);
+          const result = await printPdfFile(tempResizedPdf, jobID, paperSize, colorMode, quality, copies, driverState, duplex);
           printSuccess = result.success;
           if (!result.success) {
             logger.error('Document PDF print failed', { filename, error: result.error });

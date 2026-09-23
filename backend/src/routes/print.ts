@@ -10,6 +10,7 @@ import {
   printFilesFromStorage,
   printImageLayoutJob,
   printTestPage,
+  isDuplexCapablePaperSize,
   ImageLayoutOptions,
   PrintResult,
   VALID_IMAGES_PER_PAGE,
@@ -226,6 +227,10 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
     } = req.body;
     const layout: ImageLayoutOptions | undefined = imageLayout ?? undefined;
     const numCopies: number = Math.max(1, parseInt(String(copies ?? '1'), 10) || 1);
+    // Resolved once, server-side — never trust the client's duplex flag on
+    // its own, since the printer's duplexer can't handle Folio ("long")
+    // paper (see isDuplexCapablePaperSize).
+    const wantDuplex = (duplex === true || duplex === 'true') && isDuplexCapablePaperSize(paperSize);
 
     if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
       res.status(400).json({ success: false, error: 'Missing required field: filenames' });
@@ -286,7 +291,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
     } else {
       const pageCounts = await Promise.all(filenames.map(countPages));
       totalPages = pageCounts.reduce((s: number, p: number) => s + p, 0);
-      result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies);
+      result = await printFilesFromStorage(filenames, paperSize, colorMode, quality, numCopies, wantDuplex);
     }
 
     // Log to SQLite regardless of outcome
@@ -301,7 +306,7 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
       simulated: !!(result.simulatedPaths && result.simulatedPaths.length > 0),
       page_count: totalPages,
       color_mode: colorMode === 'color' ? 'color' : 'bw',
-      duplex: duplex === true || duplex === 'true',
+      duplex: wantDuplex,
       unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
       service_type:
         typeof serviceType === 'string' ? serviceType : layout ? 'image-print' : 'printing',
@@ -332,7 +337,12 @@ router.post('/from-storage', async (req: Request, res: Response): Promise<void> 
 
       // Decrement the correct tray: match by paper size, then by most paper available
       try {
-        const sheetsUsed = totalPages * numCopies;
+        // Duplex prints two pages per physical sheet — round up so an odd
+        // trailing page (which prints on its own, single-sided) still
+        // counts as one sheet.
+        const sheetsUsed = wantDuplex
+          ? Math.ceil(totalPages / 2) * numCopies
+          : totalPages * numCopies;
 
         const normalizedSize = (paperSize ?? 'A4').toUpperCase();
         const allTrays = await PaperTrackerService.getTrays(config.kioskId);
@@ -536,6 +546,7 @@ router.post('/recover/:transactionId', async (req: Request, res: Response): Prom
       originalJob.color_mode,
       'standard',
       originalJob.copies,
+      originalJob.duplex,
     );
 
     const recoveryJobId = result.jobID ?? randomUUID();
@@ -559,7 +570,9 @@ router.post('/recover/:transactionId', async (req: Request, res: Response): Prom
 
     if (result.success) {
       try {
-        const sheetsUsed = (originalJob.page_count ?? 0) * originalJob.copies;
+        const sheetsUsed = originalJob.duplex
+          ? Math.ceil((originalJob.page_count ?? 0) / 2) * originalJob.copies
+          : (originalJob.page_count ?? 0) * originalJob.copies;
         const normalizedSize = originalJob.paper_size.toUpperCase();
         const allTrays = await PaperTrackerService.getTrays(config.kioskId);
         const withPaper = allTrays.filter((t) => t.current_count > 0);

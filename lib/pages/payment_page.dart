@@ -37,6 +37,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
   static String colorMode = 'bw';
   static String quality = 'standard';
   static int copies = 1;
+  static bool duplex = false;
 
   /// IDs of the documents selected for this job — kept alongside the settings
   /// above so the printing page can restore the exact same job (files +
@@ -73,6 +74,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
     PAYMONGOPaymentPageState.colorMode = 'bw';
     PAYMONGOPaymentPageState.quality = 'standard';
     PAYMONGOPaymentPageState.copies = 1;
+    PAYMONGOPaymentPageState.duplex = false;
     PAYMONGOPaymentPageState.selectedDocIds = [];
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
     PAYMONGOPaymentPageState.printContent = '';
@@ -549,6 +551,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 paperSize: paperSize,
                                 colorMode: colorMode,
                                 quality: quality,
+                                duplex: duplex,
                                 transactionId: transactionId,
                               );
                             } else {
@@ -557,6 +560,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 paperSize: paperSize,
                                 colorMode: colorMode,
                                 quality: quality,
+                                duplex: duplex,
                                 transactionId: transactionId,
                               );
                             }

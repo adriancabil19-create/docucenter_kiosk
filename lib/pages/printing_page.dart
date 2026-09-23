@@ -4,6 +4,7 @@ import '../kiosk_runtime_service.dart';
 import '../paper_tracker_service.dart';
 import '../receipt_format.dart';
 import '../strings.dart';
+import '../widgets/duplex_toggle.dart';
 import '../widgets/print_preview_dialog.dart';
 import 'payment_page.dart';
 
@@ -20,6 +21,7 @@ class PrintingInterface extends StatefulWidget {
   final String? initialColorMode;
   final String? initialQuality;
   final int? initialCopies;
+  final bool? initialDuplex;
 
   const PrintingInterface({
     super.key,
@@ -32,6 +34,7 @@ class PrintingInterface extends StatefulWidget {
     this.initialColorMode,
     this.initialQuality,
     this.initialCopies,
+    this.initialDuplex,
   });
 
   @override
@@ -43,6 +46,7 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
   late String _quality = widget.initialQuality ?? 'standard';
   late String _paperSize = widget.initialPaperSize ?? 'A4';
   late int _copies = widget.initialCopies ?? 1;
+  late bool _duplex = (widget.initialDuplex ?? false) && isDuplexPrintCapable(_paperSize);
   late final TextEditingController _copiesController;
 
   /// Per-page price for the current quality + colour, from the admin-configured
@@ -130,7 +134,8 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     if (allDocs.isEmpty) return;
 
     final totalPages = allDocs.fold<int>(0, (sum, doc) => sum + doc.pages);
-    final sheetsNeeded = totalPages * _copies;
+    // Duplex prints two pages per physical sheet.
+    final sheetsNeeded = (_duplex ? (totalPages / 2).ceil() : totalPages) * _copies;
     if (!await _confirmEnoughPaper(sheetsNeeded)) return;
     if (!mounted) return;
 
@@ -146,6 +151,7 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
       receiptRow('Quality',
           _quality == 'draft' ? 'Draft' : _quality == 'high' ? 'High' : 'Standard'),
       receiptRow('Copies', '$_copies'),
+      receiptRow('Duplex', _duplex ? 'Yes (2-sided)' : 'No (1-sided)'),
       '',
       receiptRow('Files', '${allDocs.length}'),
       ...allDocs.map((doc) => '${doc.originalName} (${doc.pages}p)'),
@@ -166,6 +172,7 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
     PAYMONGOPaymentPageState.colorMode = _colorMode;
     PAYMONGOPaymentPageState.quality = _quality;
     PAYMONGOPaymentPageState.copies = _copies;
+    PAYMONGOPaymentPageState.duplex = _duplex;
     PAYMONGOPaymentPageState.selectedDocIds = allDocs.map((d) => d.id).toList();
     PAYMONGOPaymentPageState.pendingReceiptContent = '';
     widget.onNavigate('payment');
@@ -361,10 +368,24 @@ class _PrintingInterfaceState extends State<PrintingInterface> {
                             Strings.t('printing.paperSize'),
                             _paperSize,
                             ['A4', 'Folio', 'Letter'],
-                            (val) => setState(() => _paperSize = val),
+                            (val) => setState(() {
+                              _paperSize = val;
+                              // Folio ("long") can't be duplexed — the
+                              // printer's duplexer jams on it.
+                              if (!isDuplexPrintCapable(_paperSize)) _duplex = false;
+                            }),
                             ['A4 (210 x 297 mm)', 'Folio (216 x 330 mm)', 'Letter (216 x 279 mm)'],
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 8),
+                          DuplexToggle(
+                            label: 'Print on both sides',
+                            explanation: kDuplexExplanation,
+                            value: _duplex,
+                            enabled: isDuplexPrintCapable(_paperSize),
+                            disabledReason: kDuplexPrintUnsupportedReason,
+                            onChanged: (v) => setState(() => _duplex = v),
+                          ),
+                          const SizedBox(height: 8),
                           _buildDropdown(
                             Strings.t('printing.colorMode'),
                             _colorMode,

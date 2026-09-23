@@ -80,10 +80,10 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.post('/all', async (req: Request, res: Response) => {
   try {
-    const { colorMode = 'color', dpi = 300 } = req.body;
-    logger.info('Scan all ADF pages request', { colorMode, dpi });
+    const { colorMode = 'color', dpi = 300, duplex = false } = req.body;
+    logger.info('Scan all ADF pages request', { colorMode, dpi, duplex });
 
-    const result = await scanAllPages({ colorMode, dpi: Number(dpi) });
+    const result = await scanAllPages({ colorMode, dpi: Number(dpi), duplex: !!duplex });
 
     if (!result.success) {
       res.status(500).json({ success: false, error: result.error });
@@ -135,15 +135,16 @@ router.get('/adf-status', async (req: Request, res: Response) => {
 
 router.post('/photocopy', async (req: Request, res: Response) => {
   try {
-    const { copies = 1, colorMode = 'bw', paperSize = 'A4', quality = 'normal' } = req.body;
+    const { copies = 1, colorMode = 'bw', paperSize = 'A4', quality = 'normal', duplex = false } = req.body;
 
-    logger.info('Photocopy request received', { copies, colorMode, paperSize, quality });
+    logger.info('Photocopy request received', { copies, colorMode, paperSize, quality, duplex });
 
     const result = await photocopyDocument({
       copies: Number(copies),
       colorMode,
       paperSize,
       quality,
+      duplex: !!duplex,
     });
 
     if (result.success) {
@@ -176,10 +177,10 @@ router.post('/photocopy', async (req: Request, res: Response) => {
 
 router.post('/photocopy-prepare', async (req: Request, res: Response) => {
   try {
-    const { colorMode = 'color', quality = 'standard' } = req.body;
-    logger.info('Photocopy prepare request', { colorMode, quality });
+    const { colorMode = 'color', quality = 'standard', duplex = false } = req.body;
+    logger.info('Photocopy prepare request', { colorMode, quality, duplex });
 
-    const result = await createPhotocopySession({ colorMode, quality });
+    const result = await createPhotocopySession({ colorMode, quality, duplex: !!duplex });
 
     if (!result.success) {
       res.status(500).json({ success: false, error: result.error });
@@ -236,6 +237,7 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       paperSize = 'A4',
       colorMode = 'bw',
       quality = 'standard',
+      duplex = false,
     } = req.body;
 
     if (!sessionId) {
@@ -243,7 +245,7 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       return;
     }
 
-    logger.info('Photocopy execute request', { sessionId, copies, paperSize, colorMode, quality });
+    logger.info('Photocopy execute request', { sessionId, copies, paperSize, colorMode, quality, duplex });
 
     const result = await executePhotocopySession({
       sessionId,
@@ -251,6 +253,7 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       paperSize,
       colorMode,
       quality,
+      duplex: !!duplex,
     });
 
     if (!result.success) {

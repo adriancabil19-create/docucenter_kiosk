@@ -424,6 +424,7 @@ class _ServicesPageState extends State<ServicesPage> {
           initialColorMode: PAYMONGOPaymentPageState.colorMode,
           initialQuality: PAYMONGOPaymentPageState.quality,
           initialCopies: PAYMONGOPaymentPageState.copies,
+          initialDuplex: PAYMONGOPaymentPageState.duplex,
         );
       case 'imagePrint':
         return ImagePrintSettingsInterface(
