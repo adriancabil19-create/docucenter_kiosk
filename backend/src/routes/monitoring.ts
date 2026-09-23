@@ -9,6 +9,8 @@ import {
   getPaperTrays,
   insertLog,
   clearActivityLogs,
+  pruneOldRows,
+  vacuumDatabase,
 } from '../database';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
@@ -105,6 +107,27 @@ router.get('/logs', async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     const error = err as Error;
     logger.error('Monitoring logs error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/monitoring/vacuum — run the same prune-old-rows + VACUUM pass the
+ * 6-hourly maintenance job does, on demand. Safe to call any time; a no-op
+ * pass just costs a little I/O. Use this to reclaim disk space immediately
+ * instead of waiting for the next scheduled cycle (or a redeploy).
+ */
+router.post('/vacuum', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const pruned = await pruneOldRows();
+    const startedAt = Date.now();
+    await vacuumDatabase();
+    const ms = Date.now() - startedAt;
+    logger.info('DB vacuum triggered by admin', { pruned, ms });
+    res.json({ success: true, pruned, vacuumMs: ms });
+  } catch (err) {
+    const error = err as Error;
+    logger.error('Manual vacuum error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 });

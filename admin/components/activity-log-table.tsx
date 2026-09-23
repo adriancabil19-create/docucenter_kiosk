@@ -15,7 +15,7 @@ import {
 } from '@heroui/react';
 import { addToast } from '@heroui/react';
 import type { ActivityLog, LogLevel } from '@/lib/types';
-import { getLogs, clearLogs, type DateRange } from '@/lib/api';
+import { getLogs, clearLogs, vacuumDatabase, type DateRange } from '@/lib/api';
 import { glassTableClassNames } from './table-styles';
 import { HistoryToolbar, fieldSelect } from './history-toolbar';
 
@@ -46,6 +46,7 @@ export function ActivityLogTable({ initialData }: Props) {
   const [level, setLevel] = useState('all');
   const [clearing, setClearing] = useState(false);
   const [armClear, setArmClear] = useState(false);
+  const [vacuuming, setVacuuming] = useState(false);
 
   const refresh = useCallback(
     async (silent = false) => {
@@ -96,6 +97,23 @@ export function ActivityLogTable({ initialData }: Props) {
     }
   }, [armClear]);
 
+  const handleVacuum = useCallback(async () => {
+    setVacuuming(true);
+    try {
+      const res = await vacuumDatabase();
+      const prunedTotal = Object.values(res.pruned).reduce((s, n) => s + n, 0);
+      addToast({
+        title: 'Database vacuumed',
+        description: `Pruned ${prunedTotal} old row(s) and reclaimed disk space in ${res.vacuumMs}ms.`,
+        color: 'success',
+      });
+    } catch (err) {
+      addToast({ title: 'Vacuum failed', description: (err as Error).message, color: 'danger' });
+    } finally {
+      setVacuuming(false);
+    }
+  }, []);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return logs.filter((l) => {
@@ -142,6 +160,16 @@ export function ActivityLogTable({ initialData }: Props) {
             <SelectItem key={c}>{c === 'all' ? 'All categories' : c}</SelectItem>
           ))}
         </Select>
+        <Button
+          size="sm"
+          variant="flat"
+          className="w-full sm:w-auto"
+          isLoading={vacuuming}
+          onPress={handleVacuum}
+          title="Prune old rows and reclaim the disk space they were using — safe to run any time."
+        >
+          Vacuum database
+        </Button>
         <Button
           size="sm"
           variant="flat"

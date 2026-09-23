@@ -87,6 +87,13 @@ export const getLogs = (limit = 100, range?: DateRange): Promise<LogsResponse> =
 export const clearLogs = (): Promise<{ success: boolean; deleted: number }> =>
   apiFetch('/api/monitoring/logs', { method: 'DELETE' });
 
+/** Prunes old rows and reclaims the disk space they were taking up (VACUUM). */
+export const vacuumDatabase = (): Promise<{
+  success: boolean;
+  pruned: Record<string, number>;
+  vacuumMs: number;
+}> => apiFetch('/api/monitoring/vacuum', { method: 'POST' });
+
 export const getKioskStatus = (): Promise<KioskStatusResponse> =>
   apiFetch<KioskStatusResponse>('/api/monitoring/kiosk-status');
 

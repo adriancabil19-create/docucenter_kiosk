@@ -1786,6 +1786,17 @@ export const pruneOldRows = async (): Promise<Record<string, number>> => {
   return counts;
 };
 
+/**
+ * Reclaim the disk space DELETEs freed. SQLite doesn't shrink the .db file
+ * on its own — a DELETE just marks pages free for *reuse by future INSERTs*
+ * on this same file; the file itself stays at its historical peak size
+ * forever without this. `pruneOldRows` alone was never enough on a
+ * size-capped volume — this is the other half of it.
+ */
+export const vacuumDatabase = async (): Promise<void> => {
+  await getDb().execute('VACUUM');
+};
+
 // ─── Analytics aggregation ───────────────────────────────────────────────────
 
 export interface AnalyticsResult {
