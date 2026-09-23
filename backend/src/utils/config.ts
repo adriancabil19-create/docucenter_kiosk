@@ -164,10 +164,6 @@ export const config = {
     vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
   },
 
-  // Staff Print Recovery — how far back a failed-but-paid transaction stays
-  // eligible for reprint before staff must ask an Admin to reauthorize it.
-  printRecoveryWindowMinutes: parseInt(process.env.PRINT_RECOVERY_WINDOW_MINUTES || '60', 10),
-
   // Aiven / External DB (optional)
   aiven: {
     databaseUrl: process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '',

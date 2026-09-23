@@ -96,28 +96,43 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF0F172A),
-      child: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.badge_outlined, color: Colors.white, size: 40),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'STAFF ACCESS',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: _brandBlue.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(Icons.badge_outlined, color: Colors.white, size: 30),
                     ),
-                  ),
-                  const SizedBox(height: 28),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'STAFF ACCESS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
                   TextField(
                     controller: _usernameCtrl,
                     textAlign: TextAlign.center,
@@ -184,11 +199,12 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
                     onPressed: widget.onForgotPin,
                     child: const Text('Forgot PIN?', style: TextStyle(color: Colors.white70)),
                   ),
-                  TextButton(
-                    onPressed: widget.onCancel,
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
-                  ),
-                ],
+                    TextButton(
+                      onPressed: widget.onCancel,
+                      child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -58,11 +58,21 @@ let deviceProbeValue: DeviceState = 'OFFLINE';
  * Probe the Brother MFC-J2730DW (printer + scanner in one unit). Result is
  * strictly ONLINE / OFFLINE — there is no "unknown" state.
  *
- * ONLINE means: the device is installed AND Windows does not have it flagged
- * WorkOffline AND it is not reporting an error/paper-out condition. A powered-off
- * or unplugged unit reports WorkOffline (or PrinterStatus 1) and comes back
- * OFFLINE. On a non-Windows host, or a transient PowerShell failure, the last
- * known value is kept (starts OFFLINE) rather than flapping.
+ * Windows keeps a printer's driver/queue object (Win32_Printer) around even
+ * when the physical device is powered off or unplugged — `WorkOffline` is a
+ * user-toggled flag, not a live connection check, and `PrinterStatus` /
+ * `DetectedErrorState` are only refreshed when Windows actually talks to the
+ * device (e.g. during a print job), so a never-touched queue reports Idle /
+ * No Error by default regardless of whether anything real is attached. That
+ * combination alone previously reported ONLINE for a printer that was never
+ * plugged in. This is a network printer (LAN), so for any printer whose port
+ * is a TCP/IP port we also probe the device's actual IP on port 9100 (raw
+ * JetDirect printing — virtually all network printers/MFPs, including this
+ * Brother, listen there) and require that to actually respond; only a
+ * driver-only local/USB port falls back to the driver-flag check alone.
+ *
+ * On a non-Windows host, or a transient PowerShell failure, the last known
+ * value is kept (starts OFFLINE) rather than flapping.
  */
 const probeDeviceState = (): DeviceState => {
   if (os.platform() !== 'win32') return deviceProbeValue;
@@ -72,12 +82,22 @@ const probeDeviceState = (): DeviceState => {
   deviceProbeAt = now;
 
   try {
-    // One line per printer: "Name|WorkOffline|PrinterStatus|DetectedErrorState".
-    // Single quotes only inside the -Command string so it survives cmd.exe.
+    // One line per printer: "Name|WorkOffline|PrinterStatus|DetectedErrorState|HostAddress|Reachable".
+    // HostAddress/Reachable are only populated for a TCP/IP port — an actual
+    // socket probe to port 9100, not just a driver flag. Single quotes only
+    // inside the -Command string so it survives cmd.exe.
     const out = execSync(
-      "powershell -NoProfile -Command \"Get-CimInstance -ClassName Win32_Printer | " +
-        "ForEach-Object { $_.Name + '|' + $_.WorkOffline + '|' + $_.PrinterStatus + '|' + $_.DetectedErrorState }\"",
-      { encoding: 'utf8', timeout: 12000, windowsHide: true },
+      'powershell -NoProfile -Command "' +
+        'Get-CimInstance -ClassName Win32_Printer | ForEach-Object { ' +
+        '$p = $_; $ip = \'\'; $reachable = \'\'; ' +
+        '$port = Get-CimInstance -ClassName Win32_TCPIPPrinterPort -Filter "Name=\'$($p.PortName)\'" -ErrorAction SilentlyContinue; ' +
+        'if ($port -and $port.HostAddress) { ' +
+        '$ip = $port.HostAddress; ' +
+        'try { $reachable = [bool](Test-NetConnection -ComputerName $ip -Port 9100 -WarningAction SilentlyContinue -InformationLevel Quiet) } catch { $reachable = $false } ' +
+        '}; ' +
+        '$p.Name + \'|\' + $p.WorkOffline + \'|\' + $p.PrinterStatus + \'|\' + $p.DetectedErrorState + \'|\' + $ip + \'|\' + $reachable ' +
+        '}"',
+      { encoding: 'utf8', timeout: 20000, windowsHide: true },
     );
 
     const rows = out
@@ -85,7 +105,7 @@ const probeDeviceState = (): DeviceState => {
       .map((s) => s.trim())
       .filter(Boolean)
       .map((line) => {
-        const [name, workOffline, printerStatus, errState] = line.split('|');
+        const [name, workOffline, printerStatus, errState, hostAddress, reachable] = line.split('|');
         return {
           name: (name ?? '').toLowerCase(),
           workOffline: /true/i.test(workOffline ?? ''),
@@ -93,6 +113,8 @@ const probeDeviceState = (): DeviceState => {
           // 4 = Printing, 5 = Warmup. DetectedErrorState: 2 = No Error.
           printerStatus: Number(printerStatus ?? '0'),
           errState: Number(errState ?? '2'),
+          hasNetworkPort: Boolean(hostAddress),
+          networkReachable: /true/i.test(reachable ?? ''),
         };
       })
       .filter((r) => r.name && !/pdf|xps|fax|onenote|microsoft print/i.test(r.name));
@@ -102,9 +124,15 @@ const probeDeviceState = (): DeviceState => {
       ? rows.filter((r) => r.name.includes(configured) || configured.includes(r.name))
       : rows;
 
-    const anyOnline = (candidates.length ? candidates : rows).some(
-      (r) => !r.workOffline && r.printerStatus !== 1 && (r.errState === 2 || r.errState === 0),
-    );
+    const anyOnline = (candidates.length ? candidates : rows).some((r) => {
+      const driverLooksOk = !r.workOffline && r.printerStatus !== 1 && (r.errState === 2 || r.errState === 0);
+      // A network printer must actually answer on the wire — the driver flags
+      // alone are exactly what let an unplugged/powered-off unit read as
+      // ONLINE before. A local/USB-only port (no TCP/IP port found) has no
+      // such signal available, so it falls back to the driver flags alone.
+      if (r.hasNetworkPort) return driverLooksOk && r.networkReachable;
+      return driverLooksOk;
+    });
 
     deviceProbeValue = anyOnline ? 'ONLINE' : 'OFFLINE';
     return deviceProbeValue;

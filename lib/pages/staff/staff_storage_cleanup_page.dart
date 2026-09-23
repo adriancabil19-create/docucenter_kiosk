@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../storage_service.dart';
 import '../../staff_session.dart';
 import '_staff_scaffold.dart';
+import 'staff_theme.dart';
 
 /// Storage browsing + bulk cleanup (rule 21). Reuses [StorageService] rather
 /// than duplicating its HTTP calls.
@@ -47,11 +48,16 @@ class _StaffStorageCleanupPageState extends State<StaffStorageCleanupPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Are you sure?'),
         content: const Text('This will permanently remove temporary customer files.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('CLEAN')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: StaffColors.danger),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('CLEAN'),
+          ),
         ],
       ),
     );
@@ -85,41 +91,70 @@ class _StaffStorageCleanupPageState extends State<StaffStorageCleanupPage> {
       children: [
         Row(
           children: [
-            Expanded(child: _StatTile('Temporary Files', '$files')),
+            Expanded(child: _StatTile('Temporary Files', '$files', Icons.description_outlined, StaffColors.primary)),
             const SizedBox(width: 12),
-            Expanded(child: _StatTile('Storage Used', '$used')),
+            Expanded(child: _StatTile('Storage Used', '$used', Icons.storage_rounded, const Color(0xFF0891B2))),
           ],
         ),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
-          child: OutlinedButton(
+          height: 48,
+          child: OutlinedButton.icon(
             onPressed: _toggleDocuments,
-            child: Text(_showDocuments ? 'Hide Temporary Storage' : 'View Temporary Storage'),
+            icon: Icon(_showDocuments ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+            label: Text(
+              _showDocuments ? 'Hide Temporary Storage' : 'View Temporary Storage',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: StaffColors.textPrimary,
+              side: const BorderSide(color: StaffColors.border, width: 1.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
         ),
         if (_showDocuments) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           if (_documents == null)
-            const Center(child: CircularProgressIndicator())
+            const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator()))
           else if (_documents!.isEmpty)
-            const Text('No files in storage.')
+            const StaffCard(
+              child: Center(child: Text('No files in storage.', style: TextStyle(color: StaffColors.textSecondary))),
+            )
           else
-            for (final d in _documents!)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.insert_drive_file_outlined),
-                title: Text(d.originalName.isNotEmpty ? d.originalName : d.name, style: const TextStyle(fontSize: 13)),
-                subtitle: Text('${d.format} · ${d.size} · ${d.date}', style: const TextStyle(fontSize: 11)),
+            StaffCard(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Column(
+                children: [
+                  for (final d in _documents!)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.insert_drive_file_outlined, color: StaffColors.textSecondary),
+                      title: Text(
+                        d.originalName.isNotEmpty ? d.originalName : d.name,
+                        style: const TextStyle(fontSize: 13, color: StaffColors.textPrimary),
+                      ),
+                      subtitle: Text('${d.format} · ${d.size} · ${d.date}', style: const TextStyle(fontSize: 11, color: StaffColors.textMuted)),
+                    ),
+                ],
               ),
+            ),
         ],
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
           height: 52,
-          child: FilledButton.tonal(
+          child: FilledButton.icon(
             onPressed: _cleaning ? null : _confirmCleanup,
-            child: Text(_cleaning ? 'Cleaning…' : 'Clear Temporary Files'),
+            icon: _cleaning
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.delete_sweep_outlined, size: 18),
+            style: FilledButton.styleFrom(
+              backgroundColor: StaffColors.danger,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            label: Text(_cleaning ? 'Cleaning…' : 'Clear Temporary Files', style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         ),
       ],
@@ -128,21 +163,24 @@ class _StaffStorageCleanupPageState extends State<StaffStorageCleanupPage> {
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile(this.label, this.value);
+  const _StatTile(this.label, this.value, this.icon, this.color);
   final String label;
   final String value;
+  final IconData icon;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return StaffCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          StaffIconBadge(icon: icon, color: color, size: 32),
+          const SizedBox(height: 10),
+          Text(label, style: const TextStyle(fontSize: 11, color: StaffColors.textSecondary, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: StaffColors.textPrimary)),
         ],
       ),
     );

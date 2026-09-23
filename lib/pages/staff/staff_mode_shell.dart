@@ -5,7 +5,6 @@ import 'staff_dashboard_page.dart';
 import 'staff_diagnostics_page.dart';
 import 'staff_error_logs_page.dart';
 import 'staff_login_page.dart';
-import 'staff_payment_test_page.dart';
 import 'staff_pin_recovery_page.dart';
 import 'staff_print_recovery_page.dart';
 import 'staff_printer_scanner_page.dart';
@@ -66,8 +65,6 @@ class _StaffModeShellState extends State<StaffModeShell> {
         return StaffPrinterScannerPage(onBack: () => _go('dashboard'));
       case 'printRecovery':
         return StaffPrintRecoveryPage(onBack: () => _go('dashboard'));
-      case 'payment':
-        return StaffPaymentTestPage(onBack: () => _go('dashboard'));
       case 'transactions':
         return StaffTransactionsPage(onBack: () => _go('dashboard'));
       case 'errorLogs':

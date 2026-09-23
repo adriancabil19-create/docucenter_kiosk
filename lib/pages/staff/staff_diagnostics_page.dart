@@ -4,6 +4,7 @@ import '../../scanner_status.dart';
 import '../../staff_service.dart';
 import '../../storage_service.dart';
 import '_staff_scaffold.dart';
+import 'staff_theme.dart';
 
 enum _CheckState { pending, running, pass, fail, manual }
 
@@ -67,18 +68,36 @@ class _StaffDiagnosticsPageState extends State<StaffDiagnosticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final entries = _checks.values.toList();
     return StaffScaffold(
       title: 'System Diagnostics',
       onBack: widget.onBack,
       children: [
-        for (final c in _checks.values) _CheckRow(c),
-        const SizedBox(height: 16),
+        const StaffSectionLabel('Checks'),
+        const SizedBox(height: 10),
+        StaffCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Column(
+            children: [
+              for (var i = 0; i < entries.length; i++) _CheckRow(entries[i], isLast: i == entries.length - 1),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
-          height: 52,
-          child: FilledButton(
+          height: 54,
+          child: FilledButton.icon(
             onPressed: _running ? null : _runAll,
-            child: Text(_running ? 'Running…' : 'RUN FULL DIAGNOSTIC'),
+            icon: Icon(_running ? null : Icons.play_arrow_rounded),
+            style: FilledButton.styleFrom(
+              backgroundColor: StaffColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            label: Text(
+              _running ? 'RUNNING…' : 'RUN FULL DIAGNOSTIC',
+              style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.4),
+            ),
           ),
         ),
       ],
@@ -87,33 +106,39 @@ class _StaffDiagnosticsPageState extends State<StaffDiagnosticsPage> {
 }
 
 class _CheckRow extends StatelessWidget {
-  const _CheckRow(this.check);
+  const _CheckRow(this.check, {this.isLast = false});
   final _Check check;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
     final (icon, color) = switch (check.state) {
-      _CheckState.pending => (Icons.circle_outlined, Colors.grey),
-      _CheckState.running => (Icons.sync, Colors.blue),
-      _CheckState.pass => (Icons.check_circle, Colors.green),
-      _CheckState.fail => (Icons.cancel, Colors.red),
-      _CheckState.manual => (Icons.help_outline, Colors.orange),
+      _CheckState.pending => (Icons.circle_outlined, StaffColors.textMuted),
+      _CheckState.running => (Icons.sync_rounded, StaffColors.primary),
+      _CheckState.pass => (Icons.check_circle_rounded, StaffColors.success),
+      _CheckState.fail => (Icons.cancel_rounded, StaffColors.danger),
+      _CheckState.manual => (Icons.help_rounded, StaffColors.warning),
     };
     final statusText = switch (check.state) {
-      _CheckState.pending => '',
+      _CheckState.pending => 'Not run',
       _CheckState.running => 'Checking…',
       _CheckState.pass => 'Pass',
       _CheckState.fail => 'Fail',
-      _CheckState.manual => 'Manual Test Required',
+      _CheckState.manual => 'Manual test required',
     };
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      decoration: isLast
+          ? null
+          : const BoxDecoration(border: Border(bottom: BorderSide(color: StaffColors.border, width: 1))),
       child: Row(
         children: [
           Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Text(check.label)),
-          Text(statusText, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(check.label, style: const TextStyle(fontSize: 14.5, color: StaffColors.textPrimary)),
+          ),
+          Text(statusText, style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700)),
         ],
       ),
     );

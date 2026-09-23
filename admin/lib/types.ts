@@ -24,6 +24,15 @@ export interface Transaction {
   service_type: string | null;
   created_at: string;
   completed_at: string | null;
+  /** From the original (non-recovery) print job for this transaction, if any. */
+  document_names: string[];
+  paper_size: string | null;
+  copies: number | null;
+  page_count: number | null;
+  color_mode: string | null;
+  print_status: string | null;
+  /** Every recovery reprint ever attempted on this transaction, newest first. */
+  recoveries: PrintRecoveryAction[];
 }
 
 // ─── Print Jobs ───────────────────────────────────────────────────────────────

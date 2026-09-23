@@ -7,6 +7,7 @@ import '../../config.dart';
 import '../../staff_service.dart';
 import '../../staff_session.dart';
 import '_staff_scaffold.dart';
+import 'staff_theme.dart';
 
 class _ActiveRequest {
   final String id;
@@ -103,11 +104,16 @@ class _StaffAssistancePageState extends State<StaffAssistancePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Mark Resolved'),
         content: const Text('Mark this assistance request as resolved?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Resolved')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: StaffColors.success),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Resolved'),
+          ),
         ],
       ),
     );
@@ -134,7 +140,12 @@ class _StaffAssistancePageState extends State<StaffAssistancePage> {
       title: 'Assistance',
       onBack: widget.onBack,
       actions: [
-        IconButton(onPressed: _poll, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+        IconButton(
+          onPressed: _poll,
+          icon: const Icon(Icons.refresh_rounded),
+          tooltip: 'Refresh',
+          style: IconButton.styleFrom(backgroundColor: StaffColors.background, foregroundColor: StaffColors.textPrimary),
+        ),
       ],
       children: [
         if (_loading)
@@ -161,16 +172,16 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40),
+    return const StaffCard(
+      padding: EdgeInsets.symmetric(vertical: 36, horizontal: 20),
       child: Column(
         children: [
-          Icon(Icons.check_circle_outline, size: 48, color: Colors.grey[400]),
-          const SizedBox(height: 12),
+          Icon(Icons.check_circle_outline_rounded, size: 44, color: StaffColors.success),
+          SizedBox(height: 12),
           Text(
             'No customer is currently waiting for assistance at this kiosk.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[600]),
+            style: TextStyle(color: StaffColors.textSecondary),
           ),
         ],
       ),
@@ -202,44 +213,46 @@ class _RequestCard extends StatelessWidget {
       _ => ('—', Colors.grey),
     };
 
-    return Container(
+    return StaffCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+              StaffStatusPill(label: label, color: color),
+              const Spacer(),
+              const StaffIconBadge(icon: Icons.support_agent_rounded, color: StaffColors.primary, size: 36),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
+          const SizedBox(height: 14),
+          const Text(
             'A customer is requesting assistance.',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: StaffColors.textPrimary),
           ),
           if (request.message != null && request.message!.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('"${request.message}"', style: const TextStyle(fontStyle: FontStyle.italic)),
+            Text(
+              '"${request.message}"',
+              style: const TextStyle(fontStyle: FontStyle.italic, color: StaffColors.textSecondary),
+            ),
           ],
-          const SizedBox(height: 8),
-          Text('Requested: ${request.requestedAt}', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 10),
+          Text('Requested: ${request.requestedAt}', style: const TextStyle(color: StaffColors.textMuted, fontSize: 12)),
           if (request.acknowledgedBy != null)
-            Text('Assigned to: ${request.acknowledgedBy}', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            Text('Assigned to: ${request.acknowledgedBy}', style: const TextStyle(color: StaffColors.textMuted, fontSize: 12)),
           const SizedBox(height: 16),
           if (isPending)
             SizedBox(
               width: double.infinity,
               height: 52,
               child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: StaffColors.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
                 onPressed: busy ? null : onAcknowledge,
-                child: Text(busy ? 'Working…' : 'Acknowledge'),
+                child: Text(busy ? 'Working…' : 'Acknowledge', style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
           if (isAcknowledged)
@@ -247,9 +260,12 @@ class _RequestCard extends StatelessWidget {
               width: double.infinity,
               height: 52,
               child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF15803D)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: StaffColors.success,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
                 onPressed: busy ? null : onResolve,
-                child: Text(busy ? 'Working…' : 'Mark Resolved'),
+                child: Text(busy ? 'Working…' : 'Mark Resolved', style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
         ],

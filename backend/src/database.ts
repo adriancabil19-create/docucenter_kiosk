@@ -2978,9 +2978,10 @@ const mapRecoveryAction = (r: Record<string, unknown>): PrintRecoveryActionRow =
 });
 
 /**
- * Transactions eligible for Staff Print Recovery: a paid (SUCCESS) transaction
- * within the configured window whose most recent paid print job failed, and
- * that has no un-reauthorized successful recovery already on record. Returns
+ * Transactions eligible for Staff Print Recovery: any paid (SUCCESS)
+ * transaction whose most recent paid print job failed, and that has no
+ * un-reauthorized successful recovery already on record — no time limit, a
+ * failed paid print stays recoverable indefinitely until it's fixed. Returns
  * the transaction alongside the failed job it would reprint.
  */
 export interface RecoverableTransaction {
@@ -2993,10 +2994,6 @@ export const getRecoverableTransactions = async (): Promise<RecoverableTransacti
     `SELECT t.*, j.id AS job_id FROM transactions t
      JOIN print_jobs j ON j.transaction_id = t.id
      WHERE t.status = 'SUCCESS' AND j.status = 'failed' AND j.billing_type = 'paid'
-       AND t.created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-${Math.max(
-         1,
-         config.printRecoveryWindowMinutes,
-       )} minutes')
        AND NOT EXISTS (
          SELECT 1 FROM print_recovery_actions a
          WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
@@ -3022,6 +3019,91 @@ export const getRecoverableTransactions = async (): Promise<RecoverableTransacti
     });
   }
   return out;
+};
+
+export interface TransactionDetail {
+  id: string;
+  reference_number: string;
+  amount: number;
+  status: string;
+  service_type: string | null;
+  created_at: string;
+  completed_at: string | null;
+  /** From the original (non-recovery) print job for this transaction, if any. */
+  document_names: string[];
+  paper_size: string | null;
+  copies: number | null;
+  page_count: number | null;
+  color_mode: string | null;
+  print_status: string | null;
+  /** Every recovery reprint ever attempted on this transaction, newest first. */
+  recoveries: PrintRecoveryActionRow[];
+}
+
+/**
+ * The admin Transactions page's single source of truth — each row carries
+ * its real document/print details (previously only visible on the separate
+ * Print Jobs page) and its full recovery-reprint history (previously only
+ * visible on the separate Print Recovery page), joined in one place.
+ */
+export const getTransactionsDetailed = async (
+  limit = 100,
+  range?: DateRange,
+): Promise<TransactionDetail[]> => {
+  const args: Record<string, string | number> = { limit };
+  const whereParts: string[] = [];
+  if (range?.from) {
+    whereParts.push('t.created_at >= @from');
+    args.from = range.from;
+  }
+  if (range?.to) {
+    whereParts.push('t.created_at <= @to');
+    args.to = range.to;
+  }
+  const where = whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : '';
+
+  const result = await getDb().execute({
+    sql: `SELECT t.id, t.reference_number, t.amount, t.status, t.service_type, t.created_at, t.completed_at,
+                 j.filenames, j.paper_size, j.copies AS job_copies, j.page_count, j.color_mode,
+                 j.status AS job_status
+          FROM transactions t
+          LEFT JOIN print_jobs j ON j.transaction_id = t.id AND j.billing_type != 'recovery'
+          ${where}
+          ORDER BY t.created_at DESC LIMIT @limit`,
+    args,
+  });
+  const rows = toRows<Record<string, unknown>>(result);
+  if (rows.length === 0) return [];
+
+  // Recovery history is rare relative to transactions — one bounded query for
+  // everything recent, grouped in memory, instead of an IN(...) per page load.
+  const recoveryResult = await getDb().execute(
+    `SELECT * FROM print_recovery_actions ORDER BY created_at DESC LIMIT 1000`,
+  );
+  const recoveriesByTxn = new Map<string, PrintRecoveryActionRow[]>();
+  for (const raw of toRows<Record<string, unknown>>(recoveryResult)) {
+    const action = mapRecoveryAction(raw);
+    const list = recoveriesByTxn.get(action.transaction_id) ?? [];
+    list.push(action);
+    recoveriesByTxn.set(action.transaction_id, list);
+  }
+
+  return rows.map((r) => ({
+    id: String(r.id),
+    reference_number: String(r.reference_number),
+    amount: Number(r.amount),
+    status: String(r.status),
+    service_type: (r.service_type as string) ?? null,
+    created_at: String(r.created_at),
+    completed_at: (r.completed_at as string) ?? null,
+    document_names: r.filenames ? (JSON.parse(String(r.filenames)) as string[]) : [],
+    paper_size: (r.paper_size as string) ?? null,
+    copies: r.job_copies == null ? null : Number(r.job_copies),
+    page_count: r.page_count == null ? null : Number(r.page_count),
+    color_mode: (r.color_mode as string) ?? null,
+    print_status: (r.job_status as string) ?? null,
+    recoveries: recoveriesByTxn.get(String(r.id)) ?? [],
+  }));
 };
 
 export interface CreateRecoveryActionInput {

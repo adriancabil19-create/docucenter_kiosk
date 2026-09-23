@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import {
   getMonitoringStats,
   getRecentJobs,
-  getRecentTransactions,
+  getTransactionsDetailed,
   getRecentLogs,
   getTransactionById,
   cancelTransactionById,
@@ -46,10 +46,14 @@ router.get('/jobs', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// Each transaction carries its real document/print details (joined from
+// print_jobs) and its full recovery-reprint history (joined from
+// print_recovery_actions) — see getTransactionsDetailed. This replaced two
+// separate admin pages (Transactions, Print Recovery) with one.
 router.get('/transactions', async (req: Request, res: Response): Promise<void> => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 500);
-    const transactions = await getRecentTransactions(limit, parseRange(req));
+    const transactions = await getTransactionsDetailed(limit, parseRange(req));
     res.json({ success: true, transactions, count: transactions.length });
   } catch (err) {
     const error = err as Error;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../print_service.dart';
 import '../../staff_session.dart';
 import '_staff_scaffold.dart';
+import 'staff_theme.dart';
 
 const _reasons = <String, String>{
   'paper_jam': '🔧 Paper Jam',
@@ -49,6 +50,7 @@ class _StaffPrintRecoveryPageState extends State<StaffPrintRecoveryPage> {
     final picked = await showModalBottomSheet<(String, String?)>(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => _ReasonSheet(item: item),
     );
     if (picked == null) return;
@@ -87,10 +89,11 @@ class _StaffPrintRecoveryPageState extends State<StaffPrintRecoveryPage> {
         IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
       ],
       children: [
-        Text(
-          'Paid transactions from the last hour whose printing failed. Reprinting here does not '
-          'charge the customer again.',
-          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+        const StaffBanner(
+          text: 'Paid transactions whose printing failed, any time — no time limit. Reprinting here '
+              'does not charge the customer again, and is logged for the admin.',
+          color: StaffColors.primary,
+          icon: Icons.info_outline_rounded,
         ),
         const SizedBox(height: 16),
         if (_loading)
@@ -99,27 +102,23 @@ class _StaffPrintRecoveryPageState extends State<StaffPrintRecoveryPage> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (_items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40),
+          const StaffCard(
             child: Column(
               children: [
-                Icon(Icons.check_circle_outline, size: 48, color: Colors.grey[400]),
-                const SizedBox(height: 12),
-                Text(
-                  'No transactions currently need recovery.',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+                Icon(Icons.check_circle_outline_rounded, size: 40, color: StaffColors.success),
+                SizedBox(height: 12),
+                Text('No transactions currently need recovery.', style: TextStyle(color: StaffColors.textSecondary)),
               ],
             ),
           )
         else
-          for (final item in _items)
+          for (var i = 0; i < _items.length; i++)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: EdgeInsets.only(bottom: i == _items.length - 1 ? 0 : 10),
               child: _RecoveryCard(
-                item: item,
-                busy: _actingOnTransactionId == item.transactionId,
-                onRecover: () => _startRecovery(item),
+                item: _items[i],
+                busy: _actingOnTransactionId == _items[i].transactionId,
+                onRecover: () => _startRecovery(_items[i]),
               ),
             ),
       ],
@@ -135,29 +134,45 @@ class _RecoveryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return StaffCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(item.referenceNumber, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(
-            '₱${item.amount.toStringAsFixed(2)} · ${item.printJob.pageCount}p × ${item.printJob.copies} · ${item.printJob.serviceType}',
-            style: TextStyle(color: Colors.grey[700], fontSize: 13),
-          ),
-          Text(item.createdAt, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: busy ? null : onRecover,
-              child: Text(busy ? 'Working…' : 'Recover Print'),
+          const StaffIconBadge(icon: Icons.restart_alt_rounded, color: StaffColors.warning, size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.referenceNumber, style: const TextStyle(fontWeight: FontWeight.w800, color: StaffColors.textPrimary)),
+                const SizedBox(height: 4),
+                Text(
+                  '₱${item.amount.toStringAsFixed(2)} · ${item.printJob.pageCount}p × ${item.printJob.copies} · ${item.printJob.serviceType}',
+                  style: const TextStyle(color: StaffColors.textSecondary, fontSize: 13),
+                ),
+                Text(item.createdAt, style: const TextStyle(color: StaffColors.textMuted, fontSize: 11)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: FilledButton.icon(
+                    onPressed: busy ? null : onRecover,
+                    icon: busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.print_rounded, size: 18),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: StaffColors.warning,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    label: Text(busy ? 'Working…' : 'Recover Print', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -228,7 +243,11 @@ class _ReasonSheetState extends State<_ReasonSheet> {
               onPressed: _canConfirm
                   ? () => Navigator.pop(context, (_reason!, _noteController.text.trim().isEmpty ? null : _noteController.text.trim()))
                   : null,
-              child: const Text('Confirm Recovery Print'),
+              style: FilledButton.styleFrom(
+                backgroundColor: StaffColors.warning,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Confirm Recovery Print', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
         ],
