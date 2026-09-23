@@ -43,13 +43,23 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
+  // Traces only the dependencies actually reachable from the built app into
+  // .next/standalone, instead of shipping the full ~300-400MB node_modules
+  // in the deployed image. Railway's Railpack builder detects this and
+  // copies public/ + .next/static into the standalone output for you —
+  // this is what actually shrinks the image (and therefore the Docker
+  // export / upload step), not the npm-install-time tweaks alone.
+  output: 'standalone',
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
-  webpack(config) {
-    config.resolve.alias["@"] = path.resolve(__dirname);
-    return config;
-  },
+  // No webpack()/turbopack config needed: the `@/*` alias every import in
+  // this app uses is already resolved from tsconfig.json's `paths` — both
+  // Next's webpack and Turbopack builds pick that up natively. A custom
+  // `webpack(config)` block that only duplicated this alias used to force
+  // `next build` onto the slower webpack bundler (Turbopack refuses to run
+  // silently past an unmigrated webpack config); removing it lets `next
+  // build` use Turbopack, which is the default in Next.js 16.
 };
 
 export default nextConfig;

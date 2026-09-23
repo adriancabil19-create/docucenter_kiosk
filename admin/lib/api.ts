@@ -49,6 +49,13 @@ function withRange(path: string, limit: number, range?: DateRange): string {
   return `${path}?${params.toString()}`;
 }
 
+/** Mirrors the timeout in lib/backend.ts (the server-side equivalent of this
+ * function) — several components here poll on a timer (see
+ * lib/use-poll.ts / lib/use-visible-interval.ts), and without a bound, one
+ * stalled request leaves that component stuck showing stale data with no
+ * visible error, indistinguishable from "nothing new happened". */
+const REQUEST_TIMEOUT_MS = 10_000;
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -57,6 +64,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
     cache: 'no-store',
+    signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!res.ok) {

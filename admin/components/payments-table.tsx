@@ -20,6 +20,7 @@ import {
 import { addToast } from '@heroui/react';
 import type { Transaction } from '@/lib/types';
 import { getTransactions, cancelTransaction, type DateRange } from '@/lib/api';
+import { useVisibleInterval } from '@/lib/use-visible-interval';
 import { StatusChip } from '@/components/status-chip';
 import { glassTableClassNames } from '@/components/table-styles';
 import { HistoryToolbar } from '@/components/history-toolbar';
@@ -80,9 +81,8 @@ export function PaymentsTable({ initialData }: Props) {
 
   useEffect(() => {
     refresh(true);
-    const id = setInterval(() => refresh(true), 30_000);
-    return () => clearInterval(id);
   }, [refresh]);
+  useVisibleInterval(() => refresh(true), 30_000);
 
   const openCancel = useCallback(
     (tx: Transaction) => {

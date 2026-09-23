@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Table,
   TableHeader,
@@ -18,6 +18,7 @@ import {
   addToast,
 } from '@heroui/react';
 import { getDocuments, deleteDocument } from '@/lib/api';
+import { useVisibleInterval } from '@/lib/use-visible-interval';
 import type { StorageDocument } from '@/lib/types';
 import { glassTableClassNames } from './table-styles';
 
@@ -62,11 +63,9 @@ export function StorageTable({ initialData }: Props) {
     }
   }, []);
 
-  // Auto-refresh every 30 seconds so newly uploaded files appear without manual action
-  useEffect(() => {
-    const id = setInterval(() => refresh(true), 30_000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  // Auto-refresh every 30 seconds so newly uploaded files appear without
+  // manual action — paused while this tab is hidden (see useVisibleInterval).
+  useVisibleInterval(() => refresh(true), 30_000);
 
   const confirmDelete = useCallback(
     (doc: StorageDocument) => {

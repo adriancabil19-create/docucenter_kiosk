@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useVisibleInterval } from './use-visible-interval';
 
 interface PollState<T> {
   data: T | null;
@@ -43,31 +44,10 @@ export function usePoll<T>(
   }, []);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    const start = () => {
-      if (timer) return;
-      timer = setInterval(() => {
-        if (document.visibilityState === 'visible') void refresh();
-      }, intervalMs);
-    };
-    const stop = () => {
-      if (timer) clearInterval(timer);
-      timer = null;
-    };
-
     void refresh();
-    start();
+  }, [refresh]);
 
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [refresh, intervalMs]);
+  useVisibleInterval(() => void refresh(), intervalMs);
 
   return { data, error, loading, refresh, updatedAt };
 }

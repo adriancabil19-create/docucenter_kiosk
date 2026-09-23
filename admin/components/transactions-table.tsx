@@ -13,6 +13,7 @@ import {
   addToast,
 } from '@heroui/react';
 import { getTransactions, reauthorizeRecovery, type DateRange } from '@/lib/api';
+import { useVisibleInterval } from '@/lib/use-visible-interval';
 import type { Transaction, PrintRecoveryAction, PrintRecoveryResult } from '@/lib/types';
 import { StatusChip } from './status-chip';
 import { StatCard } from './stat-card';
@@ -94,12 +95,12 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
     [range],
   );
 
-  // Refetch when the date range changes, and poll every 30s with current filters.
+  // Refetch when the date range changes, and poll every 30s with current
+  // filters — paused while this tab is hidden (see useVisibleInterval).
   useEffect(() => {
     refresh(true);
-    const id = setInterval(() => refresh(true), 30_000);
-    return () => clearInterval(id);
   }, [refresh]);
+  useVisibleInterval(() => refresh(true), 30_000);
 
   const recoveryCounts = useMemo(() => {
     const all = rows.flatMap((tx) => tx.recoveries);

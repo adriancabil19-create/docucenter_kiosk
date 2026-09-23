@@ -12,6 +12,7 @@ import {
   addToast,
 } from '@heroui/react';
 import { getPrintJobs, type DateRange } from '@/lib/api';
+import { useVisibleInterval } from '@/lib/use-visible-interval';
 import type { PrintJob } from '@/lib/types';
 import { StatusChip } from './status-chip';
 import { glassTableClassNames } from './table-styles';
@@ -70,9 +71,8 @@ export function PrintJobsTable({ initialData }: Props) {
 
   useEffect(() => {
     refresh(true);
-    const id = setInterval(() => refresh(true), 30_000);
-    return () => clearInterval(id);
   }, [refresh]);
+  useVisibleInterval(() => refresh(true), 30_000);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
