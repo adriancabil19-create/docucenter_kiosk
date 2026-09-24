@@ -155,9 +155,10 @@ export function InstallPrompt() {
           )}
           {platform === 'waiting' && (
             <p className="mt-1 text-slate-600">
-              No Install button? DocuCenter is most likely <strong>already installed</strong> — open it
-              from your home screen, or check <code>chrome://apps</code>. Your browser only offers
-              installation when the app is not installed yet.
+              No Install button? Your browser still thinks DocuCenter is installed — it only offers
+              installation when it is not. If you already removed it, open this site&apos;s settings
+              (tap the icon left of the address bar) and choose{' '}
+              <strong>Clear &amp; reset</strong>, then reload this page.
             </p>
           )}
         </div>
