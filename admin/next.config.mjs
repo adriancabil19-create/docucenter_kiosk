@@ -44,7 +44,18 @@ const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Browsers must always re-fetch the worker so updates reach installed apps.
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+        ],
+      },
+    ];
   },
   // No webpack()/turbopack config needed: the `@/*` alias every import in
   // this app uses is already resolved from tsconfig.json's `paths` — both

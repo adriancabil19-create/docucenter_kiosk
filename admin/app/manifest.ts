@@ -13,6 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'DocuCenter Admin',
     short_name: 'DocuCenter',
     description: 'Admin console for the DocuCenter Kiosk',
+    id: '/',
+    scope: '/',
     start_url: '/',
     display: 'standalone',
     background_color: '#f8fafc',
