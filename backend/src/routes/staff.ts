@@ -29,7 +29,7 @@ import {
   bumpStaffLogin,
   verifyPin,
   getStaffActivityLogs,
-  getStaffTransactionsView,
+  getTransactionsDetailed,
   createPinResetRequest,
   getPinResetRequest,
   listPendingPinResetRequests,
@@ -439,7 +439,8 @@ router.post(
 router.get('/transactions', requireKioskApiToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const transactions = await getStaffTransactionsView(limit);
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const transactions = await getTransactionsDetailed(limit, undefined, search);
     res.json({ success: true, transactions, count: transactions.length });
   } catch (err) {
     logger.error('Staff: transactions fetch failed', { error: String(err) });

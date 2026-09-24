@@ -562,6 +562,7 @@ class PAYMONGOPaymentPageState extends State<PAYMONGOPaymentPage> {
                                 quality: quality,
                                 duplex: duplex,
                                 transactionId: transactionId,
+                                customerCopies: copies,
                               );
                             }
                             ScaffoldMessenger.of(context).showSnackBar(

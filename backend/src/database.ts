@@ -350,6 +350,15 @@ export const initSchema = async (): Promise<void> => {
   // authorized print, without overloading service_type (which answers "what
   // was printed", a different axis).
   await addColumn(`ALTER TABLE print_jobs ADD COLUMN billing_type TEXT NOT NULL DEFAULT 'paid'`);
+  // print_jobs: full paid configuration + printer outcome. The row is written
+  // with status 'printing' BEFORE the printer is called, so a crash or an
+  // undetected jam still leaves what the customer paid for on record.
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN quality TEXT`);
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN printer_name TEXT`);
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN printer_job_id TEXT`);
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN started_at TEXT`);
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN completed_at TEXT`);
+  await addColumn(`ALTER TABLE print_jobs ADD COLUMN error_message TEXT`);
   // kiosk_commands: re-delivery bookkeeping so a command that is claimed but
   // never ACKed (kiosk crash, lost ACK, flaky link) is handed out again instead
   // of silently stalling as 'delivered' forever.
@@ -484,17 +493,29 @@ export interface PrintJobRow {
   service_type?: string;
   /** Who/why this job was billed — 'paid' unless a staff action created it. */
   billing_type?: PrintBillingType;
+  quality?: string | null;
+  printer_name?: string | null;
+  /** The print pipeline's own job id, distinct from this row's id. */
+  printer_job_id?: string | null;
+  started_at?: string | null;
+  /** When the software considered the job done — not proof paper came out. */
+  completed_at?: string | null;
+  error_message?: string | null;
 }
+
+export const nowIso = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
   try {
     await getDb().execute({
       sql: `INSERT INTO print_jobs
               (id, transaction_id, filenames, paper_size, copies, status, method, simulated,
-               page_count, color_mode, duplex, unit_price, service_type, billing_type)
+               page_count, color_mode, duplex, unit_price, service_type, billing_type,
+               quality, printer_name, printer_job_id, started_at, completed_at, error_message)
             VALUES
               (@id, @transaction_id, @filenames, @paper_size, @copies, @status, @method, @simulated,
-               @page_count, @color_mode, @duplex, @unit_price, @service_type, @billing_type)`,
+               @page_count, @color_mode, @duplex, @unit_price, @service_type, @billing_type,
+               @quality, @printer_name, @printer_job_id, @started_at, @completed_at, @error_message)`,
       args: {
         id: row.id,
         transaction_id: row.transaction_id ?? null,
@@ -510,11 +531,63 @@ export const insertPrintJob = async (row: PrintJobRow): Promise<void> => {
         unit_price: row.unit_price ?? 0,
         service_type: row.service_type ?? 'printing',
         billing_type: row.billing_type ?? 'paid',
+        quality: row.quality ?? null,
+        printer_name: row.printer_name ?? null,
+        printer_job_id: row.printer_job_id ?? null,
+        started_at: row.started_at ?? null,
+        completed_at: row.completed_at ?? null,
+        error_message: row.error_message ?? null,
       },
     });
     syncEvent('print-job', row);
   } catch (err) {
     logger.warn('Failed to insert print job', { id: row.id, error: String(err) });
+    throw err;
+  }
+};
+
+export interface PrintJobResultUpdate {
+  id: string;
+  status: 'submitted' | 'failed';
+  method?: string | null;
+  simulated?: boolean;
+  printer_name?: string | null;
+  printer_job_id?: string | null;
+  completed_at?: string | null;
+  error_message?: string | null;
+  /** Only when the real count is known after printing (image layouts, photocopies). */
+  page_count?: number;
+}
+
+/** Records what the printer pipeline reported, on the row created before printing. */
+export const updatePrintJobResult = async (u: PrintJobResultUpdate): Promise<void> => {
+  try {
+    await getDb().execute({
+      sql: `UPDATE print_jobs SET
+              status = @status,
+              method = COALESCE(@method, method),
+              simulated = COALESCE(@simulated, simulated),
+              printer_name = COALESCE(@printer_name, printer_name),
+              printer_job_id = COALESCE(@printer_job_id, printer_job_id),
+              completed_at = @completed_at,
+              error_message = @error_message,
+              page_count = COALESCE(@page_count, page_count)
+            WHERE id = @id`,
+      args: {
+        id: u.id,
+        status: u.status,
+        method: u.method ?? null,
+        simulated: u.simulated == null ? null : u.simulated ? 1 : 0,
+        printer_name: u.printer_name ?? null,
+        printer_job_id: u.printer_job_id ?? null,
+        completed_at: u.completed_at ?? null,
+        error_message: u.error_message ?? null,
+        page_count: u.page_count == null ? null : Math.max(0, Math.trunc(u.page_count)),
+      },
+    });
+    syncEvent('print-job-update', u);
+  } catch (err) {
+    logger.warn('Failed to update print job result', { id: u.id, error: String(err) });
     throw err;
   }
 };
@@ -538,6 +611,12 @@ export const getPrintJobById = async (id: string): Promise<PrintJobRow | null> =
     unit_price: Number(row.unit_price ?? 0),
     service_type: String(row.service_type ?? 'printing'),
     billing_type: (String(row.billing_type ?? 'paid') as PrintBillingType),
+    quality: (row.quality as string) ?? null,
+    printer_name: (row.printer_name as string) ?? null,
+    printer_job_id: (row.printer_job_id as string) ?? null,
+    started_at: (row.started_at as string) ?? null,
+    completed_at: (row.completed_at as string) ?? null,
+    error_message: (row.error_message as string) ?? null,
   };
 };
 
@@ -2343,39 +2422,6 @@ export const getStaffActivityLogs = async (limit = 100): Promise<ActivityLogRow[
   return toRows<ActivityLogRow>(result);
 };
 
-export interface StaffTransactionView {
-  id: string;
-  created_at: string;
-  service_type: string;
-  page_count: number;
-  copies: number;
-  amount: number | null;
-  payment_status: string | null;
-  printing_status: string;
-}
-
-/** Trimmed transaction+job view for the Staff dashboard (no customer PII exists in this schema). */
-export const getStaffTransactionsView = async (limit = 50): Promise<StaffTransactionView[]> => {
-  const result = await getDb().execute({
-    sql: `SELECT j.id, j.created_at, j.service_type, j.page_count, j.copies, j.status AS printing_status,
-                 t.amount, t.status AS payment_status
-          FROM print_jobs j
-          LEFT JOIN transactions t ON t.id = j.transaction_id
-          ORDER BY j.created_at DESC LIMIT @limit`,
-    args: { limit },
-  });
-  return toRows<Record<string, unknown>>(result).map((r) => ({
-    id: String(r.id),
-    created_at: String(r.created_at),
-    service_type: String(r.service_type ?? 'printing'),
-    page_count: Number(r.page_count ?? 0),
-    copies: Number(r.copies ?? 1),
-    amount: r.amount == null ? null : Number(r.amount),
-    payment_status: (r.payment_status as string) ?? null,
-    printing_status: String(r.printing_status ?? 'submitted'),
-  }));
-};
-
 /** Returns true if the account is now locked as a result of this failure. */
 export const recordStaffPinFailure = async (id: string): Promise<boolean> => {
   const row = await getStaffRowById(id);
@@ -3072,13 +3118,28 @@ export const isPushSubscribed = async (endpoint: string): Promise<boolean> => {
 
 // ─── Staff Print Recovery ─────────────────────────────────────────────────────
 
+// power_interruption / printer_offline are no longer offered in the kiosk UI
+// but stay valid so older recovery rows keep a known reason.
 export type PrintRecoveryReason =
   | 'paper_jam'
   | 'printer_error'
+  | 'printer_failed_to_print'
+  | 'printer_no_error_reported'
   | 'incorrect_output'
   | 'power_interruption'
   | 'printer_offline'
   | 'other';
+
+export const PRINT_RECOVERY_REASON_LABELS: Record<PrintRecoveryReason, string> = {
+  paper_jam: 'Printer paper jam',
+  printer_error: 'Printer hardware error',
+  printer_failed_to_print: 'Printer failed to print',
+  printer_no_error_reported: 'Printer did not report error',
+  incorrect_output: 'Incorrect/partial print',
+  power_interruption: 'Power interruption',
+  printer_offline: 'Printer offline',
+  other: 'Other',
+};
 
 export type PrintRecoveryResult = 'pending' | 'success' | 'failed';
 
@@ -3114,116 +3175,170 @@ const mapRecoveryAction = (r: Record<string, unknown>): PrintRecoveryActionRow =
   created_at: String(r.created_at),
 });
 
-/**
- * Transactions eligible for Staff Print Recovery: any paid (SUCCESS)
- * transaction with a paid print job in the last [sinceDays] days, that has
- * no un-reauthorized successful recovery already on record.
- *
- * Deliberately NOT filtered to `j.status = 'failed'` — that only covers a
- * *software-detected* failure (driver/spool error), which is the rare case.
- * The actual reason this page exists is the opposite scenario: the OS
- * reports the job as submitted/done, but the printer physically jammed, ran
- * out of paper mid-job, or produced garbage output — the software has no
- * way to know that happened, so a paid job's status alone can't gate
- * eligibility. Staff learn about the failure from the customer, then find
- * and pick the transaction here; the confirmation dialog (not this list) is
- * what has to make the original job details unambiguous. Bounded to recent
- * days so this list doesn't grow to every successful print ever made —
- * unlike the old failed-only version, "successful and needs no action" is
- * now the overwhelming majority of what would otherwise be listed here.
- */
-export interface RecoverableTransaction {
-  transaction: TransactionRow;
-  printJob: PrintJobRow;
-}
+/** Payment state as staff read it — independent of what happened at the printer. */
+export type PaymentStatusLabel = 'PAID' | 'UNPAID' | 'REFUNDED';
 
-export const getRecoverableTransactions = async (
-  sinceDays = 7,
-): Promise<RecoverableTransaction[]> => {
-  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .replace(/\.\d{3}Z$/, 'Z');
-  const result = await getDb().execute({
-    sql: `SELECT t.*, j.id AS job_id FROM transactions t
-     JOIN print_jobs j ON j.transaction_id = t.id
-     WHERE t.status = 'SUCCESS' AND j.billing_type = 'paid' AND t.created_at >= @since
-       AND NOT EXISTS (
-         SELECT 1 FROM print_recovery_actions a
-         WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
-       )
-     ORDER BY t.created_at DESC`,
-    args: { since },
-  });
-  const rows = toRows<Record<string, unknown>>(result);
-  const out: RecoverableTransaction[] = [];
-  for (const r of rows) {
-    const printJob = await getPrintJobById(String(r.job_id));
-    if (!printJob) continue;
-    out.push({
-      transaction: {
-        id: String(r.id),
-        reference_number: String(r.reference_number),
-        amount: Number(r.amount),
-        status: String(r.status),
-        service_type: (r.service_type as string) ?? undefined,
-        created_at: String(r.created_at),
-        completed_at: (r.completed_at as string) ?? undefined,
-      },
-      printJob,
-    });
-  }
-  return out;
-};
+/**
+ * Where the transaction stands overall. Derived from the persisted
+ * transaction → print job → recovery chain rather than stored, so a later
+ * recovery never overwrites the original transaction or job row.
+ */
+export type TransactionDisplayStatus =
+  | 'PENDING_PAYMENT'
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'PAID'
+  | 'PRINTING'
+  | 'COMPLETED'
+  | 'RECOVERY_REQUIRED'
+  | 'RECOVERED';
 
 export interface TransactionDetail {
   id: string;
   reference_number: string;
   amount: number;
+  /** Raw payment status as stored (SUCCESS, PENDING, CANCELLED…). */
   status: string;
+  payment_status: PaymentStatusLabel;
+  display_status: TransactionDisplayStatus;
+  /** Paid, and the software already knows the print went wrong (or never finished). */
+  needs_recovery: boolean;
   service_type: string | null;
   created_at: string;
   completed_at: string | null;
   /** From the original (non-recovery) print job for this transaction, if any. */
+  print_job_id: string | null;
+  printer_job_id: string | null;
   document_names: string[];
+  document_type: string | null;
   paper_size: string | null;
   copies: number | null;
+  /** Source pages per copy. */
   page_count: number | null;
+  /** page_count × copies. */
+  total_pages: number | null;
   color_mode: string | null;
+  quality: string | null;
   duplex: boolean | null;
   unit_price: number | null;
   print_status: string | null;
+  printer_name: string | null;
+  print_started_at: string | null;
+  print_completed_at: string | null;
+  print_error: string | null;
   /** Every recovery reprint ever attempted on this transaction, newest first. */
   recoveries: PrintRecoveryActionRow[];
 }
 
-/**
- * The admin Transactions page's single source of truth — each row carries
- * its real document/print details (previously only visible on the separate
- * Print Jobs page) and its full recovery-reprint history (previously only
- * visible on the separate Print Recovery page), joined in one place.
- */
-export const getTransactionsDetailed = async (
-  limit = 100,
-  range?: DateRange,
-): Promise<TransactionDetail[]> => {
-  const args: Record<string, string | number> = { limit };
-  const whereParts: string[] = [];
-  if (range?.from) {
-    whereParts.push('t.created_at >= @from');
-    args.from = range.from;
+/** A job still 'printing' after this long means the process died mid-print. */
+const STUCK_PRINTING_MS = 10 * 60 * 1000;
+
+const documentTypeFor = (serviceType: string | null, names: string[]): string | null => {
+  if (serviceType === 'photocopying') return 'Photocopy (scanned originals)';
+  if (serviceType === 'image-print') return 'Image print';
+  const ext = names[0]?.split('.').pop()?.toLowerCase();
+  if (!ext || names[0] === ext) return null;
+  const known: Record<string, string> = {
+    pdf: 'PDF', doc: 'Word', docx: 'Word', xls: 'Excel', xlsx: 'Excel', ppt: 'PowerPoint',
+    pptx: 'PowerPoint', rtf: 'Rich Text', txt: 'Text', jpg: 'Image', jpeg: 'Image',
+    png: 'Image', bmp: 'Image', gif: 'Image',
+  };
+  return known[ext] ?? ext.toUpperCase();
+};
+
+const paymentStatusFor = (status: string): PaymentStatusLabel => {
+  const s = status.toUpperCase();
+  if (s === 'SUCCESS') return 'PAID';
+  if (s === 'REFUNDED') return 'REFUNDED';
+  return 'UNPAID';
+};
+
+const displayStatusFor = (
+  status: string,
+  jobStatus: string | null,
+  jobStartedAt: string | null,
+  recoveries: PrintRecoveryActionRow[],
+): { display: TransactionDisplayStatus; needsRecovery: boolean } => {
+  const s = status.toUpperCase();
+  if (s === 'PENDING' || s === 'PROCESSING') return { display: 'PENDING_PAYMENT', needsRecovery: false };
+  if (s === 'CANCELLED' || s === 'EXPIRED') return { display: 'CANCELLED', needsRecovery: false };
+  if (s !== 'SUCCESS') return { display: 'FAILED', needsRecovery: false };
+
+  const latest = recoveries[0];
+  if (latest?.result === 'success' && !latest.reauthorized_at) return { display: 'RECOVERED', needsRecovery: false };
+  if (latest && latest.result !== 'success') return { display: 'RECOVERY_REQUIRED', needsRecovery: true };
+
+  if (!jobStatus) return { display: 'PAID', needsRecovery: false };
+  if (jobStatus === 'failed') return { display: 'FAILED', needsRecovery: true };
+  if (jobStatus === 'printing') {
+    const stuck = !!jobStartedAt && Date.now() - Date.parse(jobStartedAt) > STUCK_PRINTING_MS;
+    return { display: 'PRINTING', needsRecovery: stuck };
   }
-  if (range?.to) {
+  return { display: 'COMPLETED', needsRecovery: false };
+};
+
+interface TransactionQuery {
+  limit?: number;
+  range?: DateRange;
+  /** Matches transaction id, payment reference, document name, or date text. */
+  search?: string;
+  transactionId?: string;
+  /** Only paid transactions with a paid print job, not locked by a successful recovery. */
+  recoverableSince?: string;
+}
+
+/**
+ * Single source of truth for transaction history: the transaction, its
+ * original (non-recovery) print job, the printer result recorded on that job,
+ * and every recovery event — used by the admin Transactions page, the kiosk
+ * Staff Transactions page, and Staff Print Recovery.
+ */
+const queryTransactionDetails = async (q: TransactionQuery): Promise<TransactionDetail[]> => {
+  const args: Record<string, string | number> = { limit: Math.min(q.limit ?? 100, 500) };
+  const whereParts: string[] = [];
+  if (q.range?.from) {
+    whereParts.push('t.created_at >= @from');
+    args.from = q.range.from;
+  }
+  if (q.range?.to) {
     whereParts.push('t.created_at <= @to');
-    args.to = range.to;
+    args.to = q.range.to;
+  }
+  if (q.transactionId) {
+    whereParts.push('t.id = @transactionId');
+    args.transactionId = q.transactionId;
+  }
+  const search = q.search?.trim();
+  if (search) {
+    // Dates are stored in UTC; staff type the kiosk's local date and time.
+    whereParts.push(`(t.id LIKE @q ESCAPE '\\' OR t.reference_number LIKE @q ESCAPE '\\'
+                      OR j.filenames LIKE @q ESCAPE '\\' OR j.id LIKE @q ESCAPE '\\'
+                      OR datetime(t.created_at, 'localtime') LIKE @q ESCAPE '\\')`);
+    args.q = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  }
+  if (q.recoverableSince) {
+    whereParts.push(`t.status = 'SUCCESS' AND j.billing_type = 'paid' AND t.created_at >= @since
+      AND NOT EXISTS (
+        SELECT 1 FROM print_recovery_actions a
+        WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
+      )`);
+    args.since = q.recoverableSince;
   }
   const where = whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : '';
 
+  // Latest non-recovery job only, so a transaction never appears twice.
   const result = await getDb().execute({
     sql: `SELECT t.id, t.reference_number, t.amount, t.status, t.service_type, t.created_at, t.completed_at,
-                 j.filenames, j.paper_size, j.copies AS job_copies, j.page_count, j.color_mode,
-                 j.duplex, j.unit_price, j.status AS job_status
+                 j.id AS job_id, j.filenames, j.paper_size, j.copies AS job_copies, j.page_count, j.color_mode,
+                 j.duplex, j.unit_price, j.status AS job_status, j.service_type AS job_service_type,
+                 j.quality, j.printer_name, j.printer_job_id, j.started_at AS job_started_at,
+                 j.completed_at AS job_completed_at, j.error_message, j.created_at AS job_created_at
           FROM transactions t
-          LEFT JOIN print_jobs j ON j.transaction_id = t.id AND j.billing_type != 'recovery'
+          LEFT JOIN print_jobs j ON j.id = (
+            SELECT id FROM print_jobs
+            WHERE transaction_id = t.id AND billing_type != 'recovery'
+            ORDER BY created_at DESC LIMIT 1
+          )
           ${where}
           ORDER BY t.created_at DESC LIMIT @limit`,
     args,
@@ -3231,11 +3346,12 @@ export const getTransactionsDetailed = async (
   const rows = toRows<Record<string, unknown>>(result);
   if (rows.length === 0) return [];
 
-  // Recovery history is rare relative to transactions — one bounded query for
-  // everything recent, grouped in memory, instead of an IN(...) per page load.
-  const recoveryResult = await getDb().execute(
-    `SELECT * FROM print_recovery_actions ORDER BY created_at DESC LIMIT 1000`,
-  );
+  const recoveryResult = await getDb().execute({
+    sql: `SELECT * FROM print_recovery_actions
+          WHERE transaction_id IN (${rows.map((_, i) => `@t${i}`).join(',')})
+          ORDER BY created_at DESC`,
+    args: Object.fromEntries(rows.map((r, i) => [`t${i}`, String(r.id)])),
+  });
   const recoveriesByTxn = new Map<string, PrintRecoveryActionRow[]>();
   for (const raw of toRows<Record<string, unknown>>(recoveryResult)) {
     const action = mapRecoveryAction(raw);
@@ -3244,24 +3360,78 @@ export const getTransactionsDetailed = async (
     recoveriesByTxn.set(action.transaction_id, list);
   }
 
-  return rows.map((r) => ({
-    id: String(r.id),
-    reference_number: String(r.reference_number),
-    amount: Number(r.amount),
-    status: String(r.status),
-    service_type: (r.service_type as string) ?? null,
-    created_at: String(r.created_at),
-    completed_at: (r.completed_at as string) ?? null,
-    document_names: r.filenames ? (JSON.parse(String(r.filenames)) as string[]) : [],
-    paper_size: (r.paper_size as string) ?? null,
-    copies: r.job_copies == null ? null : Number(r.job_copies),
-    page_count: r.page_count == null ? null : Number(r.page_count),
-    color_mode: (r.color_mode as string) ?? null,
-    duplex: r.duplex == null ? null : Number(r.duplex) === 1,
-    unit_price: r.unit_price == null ? null : Number(r.unit_price),
-    print_status: (r.job_status as string) ?? null,
-    recoveries: recoveriesByTxn.get(String(r.id)) ?? [],
-  }));
+  return rows.map((r) => {
+    const names = r.filenames ? (JSON.parse(String(r.filenames)) as string[]) : [];
+    const recoveries = recoveriesByTxn.get(String(r.id)) ?? [];
+    const serviceType = (r.job_service_type as string) ?? (r.service_type as string) ?? null;
+    const copies = r.job_copies == null ? null : Number(r.job_copies);
+    const pageCount = r.page_count == null ? null : Number(r.page_count);
+    const jobStatus = (r.job_status as string) ?? null;
+    const startedAt = (r.job_started_at as string) ?? (r.job_created_at as string) ?? null;
+    const { display, needsRecovery } = displayStatusFor(String(r.status), jobStatus, startedAt, recoveries);
+    return {
+      id: String(r.id),
+      reference_number: String(r.reference_number),
+      amount: Number(r.amount),
+      status: String(r.status),
+      payment_status: paymentStatusFor(String(r.status)),
+      display_status: display,
+      needs_recovery: needsRecovery,
+      service_type: serviceType,
+      created_at: String(r.created_at),
+      completed_at: (r.completed_at as string) ?? null,
+      print_job_id: (r.job_id as string) ?? null,
+      printer_job_id: (r.printer_job_id as string) ?? null,
+      document_names: names,
+      document_type: r.job_id ? documentTypeFor(serviceType, names) : null,
+      paper_size: (r.paper_size as string) ?? null,
+      copies,
+      page_count: pageCount,
+      total_pages: copies != null && pageCount != null ? copies * pageCount : null,
+      color_mode: (r.color_mode as string) ?? null,
+      quality: (r.quality as string) ?? null,
+      duplex: r.duplex == null ? null : Number(r.duplex) === 1,
+      unit_price: r.unit_price == null ? null : Number(r.unit_price),
+      print_status: jobStatus,
+      printer_name: (r.printer_name as string) ?? null,
+      print_started_at: startedAt,
+      print_completed_at: (r.job_completed_at as string) ?? null,
+      print_error: (r.error_message as string) ?? null,
+      recoveries,
+    };
+  });
+};
+
+export const getTransactionsDetailed = async (
+  limit = 100,
+  range?: DateRange,
+  search?: string,
+): Promise<TransactionDetail[]> => queryTransactionDetails({ limit, range, search });
+
+/**
+ * Transactions eligible for Staff Print Recovery: any paid transaction with a
+ * paid print job in the last [sinceDays] days that has no un-reauthorized
+ * successful recovery on record.
+ *
+ * Deliberately NOT limited to jobs the software saw fail: the usual case is
+ * the OS reporting the job done while the printer physically jammed or
+ * produced bad output. Staff hear about it from the customer and find the
+ * transaction here; needs_recovery flags the ones the software already knows
+ * about so they sort first.
+ */
+export const getRecoverableTransactions = async (
+  opts: { sinceDays?: number; search?: string; transactionId?: string } = {},
+): Promise<TransactionDetail[]> => {
+  const since = new Date(Date.now() - (opts.sinceDays ?? 7) * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z');
+  const rows = await queryTransactionDetails({
+    limit: 200,
+    search: opts.search,
+    transactionId: opts.transactionId,
+    recoverableSince: since,
+  });
+  return rows.sort((a, b) => Number(b.needs_recovery) - Number(a.needs_recovery));
 };
 
 export interface CreateRecoveryActionInput {

@@ -503,6 +503,8 @@ export interface PinResetDecisionResponse {
 export type PrintRecoveryReason =
   | 'paper_jam'
   | 'printer_error'
+  | 'printer_failed_to_print'
+  | 'printer_no_error_reported'
   | 'incorrect_output'
   | 'power_interruption'
   | 'printer_offline'

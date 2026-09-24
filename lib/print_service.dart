@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 import 'kiosk_runtime_service.dart';
+import 'transaction_record.dart';
+
+export 'transaction_record.dart';
 
 class PrintingService {
   static const String _baseUrl = BackendConfig.serverUrl;
@@ -60,6 +63,7 @@ class PrintingService {
     String quality = 'standard',
     bool duplex = false,
     String? transactionId,
+    int customerCopies = 1,
   }) async {
     try {
       final response = await http.post(
@@ -72,6 +76,7 @@ class PrintingService {
           'quality': quality,
           'duplex': duplex,
           if (transactionId != null) 'transactionId': transactionId,
+          'customerCopies': customerCopies,
         }),
       );
 
@@ -272,15 +277,16 @@ class PrintingService {
   // Reprint a paid transaction's failed job without asking the customer to
   // pay again. Staff Mode only — see backend/src/routes/print.ts.
 
-  static Future<List<RecoverableTransaction>> getRecoverableTransactions() async {
+  static Future<List<TransactionRecord>> getRecoverableTransactions({String? search}) async {
     try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/print/recoverable'))
-          .timeout(const Duration(seconds: 10));
+      final uri = Uri.parse('$_baseUrl/api/print/recoverable').replace(
+        queryParameters: {if (search != null && search.trim().isNotEmpty) 'search': search.trim()},
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
       final body = json.decode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         return (body['recoverable'] as List<dynamic>)
-            .map((e) => RecoverableTransaction.fromJson(e as Map<String, dynamic>))
+            .map((e) => TransactionRecord.fromJson(e as Map<String, dynamic>))
             .toList();
       }
       return [];
@@ -290,12 +296,13 @@ class PrintingService {
     }
   }
 
+  /// Staff identity is resolved server-side from [staffId]; the backend
+  /// rejects the request unless it belongs to an active staff account.
   static Future<RecoveryOutcome> recoverPrint(
     String transactionId, {
     required String reason,
     String? reasonNote,
-    required String actor,
-    String? staffId,
+    required String staffId,
   }) async {
     try {
       final response = await http
@@ -305,11 +312,10 @@ class PrintingService {
             body: json.encode({
               'reason': reason,
               if (reasonNote != null) 'reasonNote': reasonNote,
-              'actor': actor,
-              if (staffId != null) 'staffId': staffId,
+              'staffId': staffId,
             }),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 60));
       final body = json.decode(response.body) as Map<String, dynamic>;
       return RecoveryOutcome(
         success: response.statusCode == 200 && body['success'] == true,
@@ -326,70 +332,4 @@ class RecoveryOutcome {
   final bool success;
   final String? error;
   const RecoveryOutcome({required this.success, this.error});
-}
-
-class RecoverablePrintJob {
-  final String id;
-  final List<String> filenames;
-  final String paperSize;
-  final int copies;
-  final int pageCount;
-  final String serviceType;
-  final String colorMode;
-  final bool duplex;
-
-  const RecoverablePrintJob({
-    required this.id,
-    required this.filenames,
-    required this.paperSize,
-    required this.copies,
-    required this.pageCount,
-    required this.serviceType,
-    required this.colorMode,
-    required this.duplex,
-  });
-
-  /// Photocopy jobs have no stored source file — the scanned pages are
-  /// deleted right after printing — so they can't be auto-reprinted the way
-  /// Printing/Image-Print jobs can. See routes/print.ts's /recover handler.
-  bool get needsRescan => serviceType == 'photocopying';
-
-  factory RecoverablePrintJob.fromJson(Map<String, dynamic> j) => RecoverablePrintJob(
-        id: j['id'] as String? ?? '',
-        filenames: (j['filenames'] as List<dynamic>? ?? []).cast<String>(),
-        paperSize: j['paper_size'] as String? ?? 'A4',
-        copies: (j['copies'] as num?)?.toInt() ?? 1,
-        pageCount: (j['page_count'] as num?)?.toInt() ?? 0,
-        serviceType: j['service_type'] as String? ?? 'printing',
-        colorMode: j['color_mode'] as String? ?? 'bw',
-        duplex: j['duplex'] == true,
-      );
-}
-
-class RecoverableTransaction {
-  final String transactionId;
-  final String referenceNumber;
-  final double amount;
-  final String createdAt;
-  final RecoverablePrintJob printJob;
-
-  const RecoverableTransaction({
-    required this.transactionId,
-    required this.referenceNumber,
-    required this.amount,
-    required this.createdAt,
-    required this.printJob,
-  });
-
-  factory RecoverableTransaction.fromJson(Map<String, dynamic> j) {
-    final t = j['transaction'] as Map<String, dynamic>;
-    final p = j['printJob'] as Map<String, dynamic>;
-    return RecoverableTransaction(
-      transactionId: t['id'] as String? ?? '',
-      referenceNumber: t['reference_number'] as String? ?? '',
-      amount: (t['amount'] as num?)?.toDouble() ?? 0,
-      createdAt: t['created_at'] as String? ?? '',
-      printJob: RecoverablePrintJob.fromJson(p),
-    );
-  }
 }

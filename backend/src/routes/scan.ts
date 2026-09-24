@@ -8,7 +8,9 @@ import {
   executePhotocopySession,
 } from '../services/scan.service';
 import { logger } from '../utils/logger';
-import { insertPrintJob } from '../database';
+import { insertPrintJob, updatePrintJobResult, nowIso } from '../database';
+import { config } from '../utils/config';
+import { randomUUID } from 'crypto';
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -250,6 +252,34 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
 
     logger.info('Photocopy execute request', { sessionId, copies, paperSize, colorMode, quality, duplex });
 
+    // Recorded before printing (page count filled in afterwards) so a paid
+    // photocopy shows up in Staff Print Recovery even if printing never returns.
+    const jobId = `COPY-${randomUUID()}`;
+    let recorded = true;
+    try {
+      await insertPrintJob({
+        id: jobId,
+        transaction_id: typeof transactionId === 'string' && transactionId ? transactionId : undefined,
+        filenames: ['Photocopy (scanned originals)'],
+        paper_size: paperSize,
+        copies: Number(copies),
+        status: 'printing',
+        simulated: false,
+        page_count: 0,
+        color_mode: colorMode === 'color' ? 'color' : 'bw',
+        duplex: !!duplex,
+        unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
+        service_type: 'photocopying',
+        billing_type: 'paid',
+        quality: typeof quality === 'string' ? quality : 'standard',
+        printer_name: config.print.printerName || null,
+        started_at: nowIso(),
+      });
+    } catch (logErr) {
+      recorded = false;
+      logger.error('Failed to record photocopy job before printing', { error: String(logErr) });
+    }
+
     const result = await executePhotocopySession({
       sessionId,
       copies: Number(copies),
@@ -259,28 +289,20 @@ router.post('/photocopy-execute', async (req: Request, res: Response) => {
       duplex: !!duplex,
     });
 
-    // Log to SQLite regardless of outcome — this row is what makes a
-    // photocopy job show up in Staff Print Recovery at all. Previously
-    // photocopy jobs never created a print_jobs row, so they were invisible
-    // to recovery no matter what physically happened at the printer.
-    try {
-      await insertPrintJob({
-        id: result.jobId ?? `COPY-${Date.now()}`,
-        transaction_id: typeof transactionId === 'string' && transactionId ? transactionId : undefined,
-        filenames: [`Photocopy (${result.pageCount ?? 0} scanned page${result.pageCount === 1 ? '' : 's'})`],
-        paper_size: paperSize,
-        copies: Number(copies),
-        status: result.success ? 'submitted' : 'failed',
-        simulated: false,
-        page_count: result.pageCount ?? 0,
-        color_mode: colorMode === 'color' ? 'color' : 'bw',
-        duplex: !!duplex,
-        unit_price: typeof unitPrice === 'number' ? unitPrice : Number(unitPrice) || 0,
-        service_type: 'photocopying',
-        billing_type: 'paid',
-      });
-    } catch (logErr) {
-      logger.warn('Failed to log photocopy print job', { error: String(logErr) });
+    if (recorded) {
+      try {
+        const pages = result.pageCount ?? 0;
+        await updatePrintJobResult({
+          id: jobId,
+          status: result.success ? 'submitted' : 'failed',
+          printer_job_id: result.jobId ?? null,
+          completed_at: result.success ? nowIso() : null,
+          error_message: result.success ? null : result.error ?? 'Photocopy failed',
+          page_count: pages,
+        });
+      } catch (logErr) {
+        logger.warn('Failed to record photocopy result', { error: String(logErr) });
+      }
     }
 
     if (!result.success) {

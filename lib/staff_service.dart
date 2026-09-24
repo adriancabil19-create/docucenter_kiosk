@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 import 'kiosk_runtime_service.dart';
+import 'transaction_record.dart';
+
+export 'transaction_record.dart';
 
 class StaffMember {
   final String id;
@@ -40,39 +43,6 @@ class PinResetRequestStatus {
   factory PinResetRequestStatus.fromJson(Map<String, dynamic> json) => PinResetRequestStatus(
         id: json['id'] as String? ?? '',
         status: json['status'] as String? ?? 'pending',
-      );
-}
-
-class StaffTransactionEntry {
-  final String id;
-  final String createdAt;
-  final String serviceType;
-  final int pageCount;
-  final int copies;
-  final double? amount;
-  final String? paymentStatus;
-  final String printingStatus;
-
-  const StaffTransactionEntry({
-    required this.id,
-    required this.createdAt,
-    required this.serviceType,
-    required this.pageCount,
-    required this.copies,
-    required this.amount,
-    required this.paymentStatus,
-    required this.printingStatus,
-  });
-
-  factory StaffTransactionEntry.fromJson(Map<String, dynamic> json) => StaffTransactionEntry(
-        id: json['id'] as String? ?? '',
-        createdAt: json['created_at'] as String? ?? '',
-        serviceType: json['service_type'] as String? ?? 'printing',
-        pageCount: (json['page_count'] as num?)?.toInt() ?? 0,
-        copies: (json['copies'] as num?)?.toInt() ?? 1,
-        amount: (json['amount'] as num?)?.toDouble(),
-        paymentStatus: json['payment_status'] as String?,
-        printingStatus: json['printing_status'] as String? ?? 'submitted',
       );
 }
 
@@ -188,16 +158,18 @@ class StaffService {
     }
   }
 
-  static Future<List<StaffTransactionEntry>> getTransactions({int limit = 50}) async {
+  static Future<List<TransactionRecord>> getTransactions({int limit = 50, String? search}) async {
     try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/transactions?limit=$limit'))
-          .timeout(const Duration(seconds: 10));
+      final uri = Uri.parse('$_baseUrl/transactions').replace(queryParameters: {
+        'limit': '$limit',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      });
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         return (body['transactions'] as List<dynamic>)
-            .map((e) => StaffTransactionEntry.fromJson(e as Map<String, dynamic>))
+            .map((e) => TransactionRecord.fromJson(e as Map<String, dynamic>))
             .toList();
       }
       return [];

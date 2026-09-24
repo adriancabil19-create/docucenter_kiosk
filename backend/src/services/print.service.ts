@@ -41,6 +41,8 @@ export interface PrintResult {
    * unprocessable images were dropped, as opposed to an estimate from the
    * originally requested file list. */
   pagesGenerated?: number;
+  /** The Windows printer the job was actually sent to, when resolved. */
+  printerName?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1221,11 +1223,14 @@ export const printFilesFromStorage = async (
     restoreWindowsPrinterDriverState(driverState);
   }
 
+  const printerName = driverState.printerName || undefined;
+
   if (processedCount === 0) {
     return {
       success: false,
       error: 'No files were successfully processed for printing',
       jobID,
+      printerName,
       simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
     };
   }
@@ -1240,6 +1245,11 @@ export const printFilesFromStorage = async (
     success: true,
     jobID,
     method: 'kiosk-storage-print',
+    printerName,
+    error:
+      processedCount < filenames.length
+        ? `Partial print: ${filenames.length - processedCount} of ${filenames.length} file(s) could not be printed`
+        : undefined,
     simulatedPaths: simulatedPaths.length > 0 ? simulatedPaths : undefined,
   };
 };

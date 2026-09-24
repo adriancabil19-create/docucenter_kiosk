@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import {
   insertTransaction,
   insertPrintJob,
+  updatePrintJobResult,
   updateTransactionStatus,
   applyPaperTrayFromKioskSync,
   insertLog,
@@ -34,6 +35,7 @@ import {
   insertRecoveryActionFromSync,
   TransactionRow,
   PrintJobRow,
+  PrintJobResultUpdate,
   StorageDocMetaInput,
   PinResetRequestRow,
   AssistanceRequestRow,
@@ -104,6 +106,22 @@ router.post('/print-job', async (req: Request, res: Response): Promise<void> => 
     res.json({ success: true });
   } catch (err) {
     logger.warn('Sync: failed to insert print job', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/print-job-update', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await acceptEventOnce(req, res))) return;
+    const update = req.body as PrintJobResultUpdate;
+    if (!update?.id || (update.status !== 'submitted' && update.status !== 'failed')) {
+      res.status(400).json({ success: false, error: 'id and a valid status are required' });
+      return;
+    }
+    await updatePrintJobResult(update);
+    res.json({ success: true });
+  } catch (err) {
+    logger.warn('Sync: failed to update print job', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

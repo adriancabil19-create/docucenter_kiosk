@@ -14,6 +14,7 @@ export type SyncEventType =
   | 'transaction'
   | 'transaction-status'
   | 'print-job'
+  | 'print-job-update'
   | 'paper-tray'
   | 'log'
   | 'incident'

@@ -36,8 +36,10 @@ const STATUS_OPTIONS = [
 
 export const REASON_LABEL: Record<string, string> = {
   paper_jam: '🔧 Paper Jam',
-  printer_error: '🖨️ Printer Error',
-  incorrect_output: '📄 Incorrect Output',
+  printer_error: '🖨️ Printer Hardware Error',
+  printer_failed_to_print: '🚫 Printer Failed to Print',
+  printer_no_error_reported: '❔ Printer Did Not Report Error',
+  incorrect_output: '📄 Incorrect/Partial Print',
   power_interruption: '⚡ Power Interruption',
   printer_offline: '🔌 Printer Offline',
   other: '⚠️ Other',
