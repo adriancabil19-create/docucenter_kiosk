@@ -7,7 +7,6 @@ import { getFleetSummary } from '@/lib/api';
 import type { FleetSummary } from '@/lib/types';
 import type { ConsoleRole } from '@/lib/session';
 import { LogoMark } from '@/components/logo';
-import { InstallButton } from '@/components/install-prompt';
 
 // `adminOnly` items are also enforced server-side in proxy.ts
 // (ADMIN_ONLY_PATH_PREFIXES) and the backend proxy route (staffAllowed) —
@@ -163,7 +162,6 @@ export function NavSidebar({ role }: { role: ConsoleRole | null }) {
         {/* Footer */}
         <div className="border-t border-white/40 px-4 py-3 space-y-2">
           <p className="text-xs text-slate-500">DocuCenter Kiosk v1.0</p>
-          <InstallButton />
           <button
             type="button"
             onClick={handleLogout}
