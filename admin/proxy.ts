@@ -43,8 +43,7 @@ export async function proxy(request: NextRequest) {
     pathname === '/icon-192.png' ||
     pathname === '/apple-icon.png' ||
     pathname === '/manifest.webmanifest' ||
-    pathname === '/sw.js' ||
-    pathname.startsWith('/.well-known/')
+    pathname === '/sw.js'
   ) {
     return NextResponse.next();
   }
