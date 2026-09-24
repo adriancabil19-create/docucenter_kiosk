@@ -314,6 +314,40 @@ export class PayMongoService {
     }
   }
 
+  /** The paid `pay_…` payment behind a Payment Intent (needs the secret key). */
+  async getPaidPaymentId(intentId: string): Promise<string | null> {
+    const response = await this.axiosInstance.get(`/payment_intents/${encodeURIComponent(intentId)}`);
+    const payments: any[] = response.data?.data?.attributes?.payments ?? [];
+    const paid = payments.find((p) => p?.attributes?.status === 'paid') ?? null;
+    return paid?.id ?? null;
+  }
+
+  async createRefund(input: {
+    paymentId: string;
+    amount: number;
+    reason: string;
+    notes?: string | null;
+    metadata: Record<string, string>;
+  }): Promise<PayMongoRefund> {
+    const response = await this.axiosInstance.post('/refunds', {
+      data: {
+        attributes: {
+          amount: Math.round(input.amount * 100),
+          payment_id: input.paymentId,
+          reason: input.reason,
+          ...(input.notes ? { notes: input.notes.slice(0, 255) } : {}),
+          metadata: input.metadata,
+        },
+      },
+    });
+    return toRefund(response.data.data);
+  }
+
+  async retrieveRefund(refundId: string): Promise<PayMongoRefund> {
+    const response = await this.axiosInstance.get(`/refunds/${encodeURIComponent(refundId)}`);
+    return toRefund(response.data.data);
+  }
+
   /**
    * Real, side-effect-free gateway connectivity check for Staff Mode's
    * "Payment Test" — never creates a payment intent/charge. Requests a
@@ -336,5 +370,23 @@ export class PayMongoService {
     }
   }
 }
+
+export interface PayMongoRefund {
+  id: string;
+  status: 'pending' | 'processing' | 'succeeded' | 'failed';
+  livemode: boolean;
+}
+
+const toRefund = (data: any): PayMongoRefund => ({
+  id: String(data?.id),
+  status: data?.attributes?.status ?? 'pending',
+  livemode: data?.attributes?.livemode === true,
+});
+
+/** PayMongo's own error text ({ errors: [{ detail }] }) when there is one. */
+export const payMongoErrorMessage = (err: any): string => {
+  const detail = err?.response?.data?.errors?.map((e: any) => e?.detail).filter(Boolean).join('; ');
+  return detail || err?.message || String(err);
+};
 
 export const paymongoService = new PayMongoService();

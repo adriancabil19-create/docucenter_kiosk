@@ -277,6 +277,27 @@ export const initSchema = async (): Promise<void> => {
       created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
+    -- PayMongo refunds, issued by an Admin from the console. Linked to the
+    -- transaction rather than changing it: the original payment stays SUCCESS
+    -- and the refund state is derived from these rows.
+    CREATE TABLE IF NOT EXISTS refunds (
+      id                 TEXT PRIMARY KEY,
+      transaction_id     TEXT NOT NULL,
+      paymongo_refund_id TEXT,
+      paymongo_payment_id TEXT,
+      amount             REAL NOT NULL,
+      reason             TEXT NOT NULL,
+      notes              TEXT,
+      status             TEXT NOT NULL DEFAULT 'pending',
+      error              TEXT,
+      requested_by       TEXT NOT NULL,
+      livemode           INTEGER,
+      created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_refunds_txn          ON refunds(transaction_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_refunds_status       ON refunds(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_transactions_status  ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_created   ON print_jobs(created_at);
@@ -1456,7 +1477,8 @@ export type KioskCommandName =
   | 'DELETE_ALL_FILES_KEEP_META'
   | 'STAFF_PIN_REQUEST_DECIDED'
   | 'ASSISTANCE_STATUS_CHANGED'
-  | 'PAPER_TRAY_REFILLED';
+  | 'PAPER_TRAY_REFILLED'
+  | 'TRANSACTION_REFUND_UPDATED';
 
 export interface KioskCommandRow {
   id: string;
@@ -3176,7 +3198,7 @@ const mapRecoveryAction = (r: Record<string, unknown>): PrintRecoveryActionRow =
 });
 
 /** Payment state as staff read it — independent of what happened at the printer. */
-export type PaymentStatusLabel = 'PAID' | 'UNPAID' | 'REFUNDED';
+export type PaymentStatusLabel = 'PAID' | 'UNPAID' | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
 
 /**
  * Where the transaction stands overall. Derived from the persisted
@@ -3228,6 +3250,12 @@ export interface TransactionDetail {
   print_error: string | null;
   /** Every recovery reprint ever attempted on this transaction, newest first. */
   recoveries: PrintRecoveryActionRow[];
+  /** Every refund attempt, newest first. */
+  refunds: RefundRow[];
+  /** Sum of succeeded refunds. */
+  refunded_amount: number;
+  /** Amount still refundable (paid minus succeeded and in-flight refunds). */
+  refundable_amount: number;
 }
 
 /** A job still 'printing' after this long means the process died mid-print. */
@@ -3246,11 +3274,23 @@ const documentTypeFor = (serviceType: string | null, names: string[]): string | 
   return known[ext] ?? ext.toUpperCase();
 };
 
-const paymentStatusFor = (status: string): PaymentStatusLabel => {
+const roundCents = (n: number): number => Math.round(n * 100) / 100;
+
+const refundTotals = (amount: number, refunds: RefundRow[]) => {
+  const refunded = roundCents(refunds.filter((r) => r.status === 'succeeded').reduce((s, r) => s + r.amount, 0));
+  const inFlight = roundCents(
+    refunds.filter((r) => r.status === 'pending' || r.status === 'processing').reduce((s, r) => s + r.amount, 0),
+  );
+  return { refunded, inFlight, refundable: Math.max(0, roundCents(amount - refunded - inFlight)) };
+};
+
+const paymentStatusFor = (status: string, amount: number, refunds: RefundRow[]): PaymentStatusLabel => {
   const s = status.toUpperCase();
-  if (s === 'SUCCESS') return 'PAID';
-  if (s === 'REFUNDED') return 'REFUNDED';
-  return 'UNPAID';
+  if (s !== 'SUCCESS') return s === 'REFUNDED' ? 'REFUNDED' : 'UNPAID';
+  const { refunded, inFlight } = refundTotals(amount, refunds);
+  if (inFlight > 0) return 'REFUND_PENDING';
+  if (refunded > 0) return refunded >= amount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+  return 'PAID';
 };
 
 const displayStatusFor = (
@@ -3321,6 +3361,9 @@ const queryTransactionDetails = async (q: TransactionQuery): Promise<Transaction
       AND NOT EXISTS (
         SELECT 1 FROM print_recovery_actions a
         WHERE a.transaction_id = t.id AND a.result = 'success' AND a.reauthorized_at IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM refunds rf WHERE rf.transaction_id = t.id AND rf.status != 'failed'
       )`);
     args.since = q.recoverableSince;
   }
@@ -3360,9 +3403,25 @@ const queryTransactionDetails = async (q: TransactionQuery): Promise<Transaction
     recoveriesByTxn.set(action.transaction_id, list);
   }
 
+  const refundResult = await getDb().execute({
+    sql: `SELECT * FROM refunds
+          WHERE transaction_id IN (${rows.map((_, i) => `@t${i}`).join(',')})
+          ORDER BY created_at DESC`,
+    args: Object.fromEntries(rows.map((r, i) => [`t${i}`, String(r.id)])),
+  });
+  const refundsByTxn = new Map<string, RefundRow[]>();
+  for (const raw of toRows<Record<string, unknown>>(refundResult)) {
+    const refund = mapRefund(raw);
+    const list = refundsByTxn.get(refund.transaction_id) ?? [];
+    list.push(refund);
+    refundsByTxn.set(refund.transaction_id, list);
+  }
+
   return rows.map((r) => {
     const names = r.filenames ? (JSON.parse(String(r.filenames)) as string[]) : [];
     const recoveries = recoveriesByTxn.get(String(r.id)) ?? [];
+    const refunds = refundsByTxn.get(String(r.id)) ?? [];
+    const totals = refundTotals(Number(r.amount), refunds);
     const serviceType = (r.job_service_type as string) ?? (r.service_type as string) ?? null;
     const copies = r.job_copies == null ? null : Number(r.job_copies);
     const pageCount = r.page_count == null ? null : Number(r.page_count);
@@ -3374,7 +3433,7 @@ const queryTransactionDetails = async (q: TransactionQuery): Promise<Transaction
       reference_number: String(r.reference_number),
       amount: Number(r.amount),
       status: String(r.status),
-      payment_status: paymentStatusFor(String(r.status)),
+      payment_status: paymentStatusFor(String(r.status), Number(r.amount), refunds),
       display_status: display,
       needs_recovery: needsRecovery,
       service_type: serviceType,
@@ -3398,6 +3457,9 @@ const queryTransactionDetails = async (q: TransactionQuery): Promise<Transaction
       print_completed_at: (r.job_completed_at as string) ?? null,
       print_error: (r.error_message as string) ?? null,
       recoveries,
+      refunds,
+      refunded_amount: totals.refunded,
+      refundable_amount: String(r.status).toUpperCase() === 'SUCCESS' ? totals.refundable : 0,
     };
   });
 };
@@ -3559,3 +3621,141 @@ export const reauthorizeRecovery = async (transactionId: string): Promise<boolea
   });
   return result.rowsAffected > 0;
 };
+
+// ─── Refunds (PayMongo) ───────────────────────────────────────────────────────
+
+export type RefundStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
+export type RefundReason = 'requested_by_customer' | 'duplicate' | 'others';
+
+export interface RefundRow {
+  id: string;
+  transaction_id: string;
+  paymongo_refund_id: string | null;
+  paymongo_payment_id: string | null;
+  amount: number;
+  reason: RefundReason;
+  notes: string | null;
+  status: RefundStatus;
+  error: string | null;
+  requested_by: string;
+  livemode: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapRefund = (r: Record<string, unknown>): RefundRow => ({
+  id: String(r.id),
+  transaction_id: String(r.transaction_id),
+  paymongo_refund_id: (r.paymongo_refund_id as string) ?? null,
+  paymongo_payment_id: (r.paymongo_payment_id as string) ?? null,
+  amount: Number(r.amount),
+  reason: String(r.reason) as RefundReason,
+  notes: (r.notes as string) ?? null,
+  status: String(r.status) as RefundStatus,
+  error: (r.error as string) ?? null,
+  requested_by: String(r.requested_by),
+  livemode: r.livemode == null ? null : Number(r.livemode) === 1,
+  created_at: String(r.created_at),
+  updated_at: String(r.updated_at),
+});
+
+export const insertRefund = async (row: {
+  transaction_id: string;
+  amount: number;
+  reason: RefundReason;
+  notes: string | null;
+  requested_by: string;
+}): Promise<RefundRow> => {
+  const id = randomUUID();
+  await getDb().execute({
+    sql: `INSERT INTO refunds (id, transaction_id, amount, reason, notes, status, requested_by)
+          VALUES (@id, @transaction_id, @amount, @reason, @notes, 'pending', @requested_by)`,
+    args: { id, ...row },
+  });
+  const created = await getRefundById(id);
+  if (!created) throw new Error('Failed to read back refund');
+  return created;
+};
+
+export const getRefundById = async (id: string): Promise<RefundRow | null> => {
+  const row = firstRow<Record<string, unknown>>(
+    await getDb().execute({ sql: `SELECT * FROM refunds WHERE id = @id`, args: { id } }),
+  );
+  return row ? mapRefund(row) : null;
+};
+
+export const updateRefund = async (
+  id: string,
+  patch: Partial<Pick<RefundRow, 'paymongo_refund_id' | 'paymongo_payment_id' | 'status' | 'error' | 'livemode'>>,
+): Promise<RefundRow | null> => {
+  await getDb().execute({
+    sql: `UPDATE refunds SET
+            paymongo_refund_id  = COALESCE(@paymongo_refund_id, paymongo_refund_id),
+            paymongo_payment_id = COALESCE(@paymongo_payment_id, paymongo_payment_id),
+            status   = COALESCE(@status, status),
+            error    = @error,
+            livemode = COALESCE(@livemode, livemode),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = @id`,
+    args: {
+      id,
+      paymongo_refund_id: patch.paymongo_refund_id ?? null,
+      paymongo_payment_id: patch.paymongo_payment_id ?? null,
+      status: patch.status ?? null,
+      error: patch.error ?? null,
+      livemode: patch.livemode == null ? null : patch.livemode ? 1 : 0,
+    },
+  });
+  return getRefundById(id);
+};
+
+/** Kiosk side: mirror a refund decided in the cloud (idempotent). */
+export const upsertRefundFromCloud = async (r: RefundRow): Promise<void> => {
+  await getDb().execute({
+    sql: `INSERT INTO refunds
+            (id, transaction_id, paymongo_refund_id, paymongo_payment_id, amount, reason, notes,
+             status, error, requested_by, livemode, created_at, updated_at)
+          VALUES (@id, @transaction_id, @paymongo_refund_id, @paymongo_payment_id, @amount, @reason, @notes,
+                  @status, @error, @requested_by, @livemode, @created_at, @updated_at)
+          ON CONFLICT(id) DO UPDATE SET
+            paymongo_refund_id = excluded.paymongo_refund_id,
+            paymongo_payment_id = excluded.paymongo_payment_id,
+            status = excluded.status, error = excluded.error,
+            livemode = excluded.livemode, updated_at = excluded.updated_at`,
+    args: {
+      id: r.id,
+      transaction_id: r.transaction_id,
+      paymongo_refund_id: r.paymongo_refund_id,
+      paymongo_payment_id: r.paymongo_payment_id,
+      amount: r.amount,
+      reason: r.reason,
+      notes: r.notes,
+      status: r.status,
+      error: r.error,
+      requested_by: r.requested_by,
+      livemode: r.livemode == null ? null : r.livemode ? 1 : 0,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    },
+  });
+};
+
+export const listRefundsForTransaction = async (transactionId: string): Promise<RefundRow[]> =>
+  toRows<Record<string, unknown>>(
+    await getDb().execute({
+      sql: `SELECT * FROM refunds WHERE transaction_id = @transactionId ORDER BY created_at DESC`,
+      args: { transactionId },
+    }),
+  ).map(mapRefund);
+
+/** Refunds PayMongo hasn't settled yet, for the status poller. */
+export const listUnsettledRefunds = async (sinceDays = 7): Promise<RefundRow[]> =>
+  toRows<Record<string, unknown>>(
+    await getDb().execute({
+      sql: `SELECT * FROM refunds
+            WHERE status IN ('pending','processing') AND paymongo_refund_id IS NOT NULL
+              AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now', @since)
+            ORDER BY created_at ASC LIMIT 50`,
+      args: { since: `-${sinceDays} days` },
+    }),
+  ).map(mapRefund);

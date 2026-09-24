@@ -34,6 +34,8 @@ import {
   applyPinResetDecision,
   applyAssistanceStatusFromCommand,
   applyPaperTrayFromCloud,
+  upsertRefundFromCloud,
+  type RefundRow,
   type DeviceState,
   type KioskCommandRow,
   type KioskCommandName,
@@ -333,6 +335,16 @@ const executeCommand = async (cmd: KioskCommandRow): Promise<void> => {
         }
         await applyPaperTrayFromCloud(KIOSK_ID, params);
         result = `paper tray "${params.tray_name}" synced from admin`;
+        break;
+      }
+      case 'TRANSACTION_REFUND_UPDATED': {
+        const params = cmd.params as unknown as RefundRow | null;
+        if (!params?.id || !params.transaction_id) {
+          result = 'ignored (missing params)';
+          break;
+        }
+        await upsertRefundFromCloud(params);
+        result = `refund on ${params.transaction_id} recorded (${params.status})`;
         break;
       }
       default:

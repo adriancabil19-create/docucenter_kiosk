@@ -11,6 +11,8 @@ import {
 } from '@heroui/react';
 import type { Transaction, PrintRecoveryAction } from '@/lib/types';
 import { StatusChip } from './status-chip';
+import { RefundPanel } from './refund-panel';
+import { PaymentStatusChip } from './transactions-table';
 import { REASON_LABEL, RESULT_COLOR, formatDate, formatAmount } from './transactions-table';
 
 const glassModalClassNames = {
@@ -22,6 +24,7 @@ interface Props {
   transaction: Transaction | null;
   onClose: () => void;
   onReauthorize: (action: PrintRecoveryAction) => void;
+  onRefundChanged: () => void;
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -41,7 +44,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
  * that original config is exactly what a recovery reprint is supposed to
  * reproduce.
  */
-export function TransactionDetailModal({ transaction, onClose, onReauthorize }: Props) {
+export function TransactionDetailModal({ transaction, onClose, onReauthorize, onRefundChanged }: Props) {
   const tx = transaction;
 
   return (
@@ -56,6 +59,7 @@ export function TransactionDetailModal({ transaction, onClose, onReauthorize }: 
             <ModalBody className="gap-5 pb-6">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusChip status={tx.status} />
+                <PaymentStatusChip transaction={tx} />
                 {tx.print_status && <StatusChip status={tx.print_status} />}
                 {tx.recoveries.length > 0 && (
                   <Chip size="sm" variant="flat" color="warning">
@@ -101,6 +105,8 @@ export function TransactionDetailModal({ transaction, onClose, onReauthorize }: 
                 <Field label="Created" value={formatDate(tx.created_at)} />
                 <Field label="Completed" value={tx.completed_at ? formatDate(tx.completed_at) : null} />
               </div>
+
+              <RefundPanel transaction={tx} onChanged={onRefundChanged} />
 
               {tx.recoveries.length > 0 && (
                 <div>

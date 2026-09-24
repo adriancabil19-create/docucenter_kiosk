@@ -35,6 +35,32 @@ export interface Transaction {
   print_status: string | null;
   /** Every recovery reprint ever attempted on this transaction, newest first. */
   recoveries: PrintRecoveryAction[];
+  payment_status: PaymentStatusLabel;
+  /** Every refund attempt, newest first. */
+  refunds: Refund[];
+  refunded_amount: number;
+  /** Paid amount minus succeeded and in-flight refunds. */
+  refundable_amount: number;
+}
+
+export type PaymentStatusLabel = 'PAID' | 'UNPAID' | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+
+export type RefundReason = 'requested_by_customer' | 'duplicate' | 'others';
+
+export interface Refund {
+  id: string;
+  transaction_id: string;
+  paymongo_refund_id: string | null;
+  paymongo_payment_id: string | null;
+  amount: number;
+  reason: RefundReason;
+  notes: string | null;
+  status: 'pending' | 'processing' | 'succeeded' | 'failed';
+  error: string | null;
+  requested_by: string;
+  livemode: boolean | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Print Jobs ───────────────────────────────────────────────────────────────

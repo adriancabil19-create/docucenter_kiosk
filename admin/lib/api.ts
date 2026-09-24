@@ -4,6 +4,8 @@
 // import `lib/backend.ts` directly instead of going through this HTTP hop.
 
 import type {
+  Refund,
+  RefundReason,
   StatsResponse,
   TransactionsResponse,
   PrintJobsResponse,
@@ -374,6 +376,31 @@ export const markNotificationRead = (id: string): Promise<MutationResponse> =>
 
 export const getRecoveryActions = (limit = 100): Promise<RecoveryActionsResponse> =>
   apiFetch<RecoveryActionsResponse>(`/api/fleet/recovery-actions?limit=${limit}`);
+
+/** Returns the backend's own error text (e.g. PayMongo's reason) instead of throwing on non-2xx. */
+async function mutate<T>(path: string, body: unknown): Promise<T & { success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30_000),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ...data, success: res.ok && data.success !== false, error: data.error ?? (res.ok ? undefined : res.statusText) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message } as T & { success: boolean; error?: string };
+  }
+}
+
+export const refundTransaction = (
+  transactionId: string,
+  payload: { amount?: number; reason: RefundReason; notes?: string },
+) => mutate<{ refund?: Refund }>(`/api/fleet/transactions/${encodeURIComponent(transactionId)}/refunds`, payload);
+
+export const refreshRefundStatus = (refundId: string) =>
+  mutate<{ refund?: Refund }>(`/api/fleet/refunds/${encodeURIComponent(refundId)}/refresh`, {});
 
 export const reauthorizeRecovery = (transactionId: string, actor?: string): Promise<MutationResponse> =>
   apiFetch<MutationResponse>(`/api/fleet/recovery-actions/${encodeURIComponent(transactionId)}/reauthorize`, {

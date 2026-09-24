@@ -26,9 +26,17 @@ String formatPeso(num? v) => v == null ? '—' : '₱${v.toStringAsFixed(2)}';
 
 (Color, String) paymentStatusVisual(String paymentStatus) => switch (paymentStatus) {
       'PAID' => (StaffColors.success, 'Paid'),
-      'REFUNDED' => (StaffColors.warning, 'Refunded'),
+      'REFUND_PENDING' => (StaffColors.warning, 'Refund pending'),
+      'PARTIALLY_REFUNDED' => (StaffColors.warning, 'Partially refunded'),
+      'REFUNDED' => (StaffColors.primary, 'Refunded'),
       _ => (StaffColors.textMuted, 'Unpaid'),
     };
+
+const _refundReasonLabels = <String, String>{
+  'requested_by_customer': 'Requested by customer',
+  'duplicate': 'Duplicate payment',
+  'others': 'Others',
+};
 
 String _printStatusLabel(String? s) => switch (s) {
       null => 'No print job recorded',
@@ -76,6 +84,7 @@ class TransactionDetailsView extends StatelessWidget {
           ('Date & time', formatStaffDateTime(r.createdAt)),
           ('Payment reference', r.referenceNumber.isEmpty ? '—' : r.referenceNumber),
           ('Amount paid', formatPeso(r.amount)),
+          if (r.refundedAmount > 0) ('Refunded', formatPeso(r.refundedAmount)),
           ('Service', _serviceLabel(r.serviceType)),
         ]),
         if (hasJob) ...[
@@ -102,6 +111,22 @@ class TransactionDetailsView extends StatelessWidget {
           ]),
         ] else
           const _Section(title: 'Print job', rows: [('Status', 'No print job recorded for this transaction')]),
+        if (r.refunds.isNotEmpty)
+          _Section(
+            title: 'Refunds (issued by admin)',
+            rows: [
+              for (final f in r.refunds) ...[
+                ('Refund', '${formatPeso(f.amount)} · ${formatStaffDateTime(f.createdAt)}'),
+                ('Status', switch (f.status) {
+                  'succeeded' => 'Sent to customer',
+                  'failed' => 'Failed${f.error != null ? ': ${f.error}' : ''}',
+                  _ => 'Processing',
+                }),
+                ('Reason', '${_refundReasonLabels[f.reason] ?? f.reason}${f.notes != null ? ': ${f.notes}' : ''}'),
+                ('By', f.requestedBy),
+              ],
+            ],
+          ),
         if (r.recoveries.isNotEmpty)
           _Section(
             title: 'Recovery history',

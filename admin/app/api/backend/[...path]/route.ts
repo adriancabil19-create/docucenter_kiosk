@@ -65,6 +65,9 @@ async function handle(
     upstream = await backendFetch(`/${path}${search}`, {
       method: request.method,
       body: hasBody ? await request.text() : undefined,
+      // Who is acting, from the verified session — the backend trusts this
+      // (behind the bearer token) instead of an actor field in the body.
+      headers: { 'X-Console-User': session.user.username },
     });
   } catch {
     return NextResponse.json({ error: 'Backend unreachable' }, { status: 502 });

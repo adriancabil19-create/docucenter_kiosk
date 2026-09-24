@@ -36,6 +36,7 @@ import {
   type KioskCommandName,
 } from '../database';
 import { deleteAllDocuments, purgeExpiredDocuments } from '../services/storage.service';
+import { issueRefund, refreshRefund, RefundError } from '../services/refund.service';
 
 const router = Router();
 
@@ -397,6 +398,60 @@ router.post('/recovery-actions/:transactionId/reauthorize', async (req: Request,
     res.json({ success: true });
   } catch (err) {
     logger.error('Fleet: reauthorize recovery failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// ─── Refunds (PayMongo) ───────────────────────────────────────────────────────
+// Admin-only: the console proxy blocks role STAFF from every non-GET fleet
+// route. The acting admin comes from the X-Console-User header the proxy sets
+// from the signed-in session.
+
+const consoleUser = (req: Request): string | null => {
+  const header = req.header('x-console-user');
+  return header && header.trim() ? header.trim() : null;
+};
+
+router.post('/transactions/:transactionId/refunds', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const actor = consoleUser(req);
+    if (!actor) {
+      res.status(401).json({ success: false, error: 'Refunds must be issued from a signed-in admin session.' });
+      return;
+    }
+    const { amount, reason, notes } = req.body as { amount?: number; reason?: string; notes?: string };
+    const refund = await issueRefund({
+      transactionId: req.params.transactionId,
+      amount: amount == null ? undefined : Number(amount),
+      reason: reason ?? 'requested_by_customer',
+      notes,
+      actor,
+    });
+    if (refund.status === 'failed') {
+      res.status(502).json({ success: false, error: refund.error ?? 'PayMongo rejected the refund.', refund });
+      return;
+    }
+    res.json({ success: true, refund });
+  } catch (err) {
+    if (err instanceof RefundError) {
+      res.status(err.status).json({ success: false, error: err.message });
+      return;
+    }
+    logger.error('Fleet: refund failed', { error: String(err) });
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.post('/refunds/:refundId/refresh', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const refund = await refreshRefund(req.params.refundId);
+    res.json({ success: true, refund });
+  } catch (err) {
+    if (err instanceof RefundError) {
+      res.status(err.status).json({ success: false, error: err.message });
+      return;
+    }
+    logger.error('Fleet: refund refresh failed', { error: String(err) });
     res.status(500).json({ success: false, error: String(err) });
   }
 });

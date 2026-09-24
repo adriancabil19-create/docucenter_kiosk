@@ -13,7 +13,7 @@ import {
 } from '@heroui/react';
 import { getTransactions, reauthorizeRecovery, type DateRange } from '@/lib/api';
 import { useVisibleInterval } from '@/lib/use-visible-interval';
-import type { Transaction, PrintRecoveryAction, PrintRecoveryResult } from '@/lib/types';
+import type { Transaction, PrintRecoveryAction, PrintRecoveryResult, PaymentStatusLabel } from '@/lib/types';
 import { StatusChip } from './status-chip';
 import { StatCard } from './stat-card';
 import { glassTableClassNames } from './table-styles';
@@ -57,6 +57,23 @@ export function formatDate(iso: string) {
 
 export function formatAmount(amount: number) {
   return `₱${amount.toFixed(2)}`;
+}
+
+const PAYMENT_CHIP: Partial<Record<PaymentStatusLabel, { label: string; color: 'success' | 'warning' | 'danger' }>> = {
+  REFUND_PENDING: { label: '↩️ Refund pending', color: 'warning' },
+  PARTIALLY_REFUNDED: { label: '↩️ Partly refunded', color: 'warning' },
+  REFUNDED: { label: '↩️ Refunded', color: 'success' },
+};
+
+/** Only rendered once money has gone back — a plain paid/unpaid row needs no extra chip. */
+export function PaymentStatusChip({ transaction }: { transaction: Transaction }) {
+  const chip = PAYMENT_CHIP[transaction.payment_status];
+  if (!chip) return null;
+  return (
+    <Chip size="sm" variant="flat" color={chip.color}>
+      {chip.label}
+    </Chip>
+  );
 }
 
 function withinDays(iso: string, days: number): boolean {
@@ -197,7 +214,10 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
                   <TableCell className="font-mono text-xs">{tx.reference_number}</TableCell>
                   <TableCell className="font-semibold">{formatAmount(tx.amount)}</TableCell>
                   <TableCell>
-                    <StatusChip status={tx.status} />
+                    <div className="flex flex-wrap gap-1">
+                      <StatusChip status={tx.status} />
+                      <PaymentStatusChip transaction={tx} />
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs text-slate-500">{tx.service_type ?? '—'}</TableCell>
                   <TableCell className="max-w-[200px] truncate text-xs text-slate-600" title={tx.document_names.join(', ')}>
@@ -227,6 +247,7 @@ export function TransactionsTable({ initialData, currentAdmin }: Props) {
         transaction={selected}
         onClose={() => setSelectedId(null)}
         onReauthorize={reauthorize}
+        onRefundChanged={() => refresh(true)}
       />
     </div>
   );

@@ -24,6 +24,7 @@ import { startFleetAgent } from './services/fleet-agent.service';
 import { startRetentionJob } from './services/retention.service';
 import { startMaintenanceJob } from './services/maintenance.service';
 import { startAssistanceScheduler } from './services/assistance-scheduler.service';
+import { startRefundStatusPoller } from './services/refund.service';
 import { backfillStorageDocMetas } from './services/storage.service';
 import {
   corsMiddleware,
@@ -184,6 +185,7 @@ initSchema()
     startRetentionJob();
     startMaintenanceJob();
     startAssistanceScheduler();
+    startRefundStatusPoller();
     // Reconcile any pre-existing uploads into storage_documents (kiosk role).
     if (config.isKioskRole) void backfillStorageDocMetas();
 

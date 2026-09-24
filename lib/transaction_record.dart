@@ -7,7 +7,7 @@ class TransactionRecord {
   final double amount;
   final String rawStatus;
 
-  /// PAID, UNPAID, or REFUNDED.
+  /// PAID, UNPAID, REFUND_PENDING, PARTIALLY_REFUNDED, or REFUNDED.
   final String paymentStatus;
 
   /// PENDING_PAYMENT, CANCELLED, FAILED, PAID, PRINTING, COMPLETED,
@@ -34,6 +34,8 @@ class TransactionRecord {
   final DateTime? printCompletedAt;
   final String? printError;
   final List<RecoveryEvent> recoveries;
+  final List<RefundEvent> refunds;
+  final double refundedAmount;
 
   const TransactionRecord({
     required this.id,
@@ -63,6 +65,8 @@ class TransactionRecord {
     required this.printCompletedAt,
     required this.printError,
     required this.recoveries,
+    required this.refunds,
+    required this.refundedAmount,
   });
 
   /// Photocopy scans aren't kept, so these need the customer's originals re-scanned.
@@ -104,6 +108,10 @@ class TransactionRecord {
         recoveries: (j['recoveries'] as List<dynamic>? ?? [])
             .map((e) => RecoveryEvent.fromJson(e as Map<String, dynamic>))
             .toList(),
+        refunds: (j['refunds'] as List<dynamic>? ?? [])
+            .map((e) => RefundEvent.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        refundedAmount: (j['refunded_amount'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -133,6 +141,40 @@ class RecoveryEvent {
         reasonNote: j['reason_note'] as String?,
         result: j['result'] as String? ?? 'pending',
         recoveryPrintJobId: j['recovery_print_job_id'] as String?,
+        createdAt: _date(j['created_at']),
+      );
+}
+
+/// A PayMongo refund issued by the admin; mirrored to the kiosk read-only.
+class RefundEvent {
+  final String id;
+  final double amount;
+  final String reason;
+  final String? notes;
+  final String status;
+  final String? error;
+  final String requestedBy;
+  final DateTime? createdAt;
+
+  const RefundEvent({
+    required this.id,
+    required this.amount,
+    required this.reason,
+    required this.notes,
+    required this.status,
+    required this.error,
+    required this.requestedBy,
+    required this.createdAt,
+  });
+
+  factory RefundEvent.fromJson(Map<String, dynamic> j) => RefundEvent(
+        id: j['id'] as String? ?? '',
+        amount: (j['amount'] as num?)?.toDouble() ?? 0,
+        reason: j['reason'] as String? ?? 'others',
+        notes: j['notes'] as String?,
+        status: j['status'] as String? ?? 'pending',
+        error: j['error'] as String?,
+        requestedBy: j['requested_by'] as String? ?? '',
         createdAt: _date(j['created_at']),
       );
 }
