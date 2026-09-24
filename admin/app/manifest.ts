@@ -17,9 +17,13 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     background_color: '#f8fafc',
     theme_color: '#2563eb',
+    // Chrome's installability check requires BOTH a 192px and a 512px icon —
+    // with only the 512s listed here it silently refused to fire
+    // `beforeinstallprompt`, so the install card never appeared on Android.
     icons: [
-      { src: '/icon.png', sizes: '512x512', type: 'image/png' },
-      { src: '/apple-icon.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   };
 }

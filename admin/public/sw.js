@@ -6,6 +6,14 @@
 // implemented here on purpose; this app is always-online admin tooling, not
 // an offline-first app, so this worker exists solely to receive pushes.
 
+// Chrome will not treat a site as installable — and so never fires
+// `beforeinstallprompt` — unless its service worker has a fetch handler.
+// This one deliberately does nothing but fall through to the network: it
+// exists to satisfy that check, not to cache. Calling respondWith here
+// instead would put this worker in the path of every admin request for no
+// benefit.
+self.addEventListener('fetch', () => {});
+
 self.addEventListener('push', (event) => {
   let data = { title: 'DocuCenter', body: 'You have a new notification.', url: '/' };
   try {
