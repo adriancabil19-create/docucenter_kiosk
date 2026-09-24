@@ -31,6 +31,22 @@ const DISMISS_FOR_DAYS = 7;
  */
 type InstallMode = 'prompt' | 'ios' | 'manual' | 'none';
 
+/**
+ * Why a one-tap install is not on offer, when it isn't. Chrome never reports
+ * this itself — it just silently declines to fire the event — so the failure
+ * is otherwise invisible to whoever is holding the phone.
+ */
+type InstallBlocker = 'insecure' | 'no-sw' | 'pending';
+
+const BLOCKER_MESSAGE: Record<InstallBlocker, string> = {
+  insecure:
+    'One-tap install needs HTTPS. This page is served over plain http, and Chrome disables installing there — open the site over https to get the Install button.',
+  'no-sw':
+    'The service worker has not registered yet, which Chrome requires before it will offer to install. Reload the page and try again.',
+  pending:
+    'Chrome offers one-tap install only after you have used the site briefly. Until then, use the browser menu:',
+};
+
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
@@ -77,8 +93,13 @@ function rememberDismissed(): void {
  * usually never appeared at all. Falling back to `manual` means there is
  * always something actionable on screen.
  */
-function useInstallMode(): { mode: InstallMode; promptInstall: () => Promise<void> } {
+function useInstallMode(): {
+  mode: InstallMode;
+  promptInstall: () => Promise<void>;
+  blocker: InstallBlocker;
+} {
   const [mode, setMode] = useState<InstallMode>('none');
+  const [blocker, setBlocker] = useState<InstallBlocker>('pending');
   const [deferredEvent, setDeferredEvent] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
@@ -89,6 +110,20 @@ function useInstallMode(): { mode: InstallMode; promptInstall: () => Promise<voi
     if (isIOS()) {
       setMode('ios');
       return;
+    }
+
+    // Chrome refuses to fire `beforeinstallprompt` at all outside a secure
+    // context, so a LAN IP over plain http can never offer a one-tap install
+    // no matter what the page does. Worth naming explicitly — it is by far
+    // the most common reason the automatic button never appears, and it is
+    // invisible otherwise.
+    if (!window.isSecureContext) {
+      setBlocker('insecure');
+    } else {
+      void navigator.serviceWorker
+        ?.getRegistration()
+        .then((reg) => setBlocker(reg ? 'pending' : 'no-sw'))
+        .catch(() => setBlocker('no-sw'));
     }
 
     // Already captured by the beforeInteractive script before this component
@@ -130,7 +165,7 @@ function useInstallMode(): { mode: InstallMode; promptInstall: () => Promise<voi
     }
   }, [deferredEvent]);
 
-  return { mode, promptInstall };
+  return { mode, promptInstall, blocker };
 }
 
 function ShareIcon() {
@@ -155,10 +190,12 @@ function ShareIcon() {
 /** The platform-specific body shared by the login card and the sidebar panel. */
 function InstallInstructions({
   mode,
+  blocker,
   onInstall,
   installing,
 }: {
   mode: InstallMode;
+  blocker: InstallBlocker;
   onInstall: () => void;
   installing: boolean;
 }) {
@@ -176,13 +213,18 @@ function InstallInstructions({
 
   if (mode === 'manual') {
     return (
-      <ol className="mt-3 space-y-1.5 text-slate-600">
-        <li>1. Open your browser menu (⋮).</li>
-        <li>
-          2. Choose &ldquo;Install app&rdquo; or &ldquo;Add to Home screen&rdquo;.
-        </li>
-        <li>3. Confirm to add it.</li>
-      </ol>
+      <div className="mt-3">
+        <p className="text-slate-500">{BLOCKER_MESSAGE[blocker]}</p>
+        {blocker !== 'insecure' && (
+          <ol className="mt-2 space-y-1.5 text-slate-600">
+            <li>1. Open your browser menu (⋮).</li>
+            <li>
+              2. Choose &ldquo;Install app&rdquo; or &ldquo;Add to Home screen&rdquo;.
+            </li>
+            <li>3. Confirm to add it.</li>
+          </ol>
+        )}
+      </div>
     );
   }
 
@@ -207,7 +249,7 @@ function InstallInstructions({
  * manual steps are the only thing that can work there.
  */
 export function InstallPrompt() {
-  const { mode, promptInstall } = useInstallMode();
+  const { mode, promptInstall, blocker } = useInstallMode();
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [suppressed, setSuppressed] = useState(true);
@@ -253,7 +295,7 @@ export function InstallPrompt() {
           ✕
         </button>
       </div>
-      <InstallInstructions mode={mode} onInstall={install} installing={installing} />
+      <InstallInstructions mode={mode} blocker={blocker} onInstall={install} installing={installing} />
     </div>
   );
 }
@@ -267,7 +309,7 @@ export function InstallPrompt() {
  * reason "the install popup never appears".
  */
 export function InstallButton() {
-  const { mode, promptInstall } = useInstallMode();
+  const { mode, promptInstall, blocker } = useInstallMode();
   const [open, setOpen] = useState(false);
   const [installing, setInstalling] = useState(false);
 
@@ -294,7 +336,7 @@ export function InstallButton() {
       </button>
       {open && (
         <div className="mt-1 rounded-lg bg-white/60 p-2.5 text-xs text-slate-700">
-          <InstallInstructions mode={mode} onInstall={install} installing={installing} />
+          <InstallInstructions mode={mode} blocker={blocker} onInstall={install} installing={installing} />
         </div>
       )}
     </div>
