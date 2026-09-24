@@ -617,6 +617,7 @@ export interface RecentJob {
   duplex: boolean;
   unit_price: number;
   service_type: string;
+  billing_type: PrintBillingType;
   created_at: string;
 }
 
@@ -652,12 +653,12 @@ export const getRecentJobs = async (limit = 20, range?: DateRange): Promise<Rece
   const where = rangeClause(range, args);
   const result = await getDb().execute({
     sql: `SELECT id, transaction_id, filenames, paper_size, copies, status, method, simulated,
-                 page_count, color_mode, duplex, unit_price, service_type, created_at
+                 page_count, color_mode, duplex, unit_price, service_type, billing_type, created_at
           FROM print_jobs${where} ORDER BY created_at DESC LIMIT @limit`,
     args,
   });
 
-  return toRows<{ id: string; transaction_id: string | null; filenames: string; paper_size: string; copies: number; status: string; method: string | null; simulated: number; page_count: number; color_mode: string; duplex: number; unit_price: number; service_type: string; created_at: string }>(result)
+  return toRows<{ id: string; transaction_id: string | null; filenames: string; paper_size: string; copies: number; status: string; method: string | null; simulated: number; page_count: number; color_mode: string; duplex: number; unit_price: number; service_type: string; billing_type: PrintBillingType; created_at: string }>(result)
     .map((r) => ({
       ...r,
       filenames: JSON.parse(r.filenames) as string[],
