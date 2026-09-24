@@ -205,10 +205,14 @@ class _MainAppState extends State<MainApp> {
             body: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) => _handleUserActivity(),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: KioskShell(
+              // KioskShell wraps the *entire* stack (idle screen, staff mode,
+              // everything) rather than just the main content, so its
+              // maintenance overlay is always the topmost layer — otherwise
+              // the idle standby screen or Staff Mode would paint over it.
+              child: KioskShell(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
                       child: Column(
                         key: _shellKey,
                         mainAxisSize: MainAxisSize.max,
@@ -230,31 +234,31 @@ class _MainAppState extends State<MainApp> {
                         ],
                       ),
                     ),
-                  ),
-                  // Customer-facing "Ask for Assistance" (rule 12) — floats above
-                  // whichever service screen is open. Hidden during the idle
-                  // standby screen, Staff Mode, and maintenance mode (nothing
-                  // to assist with while the kiosk itself is down).
-                  if (!_showIdleScreen && !_showStaffMode)
-                    AnimatedBuilder(
-                      animation: KioskRuntime.instance,
-                      builder: (context, _) => KioskRuntime.instance.maintenance
-                          ? const SizedBox.shrink()
-                          : const Positioned(
-                              right: 24,
-                              bottom: 24,
-                              child: AskForAssistanceButton(),
-                            ),
-                    ),
-                  if (_showIdleScreen)
-                    Positioned.fill(
-                      child: IdleScreen(onDismiss: _dismissIdleScreen),
-                    ),
-                  if (_showStaffMode)
-                    Positioned.fill(
-                      child: StaffModeShell(onExit: _exitStaffMode),
-                    ),
-                ],
+                    // Customer-facing "Ask for Assistance" (rule 12) — floats above
+                    // whichever service screen is open. Hidden during the idle
+                    // standby screen, Staff Mode, and maintenance mode (nothing
+                    // to assist with while the kiosk itself is down).
+                    if (!_showIdleScreen && !_showStaffMode)
+                      AnimatedBuilder(
+                        animation: KioskRuntime.instance,
+                        builder: (context, _) => KioskRuntime.instance.maintenance
+                            ? const SizedBox.shrink()
+                            : const Positioned(
+                                right: 24,
+                                bottom: 24,
+                                child: AskForAssistanceButton(),
+                              ),
+                      ),
+                    if (_showIdleScreen)
+                      Positioned.fill(
+                        child: IdleScreen(onDismiss: _dismissIdleScreen),
+                      ),
+                    if (_showStaffMode)
+                      Positioned.fill(
+                        child: StaffModeShell(onExit: _exitStaffMode),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
