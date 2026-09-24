@@ -11,6 +11,18 @@ export const metadata: Metadata = {
   applicationName: 'DocuCenter Admin',
   authors: [{ name: 'Charles Adrian L. Cabil', url: 'mailto:adriancabil12@gmail.com' }],
   robots: { index: false, follow: false },
+  // iOS ignores the web manifest's `display` on older versions: without these
+  // Apple-specific tags, "Add to Home Screen" produces a plain Safari
+  // bookmark (browser chrome and all) rather than a standalone app window.
+  appleWebApp: {
+    capable: true,
+    title: 'DocuCenter',
+    statusBarStyle: 'default',
+  },
+  // Next emits only the modern `mobile-web-app-capable`, which iOS before
+  // 16.4 ignores — those versions read nothing but Apple's own (deprecated)
+  // spelling, so both have to be on the page.
+  other: { 'apple-mobile-web-app-capable': 'yes' },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
