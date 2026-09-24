@@ -279,7 +279,11 @@ export interface StorageDocMeta {
 export interface Analytics {
   range: DateRange;
   revenue: {
+    /** Net: paid minus succeeded refunds. */
     total: number;
+    gross: number;
+    refunded: number;
+    refundedCount: number;
     byService: Array<{ service_type: string; revenue: number; count: number }>;
     byDay: Array<{ day: string; revenue: number; count: number }>;
     avgTransactionValue: number;

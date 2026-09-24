@@ -21,7 +21,7 @@ export async function DashboardStats() {
         color="primary"
       />
       <StatCard
-        label="Revenue (PHP)"
+        label="Net Revenue (PHP)"
         value={stats ? `₱${stats.totalRevenue.toFixed(2)}` : '—'}
         icon="💰"
         color="success"

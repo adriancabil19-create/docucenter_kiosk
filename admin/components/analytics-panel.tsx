@@ -115,7 +115,17 @@ export function AnalyticsPanel({ initial }: { initial: Analytics | null }) {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Revenue" value={peso(a.revenue.total)} icon="💰" color="success" />
+            <StatCard
+              label="Net revenue"
+              value={peso(a.revenue.total)}
+              icon="💰"
+              color="success"
+              sub={
+                a.revenue.refunded > 0
+                  ? `${peso(a.revenue.gross)} paid − ${peso(a.revenue.refunded)} refunded (${a.revenue.refundedCount} txn${a.revenue.refundedCount === 1 ? '' : 's'})`
+                  : 'No refunds in this period'
+              }
+            />
             <StatCard
               label="Avg transaction"
               value={peso(a.revenue.avgTransactionValue)}

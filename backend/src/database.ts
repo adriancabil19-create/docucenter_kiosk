@@ -656,6 +656,10 @@ export const getFailedPaidPrintJobForTransaction = async (transactionId: string)
 
 // ─── Monitoring queries ───────────────────────────────────────────────────────
 
+/** Succeeded refunds on the `transactions` row in scope — subtracted so revenue is net. */
+const REFUNDED_SQL = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf
+  WHERE rf.transaction_id = transactions.id AND rf.status = 'succeeded'), 0)`;
+
 export interface MonitoringStats {
   totalTransactions: number;
   successfulTransactions: number;
@@ -676,7 +680,7 @@ export const getMonitoringStats = async (): Promise<MonitoringStats> => {
       SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END)                       AS successful,
       SUM(CASE WHEN status IN ('FAILED','EXPIRED','CANCELLED') THEN 1 ELSE 0 END) AS failed,
       SUM(CASE WHEN status IN ('PENDING','PROCESSING') THEN 1 ELSE 0 END)       AS pending,
-      COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0)     AS revenue
+      COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount - ${REFUNDED_SQL} ELSE 0 END), 0) AS revenue
     FROM transactions
   `);
 
@@ -2001,7 +2005,11 @@ export const vacuumDatabase = async (): Promise<void> => {
 export interface AnalyticsResult {
   range: DateRange;
   revenue: {
+    /** Net: paid minus succeeded refunds. */
     total: number;
+    gross: number;
+    refunded: number;
+    refundedCount: number;
     byService: Array<{ service_type: string; revenue: number; count: number }>;
     byDay: Array<{ day: string; revenue: number; count: number }>;
     avgTransactionValue: number;
@@ -2064,20 +2072,22 @@ export const getAnalytics = async (range?: DateRange): Promise<AnalyticsResult> 
               SUM(CASE WHEN status IN ('FAILED','EXPIRED') THEN 1 ELSE 0 END) AS failed,
               SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled,
               SUM(CASE WHEN status IN ('PENDING','PROCESSING') THEN 1 ELSE 0 END) AS pending,
-              COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS revenue
+              COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS gross,
+              COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN ${REFUNDED_SQL} ELSE 0 END), 0) AS refunded,
+              SUM(CASE WHEN status = 'SUCCESS' AND ${REFUNDED_SQL} > 0 THEN 1 ELSE 0 END) AS refunded_count
             FROM transactions${txWhere}`,
       args: txArgs,
     }),
     db.execute({
       sql: `SELECT COALESCE(service_type, 'unknown') AS service_type,
-                   COUNT(*) AS count, COALESCE(SUM(amount), 0) AS revenue
+                   COUNT(*) AS count, COALESCE(SUM(amount - ${REFUNDED_SQL}), 0) AS revenue
             FROM transactions${okWhere}
             GROUP BY service_type ORDER BY revenue DESC`,
       args: okArgs,
     }),
     db.execute({
       sql: `SELECT substr(created_at, 1, 10) AS day,
-                   COUNT(*) AS count, COALESCE(SUM(amount), 0) AS revenue
+                   COUNT(*) AS count, COALESCE(SUM(amount - ${REFUNDED_SQL}), 0) AS revenue
             FROM transactions${okWhere}
             GROUP BY day ORDER BY day ASC`,
       args: okArgs,
@@ -2119,12 +2129,17 @@ export const getAnalytics = async (range?: DateRange): Promise<AnalyticsResult> 
   const t = firstRow<Record<string, unknown>>(txAgg) ?? {};
   const j = firstRow<Record<string, unknown>>(jobAgg) ?? {};
   const success = Number(t.success ?? 0);
-  const revenue = Number(t.revenue ?? 0);
+  const gross = Number(t.gross ?? 0);
+  const refunded = Number(t.refunded ?? 0);
+  const revenue = Math.round((gross - refunded) * 100) / 100;
 
   return {
     range: range ?? {},
     revenue: {
       total: revenue,
+      gross,
+      refunded,
+      refundedCount: Number(t.refunded_count ?? 0),
       byService: toRows<Record<string, unknown>>(byService).map((r) => ({
         service_type: String(r.service_type),
         revenue: Number(r.revenue ?? 0),
