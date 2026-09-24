@@ -17,7 +17,11 @@ declare global {
   }
 }
 
-const DISMISS_KEY = 'docucenter_install_prompt_dismissed_at';
+// Bumped to -v2: a single ✕ (or one accepted install) wrote the old key and
+// then hid this card for a fortnight with no way to bring it back, so every
+// browser used to test the install flow had silently opted itself out. The
+// new key voids those stale dismissals once.
+const DISMISS_KEY = 'docucenter_install_prompt_dismissed_at_v2';
 const DISMISS_FOR_DAYS = 14;
 
 function isStandalone(): boolean {
@@ -62,7 +66,7 @@ function rememberDismissed(): void {
  *    Web Push can work at all, so this doubles as the on-ramp for that.
  */
 export function InstallPrompt() {
-  const [platform, setPlatform] = useState<'android' | 'ios' | null>(null);
+  const [platform, setPlatform] = useState<'android' | 'ios' | 'waiting' | null>(null);
   const [deferredEvent, setDeferredEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -95,7 +99,19 @@ export function InstallPrompt() {
       setPlatform('android');
     };
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+
+    // Chrome stays completely silent when it has decided the app is not
+    // installable — most often because it is ALREADY installed, which it
+    // treats as "nothing to offer" rather than an error. Rendering nothing
+    // in that case makes "already installed", "not installable" and "this
+    // component is broken" look identical from the outside, which is what
+    // made this so hard to pin down. Surface it instead of vanishing.
+    const t = setTimeout(() => setPlatform((p) => p ?? 'waiting'), 3000);
+
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    };
   }, []);
 
   const dismiss = () => {
@@ -124,16 +140,24 @@ export function InstallPrompt() {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-slate-800">Add DocuCenter to your Home Screen</p>
-          {platform === 'android' ? (
+          {platform === 'android' && (
             <p className="mt-1 text-slate-600">
               Quick access from your home screen, plus phone notifications for new assistance requests and
               alerts.
             </p>
-          ) : (
+          )}
+          {platform === 'ios' && (
             <p className="mt-1 text-slate-600">
               Tap the <strong>Share</strong> icon in Safari&apos;s toolbar (the square with an arrow
               pointing up), then <strong>&ldquo;Add to Home Screen.&rdquo;</strong> This is required on
               iPhone for phone notifications to work.
+            </p>
+          )}
+          {platform === 'waiting' && (
+            <p className="mt-1 text-slate-600">
+              No Install button? DocuCenter is most likely <strong>already installed</strong> — open it
+              from your home screen, or check <code>chrome://apps</code>. Your browser only offers
+              installation when the app is not installed yet.
             </p>
           )}
         </div>
