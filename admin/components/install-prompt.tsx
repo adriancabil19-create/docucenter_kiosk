@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { registerServiceWorker } from '@/lib/push';
 
 // Chrome-only event, not in the standard DOM lib typings.
@@ -18,50 +18,17 @@ declare global {
 }
 
 const DISMISS_KEY = 'docucenter_install_prompt_dismissed_at';
-const DISMISS_FOR_DAYS = 7;
-
-/**
- * How the app can be installed on THIS browser:
- * - `prompt`  Chrome handed us a real beforeinstallprompt event to re-trigger.
- * - `ios`     WebKit — no install API exists at all, only manual Share ->
- *             Add to Home Screen. Apple provides no way to automate this.
- * - `manual`  Installable browser that has not (yet) fired the event, so the
- *             browser's own menu is the only route.
- * - `none`    Already installed, or nothing to offer.
- */
-type InstallMode = 'prompt' | 'ios' | 'manual' | 'none';
-
-/**
- * Why a one-tap install is not on offer, when it isn't. Chrome never reports
- * this itself — it just silently declines to fire the event — so the failure
- * is otherwise invisible to whoever is holding the phone.
- */
-type InstallBlocker = 'insecure' | 'no-sw' | 'pending';
-
-const BLOCKER_MESSAGE: Record<InstallBlocker, string> = {
-  insecure:
-    'One-tap install needs HTTPS. This page is served over plain http, and Chrome disables installing there — open the site over https to get the Install button.',
-  'no-sw':
-    'The service worker has not registered yet, which Chrome requires before it will offer to install. Reload the page and try again.',
-  pending:
-    'Chrome offers one-tap install only after you have used the site briefly. Until then, use the browser menu:',
-};
+const DISMISS_FOR_DAYS = 14;
 
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
-  return (
-    window.matchMedia?.('(display-mode: standalone)').matches === true || nav.standalone === true
-  );
+  return window.matchMedia?.('(display-mode: standalone)').matches === true || nav.standalone === true;
 }
 
 function isIOS(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  // iPadOS 13+ reports itself as desktop Safari ("MacIntel"), so the touch
-  // point count is the only reliable way to tell an iPad from a real Mac.
-  const iPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  return /iphone|ipad|ipod/i.test(ua) || iPadOS;
+  if (typeof window === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(window.navigator.userAgent) && !('MSStream' in window);
 }
 
 function wasRecentlyDismissed(): boolean {
@@ -85,179 +52,50 @@ function rememberDismissed(): void {
 }
 
 /**
- * Works out how (and whether) this browser can install the app.
- *
- * Deliberately never resolves to `none` just because Chrome has not fired
- * `beforeinstallprompt`: that event is gated behind an engagement heuristic
- * that can take ~30s of interaction, and waiting on it was why the card
- * usually never appeared at all. Falling back to `manual` means there is
- * always something actionable on screen.
+ * "Add to Home Screen" helper, shown on the login page (rule: easiest to
+ * reach before signing in). Two very different platform stories:
+ *  - Android/Chrome exposes a real `beforeinstallprompt` event this component
+ *    captures and re-triggers from an "Install" button.
+ *  - iOS Safari has no such API at all (Apple restriction) — the only path
+ *    is the user's own Share -> Add to Home Screen, so this just shows those
+ *    steps. iOS also requires the install (not just a browser tab) before
+ *    Web Push can work at all, so this doubles as the on-ramp for that.
  */
-function useInstallMode(): {
-  mode: InstallMode;
-  promptInstall: () => Promise<void>;
-  blocker: InstallBlocker;
-} {
-  const [mode, setMode] = useState<InstallMode>('none');
-  const [blocker, setBlocker] = useState<InstallBlocker>('pending');
+export function InstallPrompt() {
+  const [platform, setPlatform] = useState<'android' | 'ios' | null>(null);
   const [deferredEvent, setDeferredEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
-    if (isStandalone()) return; // Already installed — nothing to offer.
+    if (isStandalone() || wasRecentlyDismissed()) return;
 
     void registerServiceWorker();
 
     if (isIOS()) {
-      setMode('ios');
+      setPlatform('ios');
       return;
-    }
-
-    // Chrome refuses to fire `beforeinstallprompt` at all outside a secure
-    // context, so a LAN IP over plain http can never offer a one-tap install
-    // no matter what the page does. Worth naming explicitly — it is by far
-    // the most common reason the automatic button never appears, and it is
-    // invisible otherwise.
-    if (!window.isSecureContext) {
-      setBlocker('insecure');
-    } else {
-      void navigator.serviceWorker
-        ?.getRegistration()
-        .then((reg) => setBlocker(reg ? 'pending' : 'no-sw'))
-        .catch(() => setBlocker('no-sw'));
     }
 
     // Already captured by the beforeInteractive script before this component
     // even mounted — the common case, since the event tends to fire early.
     if (window.__deferredInstallPrompt) {
       setDeferredEvent(window.__deferredInstallPrompt);
-      setMode('prompt');
-    } else {
-      setMode('manual');
+      setPlatform('android');
+      return;
     }
 
-    // Chrome can delay firing until its engagement heuristic is satisfied,
-    // well after mount — upgrade `manual` to a real prompt if that happens.
+    // Otherwise keep listening — Chrome can also delay firing it until its
+    // own engagement heuristic (roughly 30s of interaction) is satisfied,
+    // which can happen well after this component has already mounted.
     const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       window.__deferredInstallPrompt = e as BeforeInstallPromptEvent;
       setDeferredEvent(e as BeforeInstallPromptEvent);
-      setMode('prompt');
+      setPlatform('android');
     };
-    const onInstalled = () => setMode('none');
-
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
-  }, []);
-
-  const promptInstall = useCallback(async () => {
-    if (!deferredEvent) return;
-    try {
-      await deferredEvent.prompt();
-      const choice = await deferredEvent.userChoice;
-      if (choice.outcome === 'accepted') setMode('none');
-    } finally {
-      window.__deferredInstallPrompt = undefined;
-      setDeferredEvent(null);
-    }
-  }, [deferredEvent]);
-
-  return { mode, promptInstall, blocker };
-}
-
-function ShareIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="inline-block h-4 w-4 align-text-bottom"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 16V4" />
-      <path d="m8 8 4-4 4 4" />
-      <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
-    </svg>
-  );
-}
-
-/** The platform-specific body shared by the login card and the sidebar panel. */
-function InstallInstructions({
-  mode,
-  blocker,
-  onInstall,
-  installing,
-}: {
-  mode: InstallMode;
-  blocker: InstallBlocker;
-  onInstall: () => void;
-  installing: boolean;
-}) {
-  if (mode === 'ios') {
-    return (
-      <ol className="mt-3 space-y-1.5 text-slate-600">
-        <li>
-          1. Tap the Share button <ShareIcon /> in Safari&apos;s toolbar.
-        </li>
-        <li>2. Scroll down and choose &ldquo;Add to Home Screen&rdquo;.</li>
-        <li>3. Tap &ldquo;Add&rdquo; to confirm.</li>
-      </ol>
-    );
-  }
-
-  if (mode === 'manual') {
-    return (
-      <div className="mt-3">
-        <p className="text-slate-500">{BLOCKER_MESSAGE[blocker]}</p>
-        {blocker !== 'insecure' && (
-          <ol className="mt-2 space-y-1.5 text-slate-600">
-            <li>1. Open your browser menu (⋮).</li>
-            <li>
-              2. Choose &ldquo;Install app&rdquo; or &ldquo;Add to Home screen&rdquo;.
-            </li>
-            <li>3. Confirm to add it.</li>
-          </ol>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onInstall}
-      disabled={installing}
-      className="mt-3 w-full rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {installing ? 'Installing…' : 'Install'}
-    </button>
-  );
-}
-
-/**
- * "Add to Home Screen" helper shown on the login page.
- *
- * Android/Chrome gets a real one-tap Install button when Chrome has handed us
- * a `beforeinstallprompt` event. iOS gets step-by-step Share -> Add to Home
- * Screen instructions, because WebKit exposes no install API whatsoever —
- * manual steps are the only thing that can work there.
- */
-export function InstallPrompt() {
-  const { mode, promptInstall, blocker } = useInstallMode();
-  const [dismissed, setDismissed] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [suppressed, setSuppressed] = useState(true);
-
-  // Read localStorage after mount only — doing it during render would not
-  // match the server-rendered HTML and would cause a hydration mismatch.
-  useEffect(() => {
-    setSuppressed(wasRecentlyDismissed());
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
   }, []);
 
   const dismiss = () => {
@@ -266,25 +104,38 @@ export function InstallPrompt() {
   };
 
   const install = async () => {
+    if (!deferredEvent) return;
     setInstalling(true);
     try {
-      await promptInstall();
+      await deferredEvent.prompt();
+      const choice = await deferredEvent.userChoice;
+      if (choice.outcome === 'accepted') rememberDismissed();
     } finally {
+      window.__deferredInstallPrompt = undefined;
+      setDeferredEvent(null);
       setInstalling(false);
     }
   };
 
-  if (mode === 'none' || dismissed || suppressed) return null;
+  if (!platform || dismissed) return null;
 
   return (
     <div className="glass mt-4 w-full max-w-sm p-4 text-sm text-slate-700">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-slate-800">Add DocuCenter to your Home Screen</p>
-          <p className="mt-1 text-slate-600">
-            Quick access from your home screen, plus phone notifications for new assistance requests
-            and alerts.
-          </p>
+          {platform === 'android' ? (
+            <p className="mt-1 text-slate-600">
+              Quick access from your home screen, plus phone notifications for new assistance requests and
+              alerts.
+            </p>
+          ) : (
+            <p className="mt-1 text-slate-600">
+              Tap the <strong>Share</strong> icon in Safari&apos;s toolbar (the square with an arrow
+              pointing up), then <strong>&ldquo;Add to Home Screen.&rdquo;</strong> This is required on
+              iPhone for phone notifications to work.
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -295,49 +146,15 @@ export function InstallPrompt() {
           ✕
         </button>
       </div>
-      <InstallInstructions mode={mode} blocker={blocker} onInstall={install} installing={installing} />
-    </div>
-  );
-}
-
-/**
- * Always-available install entry point for the sidebar footer.
- *
- * The login card is easy to miss — it only exists on /login, and once
- * dismissed it stays hidden for days. An admin who is already signed in would
- * otherwise have no way to reach the install flow at all, which is the usual
- * reason "the install popup never appears".
- */
-export function InstallButton() {
-  const { mode, promptInstall, blocker } = useInstallMode();
-  const [open, setOpen] = useState(false);
-  const [installing, setInstalling] = useState(false);
-
-  const install = async () => {
-    setInstalling(true);
-    try {
-      await promptInstall();
-    } finally {
-      setInstalling(false);
-    }
-  };
-
-  if (mode === 'none') return null;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-accent/10 hover:text-accent-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      >
-        <span aria-hidden="true">📲</span> Install app
-      </button>
-      {open && (
-        <div className="mt-1 rounded-lg bg-white/60 p-2.5 text-xs text-slate-700">
-          <InstallInstructions mode={mode} blocker={blocker} onInstall={install} installing={installing} />
-        </div>
+      {platform === 'android' && (
+        <button
+          type="button"
+          onClick={install}
+          disabled={installing}
+          className="mt-3 w-full rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {installing ? 'Installing…' : 'Install'}
+        </button>
       )}
     </div>
   );
